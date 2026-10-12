@@ -4,11 +4,12 @@ import './globals.css'
 import type { Viewport } from 'next'
 
 export const viewport: Viewport = {
+  themeColor: '#131313',
+  viewportFit: 'cover',
   width: 'device-width',
   initialScale: 1,
   maximumScale: 1,
   userScalable: false,
-  themeColor: '#131313',
 }
 
 export const metadata: Metadata = {
@@ -21,10 +22,6 @@ export const metadata: Metadata = {
   },
 }
 
-export const viewport: Viewport = {
-  themeColor: '#CDF6F9', // Color de la barra de estado y navegación en Android
-  viewportFit: 'cover',
-}
 
 export default function RootLayout({ children }: { children: React.ReactNode }) {
   return (
