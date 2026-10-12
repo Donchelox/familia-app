@@ -6,15 +6,6 @@ import { addMedicationAction, toggleDoseAction } from '@/app/actions/meds'
 
 export const dynamic = 'force-dynamic'
 
-interface Medication {
-  id: string
-  name: string
-  dose: string | null
-  times: string[] | null
-  assigned_to: string | null
-  active?: boolean
-}
-
 export default async function MedsPage() {
   const ctx = await getContext()
   const cookieStore = await cookies()
@@ -36,16 +27,17 @@ export default async function MedsPage() {
     }
   )
 
-  // 1. Obtener medicamentos de la familia
-  const { data: medsData } = await supabase
+  // 1. Consulta sin filtros estrictos para depurar qué existe exactamente
+  const { data: rawMeds, error: medsError } = await supabase
     .from('medications')
-    .select('id, name, dose, times, assigned_to, active')
+    .select('*')
     .eq('family_id', ctx.familyId)
-    .order('created_at', { ascending: true })
 
-  const meds: Medication[] = ((medsData as Medication[]) || []).filter(
-    (m) => m.active !== false
-  )
+  console.log('[DEBUG MedsPage] familyId:', ctx.familyId)
+  console.log('[DEBUG MedsPage] rawMeds:', rawMeds)
+  console.log('[DEBUG MedsPage] error:', medsError)
+
+  const meds = rawMeds || []
 
   // 2. Fecha hoy (Chile)
   const todayStr = new Intl.DateTimeFormat('en-CA', {
@@ -75,12 +67,12 @@ export default async function MedsPage() {
 
   const allDoses: ScheduledDose[] = []
 
-  meds.forEach((med) => {
+  meds.forEach((med: any) => {
     let tList: string[] = []
     if (Array.isArray(med.times) && med.times.length > 0) {
       tList = med.times
-    } else if (typeof med.times === 'string' && (med.times as string).length > 0) {
-      tList = (med.times as string).split(',').map((s) => s.trim())
+    } else if (typeof med.times === 'string' && med.times.length > 0) {
+      tList = med.times.split(',').map((s: string) => s.trim())
     } else {
       tList = ['08:00']
     }
@@ -95,7 +87,7 @@ export default async function MedsPage() {
         name: med.name,
         dose: med.dose,
         time: t,
-        assignedTo: med.assigned_to,
+        assignedTo: med.assigned_to || med.member_name || null,
         isTaken,
       })
     })
@@ -125,7 +117,26 @@ export default async function MedsPage() {
         </p>
       </header>
 
-      {/* Botón de suscripción a push */}
+      {/* PANEL VISUAL DE DEBUG */}
+      <div
+        style={{
+          padding: '0.75rem',
+          marginBottom: '1rem',
+          borderRadius: '8px',
+          backgroundColor: '#3b2f05',
+          border: '1px solid #ca8a04',
+          color: '#fef08a',
+          fontSize: '0.8rem',
+          wordBreak: 'break-all',
+        }}
+      >
+        <strong>🛠️ Diagnóstico Supabase:</strong>
+        <div>Family ID: {ctx.familyId || 'VACÍO'}</div>
+        <div>Registros encontrados en BD: {meds.length}</div>
+        {medsError && <div style={{ color: '#f87171' }}>Error BD: {JSON.stringify(medsError)}</div>}
+        <div>Filas crudas: {JSON.stringify(meds.map((m: any) => ({ name: m.name, times: m.times, active: m.active })))}</div>
+      </div>
+
       <PushSubscriptionManager familyId={ctx.familyId} />
 
       {/* Lista de medicamentos */}
@@ -245,7 +256,7 @@ export default async function MedsPage() {
         )}
       </section>
 
-      {/* Formulario de agregar */}
+      {/* Formulario Añadir Medicamento */}
       <section
         style={{
           backgroundColor: '#131d2a',
