@@ -17,7 +17,7 @@ type ShoppingItem = {
 
 interface ShoppingViewProps {
   title: string
-  subtitle: string
+  subtitle?: string
   listType: 'super' | 'feria'
   items: ShoppingItem[]
   boughtItems: ShoppingItem[]
@@ -26,7 +26,6 @@ interface ShoppingViewProps {
 
 export default function ShoppingView({
   title,
-  subtitle,
   listType,
   items,
   boughtItems,
@@ -54,6 +53,8 @@ export default function ShoppingView({
   const cardGradientStyle = {
     background: 'linear-gradient(134.95deg, #F76911 47.75%, #F2A957 100%)',
   }
+
+  const isFeria = listType === 'feria'
 
   return (
     <div className="w-full flex flex-col gap-5 relative min-h-[calc(100vh-80px)] pb-28">
@@ -88,12 +89,12 @@ export default function ShoppingView({
         </Link>
       </header>
 
-      {/* 2. TABS SEGMENTADOS PARA NAVEGAR ENTRE SÚPER Y FERIA */}
+      {/* 2. TABS SEGMENTADOS PARA ALTERNAR ENTRE SÚPER Y FERIA */}
       <div className="flex p-1 bg-[#1c1c1c] rounded-2xl border border-neutral-800">
         <Link
           href="/super"
           className={`flex-1 py-2 text-center text-xs font-bold rounded-xl transition-all no-underline ${
-            listType === 'super'
+            !isFeria
               ? 'bg-[#F76911] text-white shadow-md'
               : 'text-neutral-400 hover:text-white'
           }`}
@@ -103,7 +104,7 @@ export default function ShoppingView({
         <Link
           href="/feria"
           className={`flex-1 py-2 text-center text-xs font-bold rounded-xl transition-all no-underline ${
-            listType === 'feria'
+            isFeria
               ? 'bg-[#F76911] text-white shadow-md'
               : 'text-neutral-400 hover:text-white'
           }`}
@@ -112,18 +113,35 @@ export default function ShoppingView({
         </Link>
       </div>
 
-      {/* 3. LISTA DE PRODUCTOS PENDIENTES */}
+      {/* 3. TÍTULO DE LA LISTA CON ICONO CORRESPONDIENTE AL HOME */}
       <section className="flex flex-col gap-3">
         <div className="flex items-center gap-2">
-          <svg className="w-5 h-5 text-[#F76911]" fill="currentColor" viewBox="0 0 24 24">
-            <path d="M12 21.35l-1.45-1.32C5.4 15.36 2 12.28 2 8.5 2 5.42 4.42 3 7.5 3c1.74 0 3.41.81 4.5 2.09C13.09 3.81 14.76 3 16.5 3 19.58 3 22 5.42 22 8.5c0 3.78-3.4 6.86-8.55 11.54L12 21.35z" />
-          </svg>
-          <h2 className="text-base font-bold text-white tracking-tight">{subtitle}</h2>
+          {isFeria ? (
+            /* Icono Shopping Cart (Feria) */
+            <svg className="w-5 h-5 stroke-[#F76911] stroke-[2.2] fill-none" viewBox="0 0 24 24">
+              <path
+                strokeLinecap="round"
+                strokeLinejoin="round"
+                d="M3 3h2l.4 2M7 13h10l4-8H5.4M7 13L5.4 5M7 13l-2.293 2.293c-.63.63-.184 1.707.707 1.707H17m0 0a2 2 0 100 4 2 2 0 000-4zm-8 2a2 2 0 11-4 0 2 2 0 014 0z"
+              />
+            </svg>
+          ) : (
+            /* Icono Shopping Bag (Supermercado) */
+            <svg className="w-5 h-5 stroke-[#F76911] stroke-[2.2] fill-none" viewBox="0 0 24 24">
+              <path strokeLinecap="round" strokeLinejoin="round" d="M16 11V7a4 4 0 00-8 0v4M5 9h14l1 12H4L5 9z" />
+            </svg>
+          )}
+
+          <h2 className="text-base font-bold text-white tracking-tight">
+            {isFeria ? 'Lista de la feria' : 'Lista de supermercado'}
+          </h2>
         </div>
 
         {items.length === 0 ? (
           <div className="p-8 rounded-[20px] bg-[#1a1a1a] border border-neutral-800 text-center text-neutral-400 text-xs">
-            No tienes productos pendientes. Pulsa + Añadir para agregar uno nuevo.
+            {isFeria
+              ? 'No tienes productos pendientes en la feria. Pulsa + Añadir para crear uno.'
+              : 'No tienes productos pendientes en el supermercado. Pulsa + Añadir para crear uno.'}
           </div>
         ) : (
           <div className="flex flex-col gap-1">
@@ -132,7 +150,7 @@ export default function ShoppingView({
                 key={item.id}
                 className="py-3 flex items-center justify-between border-b border-neutral-800/40"
               >
-                {/* Checkbox a la izquierda + Textos */}
+                {/* Checkbox y Texto */}
                 <div className="flex items-center gap-3.5 flex-1 pr-3">
                   <form action={toggleShoppingItem}>
                     <input type="hidden" name="id" value={item.id} />
@@ -152,7 +170,7 @@ export default function ShoppingView({
                   </div>
                 </div>
 
-                {/* Botón Editar que levanta el Bottom Sheet */}
+                {/* Botón Editar */}
                 {canEdit && (
                   <button
                     type="button"
@@ -184,7 +202,6 @@ export default function ShoppingView({
                 className="py-2 px-2 flex items-center justify-between border-b border-neutral-800/30 last:border-0 opacity-70 hover:opacity-100 transition-opacity"
               >
                 <div className="flex items-center gap-3 flex-1 pr-2">
-                  {/* Botón check activo para restaurar */}
                   <form action={toggleShoppingItem}>
                     <input type="hidden" name="id" value={item.id} />
                     <input type="hidden" name="done" value="true" />
@@ -241,7 +258,6 @@ export default function ShoppingView({
           />
 
           <div className="relative w-full max-w-[402px] bg-[#1a1a1a] rounded-t-[28px] border-t border-neutral-800 p-6 flex flex-col gap-4 shadow-2xl z-10 animate-in slide-in-from-bottom duration-200">
-            {/* Tirador */}
             <div className="w-12 h-1.5 bg-neutral-700 rounded-full mx-auto" />
 
             <div className="flex items-center justify-between">
@@ -265,7 +281,6 @@ export default function ShoppingView({
               </button>
             </div>
 
-            {/* Formulario */}
             <form
               action={async (formData) => {
                 if (activeItem === 'add') {
@@ -309,7 +324,6 @@ export default function ShoppingView({
               </div>
             </form>
 
-            {/* Eliminar dentro del sheet */}
             {activeItem !== 'add' && (
               <form
                 action={async (formData) => {
