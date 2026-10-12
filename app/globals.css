@@ -1,4 +1,27 @@
 @import "tailwindcss";
+@import url('https://fonts.googleapis.com/css2?family=Google+Sans+Flex:wght@100..1000&display=swap');
+
+html,
+body {
+  background-color: #131313;
+  color: #ffffff;
+  margin: 0;
+  padding: 0;
+  min-height: 100vh;
+  font-family: 'Google Sans Flex', 'Google Sans', system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+}
+
+/* Neutralizamos paddings residuales de clases heredadas del layout */
+.layout,
+.content {
+  background-color: #131313 !important;
+  padding: 0 !important;
+  margin: 0 !important;
+  max-width: 100% !important;
+  font-family: inherit;
+}
 
 :root{--bg:#f2f5f7;--surface:#fff;--ink:#1b2a41;--muted:#5c6b80;--line:#d5dce4;--accent:#1f4e8c;--accent-ink:#fff;--sun:#f0b429;--danger:#b3261e;color-scheme:light dark}
 @media (prefers-color-scheme:dark){:root{--bg:#0f1722;--surface:#17212f;--ink:#e8eef6;--muted:#9aa9bc;--line:#2a3647;--accent:#6ea3ee;--accent-ink:#0f1722;--danger:#f08a82}}
