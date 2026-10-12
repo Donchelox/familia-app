@@ -10,8 +10,9 @@ interface Medication {
   id: string
   name: string
   dose: string | null
-  times: string[]
+  times: string[] | null
   assigned_to: string | null
+  active?: boolean
 }
 
 export default async function MedsPage() {
@@ -35,13 +36,16 @@ export default async function MedsPage() {
     }
   )
 
-  // 1. Obtener medicamentos de la familia
+  // 1. Obtener medicamentos activos igual que en el Inicio
   const { data: medsData } = await supabase
     .from('medications')
-    .select('id, name, dose, times, assigned_to')
+    .select('id, name, dose, times, assigned_to, active')
     .eq('family_id', ctx.familyId)
+    .order('created_at', { ascending: true })
 
-  const meds: Medication[] = (medsData as Medication[]) || []
+  const meds: Medication[] = ((medsData as Medication[]) || []).filter(
+    (m) => m.active !== false
+  )
 
   // 2. Fecha de hoy en formato YYYY-MM-DD (Chile)
   const todayStr = new Intl.DateTimeFormat('en-CA', {
@@ -55,12 +59,11 @@ export default async function MedsPage() {
     .eq('family_id', ctx.familyId)
     .eq('date', todayStr)
 
-  // Conjunto de dosis tomadas: "medId_hora"
   const takenSet = new Set(
-    (doseLogs || []).map((d) => `${d.medication_id}_${d.scheduled_time}`)
+    (doseLogs || []).map((d) => `${d.medication_id}_${d.scheduled_time || ''}`)
   )
 
-  // 4. Aplanar la lista de dosis del día según las horas programadas
+  // 4. Aplanar la lista de dosis del día
   interface ScheduledDose {
     medId: string
     name: string
@@ -71,21 +74,35 @@ export default async function MedsPage() {
   }
 
   const allDoses: ScheduledDose[] = []
+
   meds.forEach((med) => {
-    const times = Array.isArray(med.times) && med.times.length > 0 ? med.times : ['08:00']
-    times.forEach((t) => {
+    let tList: string[] = []
+    if (Array.isArray(med.times) && med.times.length > 0) {
+      tList = med.times
+    } else if (typeof med.times === 'string' && (med.times as string).length > 0) {
+      tList = (med.times as string).split(',').map((s) => s.trim())
+    } else {
+      tList = ['--:--']
+    }
+
+    tList.forEach((t) => {
+      const isTaken =
+        takenSet.has(`${med.id}_${t}`) ||
+        takenSet.has(`${med.id}_`) ||
+        (doseLogs || []).some((d) => d.medication_id === med.id)
+
       allDoses.push({
         medId: med.id,
         name: med.name,
         dose: med.dose,
         time: t,
         assignedTo: med.assigned_to,
-        isTaken: takenSet.has(`${med.id}_${t}`),
+        isTaken,
       })
     })
   })
 
-  // Ordenar cronológicamente por hora (ej: 08:00 antes de 14:00)
+  // Ordenar por hora
   allDoses.sort((a, b) => a.time.localeCompare(b.time))
 
   // Hora actual en Chile (HH:MM)
@@ -106,14 +123,14 @@ export default async function MedsPage() {
           Medicamentos
         </h1>
         <p style={{ margin: '0.25rem 0 0', color: '#94a3b8', fontSize: '0.95rem' }}>
-          Dosis de hoy
+          Dosis de hoy ({allDoses.length} programadas)
         </p>
       </header>
 
-      {/* Botón para registrar dispositivo en Web Push */}
+      {/* Botón de activación de notificaciones Push */}
       <PushSubscriptionManager familyId={ctx.familyId} />
 
-      {/* Lista de dosis programadas para hoy */}
+      {/* Lista de dosis para hoy */}
       <section
         style={{
           backgroundColor: '#131d2a',
@@ -134,7 +151,11 @@ export default async function MedsPage() {
         ) : (
           <div style={{ display: 'flex', flexDirection: 'column', gap: '0.85rem' }}>
             {allDoses.map((doseItem, idx) => {
-              const isNext = nextDose && nextDose.medId === doseItem.medId && nextDose.time === doseItem.time && !doseItem.isTaken
+              const isNext =
+                nextDose &&
+                nextDose.medId === doseItem.medId &&
+                nextDose.time === doseItem.time &&
+                !doseItem.isTaken
 
               return (
                 <div
@@ -307,7 +328,6 @@ export default async function MedsPage() {
             <label style={{ display: 'block', fontSize: '0.85rem', color: '#94a3b8', marginBottom: '0.4rem' }}>
               Horas (separadas por coma)
             </label>
-            {/* ⚠️ El name debe ser 'times' para que coincida con app/actions/meds.ts */}
             <input
               type="text"
               name="times"

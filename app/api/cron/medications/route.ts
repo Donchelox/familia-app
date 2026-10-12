@@ -23,7 +23,7 @@ export async function GET(req: Request) {
     process.env.VAPID_PRIVATE_KEY!
   )
 
-  // Obtener hora actual en Chile (HH:MM)
+  // Hora actual en Chile (HH:MM)
   const now = new Date()
   const currentHM = new Intl.DateTimeFormat('es-CL', {
     timeZone: 'America/Santiago',
@@ -32,19 +32,21 @@ export async function GET(req: Request) {
     hour12: false,
   }).format(now)
 
-  // Buscar medicamentos cuyo array 'times' contenga la hora actual (HH:MM)
+  // Consultar medicamentos activos cuyo array 'times' contenga la hora actual
   const { data: meds, error: medsErr } = await supabase
     .from('medications')
-    .select('id, name, dose, times, family_id')
+    .select('id, name, dose, times, family_id, active')
     .contains('times', [currentHM])
 
-  if (medsErr || !meds || meds.length === 0) {
+  const activeMeds = (meds || []).filter((m) => m.active !== false)
+
+  if (medsErr || activeMeds.length === 0) {
     return NextResponse.json({ message: `Sin dosis a las ${currentHM}` })
   }
 
   const results: any[] = []
 
-  for (const med of meds) {
+  for (const med of activeMeds) {
     const { data: subs } = await supabase
       .from('push_subscriptions')
       .select('*')
@@ -56,7 +58,7 @@ export async function GET(req: Request) {
       const payload = JSON.stringify({
         title: `💊 Recordatorio: ${med.name}`,
         body: `Dosis: ${med.dose || 'Dosis habitual'}. Es momento de tomarlo.`,
-        url: '/medicamentos',
+        url: '/meds',
       })
 
       try {
