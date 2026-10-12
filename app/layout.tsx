@@ -1,8 +1,25 @@
 import type { Metadata, Viewport } from 'next'
 import './globals.css'
 
-export const metadata: Metadata = { title: 'Casa', description: 'Organización familiar' }
-export const viewport: Viewport = { themeColor: '#1f4e8c', viewportFit: 'cover' }
+export const metadata: Metadata = {
+  title: 'Casa',
+  description: 'Organización familiar',
+  manifest: '/manifest.webmanifest',
+  appleWebApp: {
+    capable: true,
+    statusBarStyle: 'default',
+    title: 'Casa',
+  },
+  icons: {
+    icon: '/icon-192.png',
+    apple: '/icon-192.png',
+  },
+}
+
+export const viewport: Viewport = {
+  themeColor: '#1f4e8c',
+  viewportFit: 'cover',
+}
 
 export default function RootLayout({ children }: { children: React.ReactNode }) {
   return (
