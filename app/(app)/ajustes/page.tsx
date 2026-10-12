@@ -22,7 +22,7 @@ export default async function AjustesPage() {
 
   return (
     <div className="w-full min-h-screen bg-[#131313] p-0 m-0 flex flex-col items-center text-white">
-      <div className="w-full max-w-[402px] px-5 pt-7 pb-32 flex flex-col gap-6">
+      <div className="w-full max-w-[402px] flex flex-col gap-6">
         
         {/* Header con botón de volver */}
         <header className="flex items-center gap-4">
