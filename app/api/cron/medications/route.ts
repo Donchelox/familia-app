@@ -32,17 +32,17 @@ export async function GET(req: Request) {
     hour12: false,
   }).format(now)
 
-  // Consultar medicamentos programados para esta hora
+  // Buscar medicamentos programados
   const { data: meds, error: medsErr } = await supabase
     .from('medications')
     .select('id, name, dose, schedule_time, family_id')
     .eq('schedule_time', currentHM)
 
   if (medsErr || !meds || meds.length === 0) {
-    return NextResponse.json({ message: `Sin dosis programadas a las ${currentHM}` })
+    return NextResponse.json({ message: `Sin dosis a las ${currentHM}` })
   }
 
-  const results = []
+  const results: any[] = []
 
   for (const med of meds) {
     const { data: subs } = await supabase
