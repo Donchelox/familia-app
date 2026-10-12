@@ -20,7 +20,7 @@ export default async function Inicio() {
   ] = await Promise.all([
     supabase
       .from('shopping_items')
-      .select('id, name, location, done')
+      .select('*')
       .eq('family_id', familyId)
       .eq('done', false),
     supabase
@@ -31,9 +31,7 @@ export default async function Inicio() {
     supabase
       .from('school_tests')
       .select('id, subject, test_date, topics')
-      .eq('family_id', familyId)
-      .gte('test_date', today)
-      .order('test_date'),
+      .eq('family_id', familyId),
     supabase
       .from('school_homework')
       .select('id, title, due_date', { count: 'exact' })
@@ -55,7 +53,7 @@ export default async function Inicio() {
       .eq('family_id', familyId),
   ])
 
-  // 1. OBTENCIÓN DEL NOMBRE Y AVATAR PERSONAL DEL INTEGRANTE CONECTADO
+  // 1. OBTENCIÓN DEL NOMBRE Y AVATAR PERSONAL
   const currentUser = userRes.data?.user
   const currentMember = (membersRes.data ?? []).find(
     (m) => m.user_id && m.user_id === currentUser?.id
@@ -65,9 +63,8 @@ export default async function Inicio() {
     currentMember?.name ||
     currentUser?.user_metadata?.full_name ||
     currentUser?.user_metadata?.name ||
-    (currentUser?.email ? currentUser.email.split('@')[0] : 'Integrante')
+    (currentUser?.email ? currentUser.email.split('@')[0] : 'Marcelo')
 
-  // Formato adecuado de nombre propio
   const displayName = rawName.charAt(0).toUpperCase() + rawName.slice(1)
   const initials = displayName
     .split(' ')
@@ -77,19 +74,25 @@ export default async function Inicio() {
     .join('')
     .toUpperCase()
 
-  // 2. DISCRIMINACIÓN DE CONTADORES
+  // 2. CONTEO DE COMPRAS Y FERIA (tolerante a esquema)
   const shopItems = shopAllRes.data ?? []
   
-  // Compras (Supermercado) vs Feria
-  const superCount = shopItems.filter(
-    (item) => !item.location || item.location.toLowerCase() !== 'feria'
-  ).length
+  // Si los ítems tienen columna location o category con valor 'feria'
+  const feriaItems = shopItems.filter((item: any) => {
+    const loc = (item.location || item.category || item.place || '').toLowerCase()
+    return loc.includes('feria')
+  })
 
-  const feriaCount = shopItems.filter(
-    (item) => item.location && item.location.toLowerCase() === 'feria'
-  ).length
+  // Supermercado: todo lo que no sea feria
+  const superItems = shopItems.filter((item: any) => {
+    const loc = (item.location || item.category || item.place || '').toLowerCase()
+    return !loc.includes('feria')
+  })
 
-  // Medicinas pendientes de hoy
+  const superCount = superItems.length > 0 ? superItems.length : shopItems.length
+  const feriaCount = feriaItems.length
+
+  // 3. MEDICINAS PENDIENTES DE HOY
   const taken = new Set((logsRes.data ?? []).map((l) => `${l.medication_id}|${l.time}`))
   const pendingMeds = (medsRes.data ?? [])
     .flatMap((m) =>
@@ -103,18 +106,18 @@ export default async function Inicio() {
     .filter((dose) => !taken.has(`${dose.id}|${dose.time}`))
     .sort((a, b) => a.time.localeCompare(b.time))
 
-  // Colegio: Pruebas próximas + Tareas escolares pendientes
-  const upcomingTests = testsRes.data ?? []
+  // 4. COLEGIO: Pruebas + Tareas escolares
+  const allTests = testsRes.data ?? []
   const pendingHomeworkCount = hwRes.count ?? 0
-  const schoolTotalCount = upcomingTests.length + pendingHomeworkCount
+  const schoolTotalCount = allTests.length + pendingHomeworkCount
 
-  // Tareas generales del hogar
+  // 5. TAREAS GENERALES
   const generalTodosCount = todosRes.count ?? 0
 
-  // 3. NOTIFICACIONES PUSH PENDIENTES (Medicinas programadas)
-  const totalNotifications = pendingMeds.length
+  // 6. TOTAL DE RECORDATORIOS / NOTIFICACIONES DEL DÍA
+  const notificationCount = pendingMeds.length
 
-  // 4. LISTA DE PRÓXIMOS EVENTOS CONCURRENTES
+  // 7. PRÓXIMOS EVENTOS CONCURRENTES
   type EventItem = {
     id: string
     category: 'Colegio' | 'Medicinas' | 'Tareas' | 'Compras'
@@ -125,12 +128,12 @@ export default async function Inicio() {
 
   const upcomingEvents: EventItem[] = []
 
-  upcomingTests.slice(0, 2).forEach((test) => {
+  allTests.slice(0, 2).forEach((test) => {
     upcomingEvents.push({
       id: `test-${test.id}`,
       category: 'Colegio',
       title: test.subject,
-      description: test.topics || `Fecha: ${rel(test.test_date).toLowerCase()}`,
+      description: test.topics || (test.test_date ? `Fecha: ${rel(test.test_date).toLowerCase()}` : 'Prueba pendiente'),
       href: '/colegio',
     })
   })
@@ -155,12 +158,12 @@ export default async function Inicio() {
     })
   })
 
-  shopItems.slice(0, 1).forEach((item) => {
+  shopItems.slice(0, 1).forEach((item: any) => {
     upcomingEvents.push({
       id: `shop-${item.id}`,
       category: 'Compras',
       title: item.name,
-      description: item.location?.toLowerCase() === 'feria' ? 'Lista de la feria' : 'Lista del súper',
+      description: 'Lista de compras',
       href: '/super',
     })
   })
@@ -171,7 +174,7 @@ export default async function Inicio() {
 
   return (
     <div className="w-full flex flex-col gap-6">
-      {/* HEADER: Avatar individual, Saludo con nombre del usuario y Notificaciones */}
+      {/* HEADER: Avatar individual, Saludo con nombre del usuario y Campana a /notificaciones */}
       <header className="flex items-center justify-between">
         <div className="flex items-center gap-3">
           <Link
@@ -187,11 +190,11 @@ export default async function Inicio() {
           </div>
         </div>
 
-        {/* Campana de Notificaciones */}
+        {/* Campana que lleva al historial de notificaciones */}
         <Link
-          href="/meds"
-          aria-label="Notificaciones activas"
-          className="relative p-2.5 rounded-full bg-[#1e1e1e] border border-neutral-800 text-white hover:text-white transition-colors"
+          href="/notificaciones"
+          aria-label="Ver historial de notificaciones"
+          className="relative p-2.5 rounded-full bg-[#1e1e1e] border border-neutral-800 text-white hover:text-white transition-colors no-underline"
         >
           <svg className="w-5 h-5 stroke-white stroke-2 fill-none" viewBox="0 0 24 24">
             <path
@@ -200,9 +203,9 @@ export default async function Inicio() {
               d="M15 17h5l-1.405-1.405A2.032 2.032 0 0118 14.158V11a6.002 6.002 0 00-4-5.659V5a2 2 0 10-4 0v.341C7.67 6.165 6 8.388 6 11v3.159c0 .538-.214 1.055-.595 1.436L4 17h5m6 0v1a3 3 0 11-6 0v-1m6 0H9"
             />
           </svg>
-          {totalNotifications > 0 && (
+          {notificationCount > 0 && (
             <span className="absolute -top-1 -right-1 min-w-[18px] h-[18px] px-1 bg-[#F76911] text-white text-[10px] font-black rounded-full flex items-center justify-center ring-2 ring-[#131313]">
-              {totalNotifications}
+              {notificationCount}
             </span>
           )}
         </Link>
@@ -212,7 +215,7 @@ export default async function Inicio() {
       <section className="flex flex-col gap-3">
         {/* Fila 1: Compras (Súper) y Feria */}
         <div className="grid grid-cols-2 gap-3">
-          {/* Compras (Supermercado) */}
+          {/* Compras */}
           <Link
             href="/super"
             style={cardGradientStyle}
@@ -275,7 +278,7 @@ export default async function Inicio() {
             <span className="text-xs font-black tracking-wide text-white relative z-10">Medicinas</span>
           </Link>
 
-          {/* Colegio (Pruebas + Tareas escolares) */}
+          {/* Colegio */}
           <Link
             href="/colegio"
             style={cardGradientStyle}
@@ -299,7 +302,7 @@ export default async function Inicio() {
             <span className="text-xs font-black tracking-wide text-white relative z-10">Colegio</span>
           </Link>
 
-          {/* Tareas (Generales del hogar) */}
+          {/* Tareas */}
           <Link
             href="/tareas"
             style={cardGradientStyle}
