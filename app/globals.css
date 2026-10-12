@@ -55,10 +55,9 @@ a:visited {
   color: inherit;
 }
 
-/* 5. Neutralizar envolventes del layout previo que puedan quedar */
+/* Solo neutralizamos las clases legacy, NO la etiqueta main */
 .layout,
-.content,
-main {
+.content {
   background-color: #131313 !important;
   padding: 0 !important;
   margin: 0 !important;
