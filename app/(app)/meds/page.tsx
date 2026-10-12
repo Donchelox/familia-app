@@ -6,6 +6,15 @@ import { addMedicationAction, toggleDoseAction } from '@/app/actions/meds'
 
 export const dynamic = 'force-dynamic'
 
+interface ScheduledDose {
+  medId: string
+  name: string
+  dose: string | null
+  time: string
+  assignedTo: string | null
+  isTaken: boolean
+}
+
 export default async function MedsPage() {
   const ctx = await getContext()
   const cookieStore = await cookies()
@@ -27,24 +36,20 @@ export default async function MedsPage() {
     }
   )
 
-  // 1. Consulta sin filtros estrictos para depurar qué existe exactamente
-  const { data: rawMeds, error: medsError } = await supabase
+  // 1. Obtener todos los medicamentos de la familia
+  const { data: rawMeds } = await supabase
     .from('medications')
     .select('*')
     .eq('family_id', ctx.familyId)
 
-  console.log('[DEBUG MedsPage] familyId:', ctx.familyId)
-  console.log('[DEBUG MedsPage] rawMeds:', rawMeds)
-  console.log('[DEBUG MedsPage] error:', medsError)
-
   const meds = rawMeds || []
 
-  // 2. Fecha hoy (Chile)
+  // 2. Fecha actual en formato YYYY-MM-DD (Chile)
   const todayStr = new Intl.DateTimeFormat('en-CA', {
     timeZone: 'America/Santiago',
   }).format(new Date())
 
-  // 3. Dosis tomadas hoy
+  // 3. Consultar dosis marcadas como tomadas hoy
   const { data: doseLogs } = await supabase
     .from('dose_logs')
     .select('medication_id, scheduled_time')
@@ -55,23 +60,14 @@ export default async function MedsPage() {
     (doseLogs || []).map((d) => `${d.medication_id}_${d.scheduled_time || ''}`)
   )
 
-  // 4. Aplanar lista de dosis por hora
-  interface ScheduledDose {
-    medId: string
-    name: string
-    dose: string | null
-    time: string
-    assignedTo: string | null
-    isTaken: boolean
-  }
-
+  // 4. Aplanar todas las dosis programadas sin descartar ninguna fila
   const allDoses: ScheduledDose[] = []
 
   meds.forEach((med: any) => {
     let tList: string[] = []
     if (Array.isArray(med.times) && med.times.length > 0) {
       tList = med.times
-    } else if (typeof med.times === 'string' && med.times.length > 0) {
+    } else if (typeof med.times === 'string' && med.times.trim().length > 0) {
       tList = med.times.split(',').map((s: string) => s.trim())
     } else {
       tList = ['08:00']
@@ -87,15 +83,16 @@ export default async function MedsPage() {
         name: med.name,
         dose: med.dose,
         time: t,
-        assignedTo: med.assigned_to || med.member_name || null,
+        assignedTo: med.assigned_to || med.member_name || 'Todos',
         isTaken,
       })
     })
   })
 
+  // Ordenar cronológicamente por hora (ej. 13:00, 14:55, 18:00)
   allDoses.sort((a, b) => a.time.localeCompare(b.time))
 
-  // Hora actual en Chile
+  // Hora actual en Chile (HH:MM)
   const currentHM = new Intl.DateTimeFormat('es-CL', {
     timeZone: 'America/Santiago',
     hour: '2-digit',
@@ -117,29 +114,10 @@ export default async function MedsPage() {
         </p>
       </header>
 
-      {/* PANEL VISUAL DE DEBUG */}
-      <div
-        style={{
-          padding: '0.75rem',
-          marginBottom: '1rem',
-          borderRadius: '8px',
-          backgroundColor: '#3b2f05',
-          border: '1px solid #ca8a04',
-          color: '#fef08a',
-          fontSize: '0.8rem',
-          wordBreak: 'break-all',
-        }}
-      >
-        <strong>🛠️ Diagnóstico Supabase:</strong>
-        <div>Family ID: {ctx.familyId || 'VACÍO'}</div>
-        <div>Registros encontrados en BD: {meds.length}</div>
-        {medsError && <div style={{ color: '#f87171' }}>Error BD: {JSON.stringify(medsError)}</div>}
-        <div>Filas crudas: {JSON.stringify(meds.map((m: any) => ({ name: m.name, times: m.times, active: m.active })))}</div>
-      </div>
-
+      {/* Botón Push PWA */}
       <PushSubscriptionManager familyId={ctx.familyId} />
 
-      {/* Lista de medicamentos */}
+      {/* Lista de medicamentos para Hoy */}
       <section
         style={{
           backgroundColor: '#131d2a',
@@ -228,7 +206,7 @@ export default async function MedsPage() {
                           {doseItem.name} {doseItem.dose ? `· ${doseItem.dose}` : ''}
                         </div>
                         <div style={{ fontSize: '0.8rem', color: '#64748b' }}>
-                          {doseItem.assignedTo || 'Todos'}
+                          {doseItem.assignedTo}
                         </div>
                       </div>
                     </div>
