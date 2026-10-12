@@ -32,7 +32,7 @@ export default function ShoppingView({
   boughtItems,
   canEdit,
 }: ShoppingViewProps) {
-  // Estado para el Bottom Sheet: null (cerrado), 'add' (nuevo), o el objeto para editar
+  // Estado para el Bottom Sheet: null (cerrado), 'add' (nuevo), o ítem para editar
   const [activeItem, setActiveItem] = useState<'add' | ShoppingItem | null>(null)
   const [inputValue, setInputValue] = useState('')
 
@@ -56,7 +56,7 @@ export default function ShoppingView({
   }
 
   return (
-    <div className="w-full flex flex-col gap-6 relative min-h-[calc(100vh-80px)] pb-28">
+    <div className="w-full flex flex-col gap-5 relative min-h-[calc(100vh-80px)] pb-28">
       {/* 1. HEADER CON FLECHA NARANJA Y CAMPANA */}
       <header className="flex items-center justify-between">
         <div className="flex items-center gap-3">
@@ -88,7 +88,31 @@ export default function ShoppingView({
         </Link>
       </header>
 
-      {/* 2. LISTA DE PRODUCTOS PENDIENTES */}
+      {/* 2. TABS SEGMENTADOS PARA NAVEGAR ENTRE SÚPER Y FERIA */}
+      <div className="flex p-1 bg-[#1c1c1c] rounded-2xl border border-neutral-800">
+        <Link
+          href="/super"
+          className={`flex-1 py-2 text-center text-xs font-bold rounded-xl transition-all no-underline ${
+            listType === 'super'
+              ? 'bg-[#F76911] text-white shadow-md'
+              : 'text-neutral-400 hover:text-white'
+          }`}
+        >
+          Supermercado
+        </Link>
+        <Link
+          href="/feria"
+          className={`flex-1 py-2 text-center text-xs font-bold rounded-xl transition-all no-underline ${
+            listType === 'feria'
+              ? 'bg-[#F76911] text-white shadow-md'
+              : 'text-neutral-400 hover:text-white'
+          }`}
+        >
+          Feria
+        </Link>
+      </div>
+
+      {/* 3. LISTA DE PRODUCTOS PENDIENTES */}
       <section className="flex flex-col gap-3">
         <div className="flex items-center gap-2">
           <svg className="w-5 h-5 text-[#F76911]" fill="currentColor" viewBox="0 0 24 24">
@@ -99,7 +123,7 @@ export default function ShoppingView({
 
         {items.length === 0 ? (
           <div className="p-8 rounded-[20px] bg-[#1a1a1a] border border-neutral-800 text-center text-neutral-400 text-xs">
-            No tienes productos pendientes. Pulsa + Añadir para crear uno.
+            No tienes productos pendientes. Pulsa + Añadir para agregar uno nuevo.
           </div>
         ) : (
           <div className="flex flex-col gap-1">
@@ -144,7 +168,7 @@ export default function ShoppingView({
         )}
       </section>
 
-      {/* 3. HISTORIAL DE "COMPRADOS" CON ESTILOS TAILWIND */}
+      {/* 4. HISTORIAL DE "COMPRADOS" */}
       {boughtItems.length > 0 && (
         <section className="flex flex-col gap-3 mt-4 pt-4 border-t border-neutral-800/60">
           <div className="flex items-center justify-between">
@@ -195,7 +219,7 @@ export default function ShoppingView({
         </section>
       )}
 
-      {/* 4. BOTÓN FLOTANTE "+ AÑADIR" */}
+      {/* 5. BOTÓN FLOTANTE "+ AÑADIR" */}
       {canEdit && (
         <button
           type="button"
@@ -208,17 +232,16 @@ export default function ShoppingView({
         </button>
       )}
 
-      {/* 5. BOTTOM SHEET FLOTANTE (AÑADIR / EDITAR / ELIMINAR) */}
+      {/* 6. BOTTOM SHEET (AÑADIR / EDITAR / ELIMINAR) */}
       {activeItem && (
         <div className="fixed inset-0 z-50 flex items-end justify-center">
-          {/* Fondo backdrop difuminado */}
           <div
             className="fixed inset-0 bg-black/75 backdrop-blur-sm transition-opacity"
             onClick={closeSheet}
           />
 
           <div className="relative w-full max-w-[402px] bg-[#1a1a1a] rounded-t-[28px] border-t border-neutral-800 p-6 flex flex-col gap-4 shadow-2xl z-10 animate-in slide-in-from-bottom duration-200">
-            {/* Manilla superior */}
+            {/* Tirador */}
             <div className="w-12 h-1.5 bg-neutral-700 rounded-full mx-auto" />
 
             <div className="flex items-center justify-between">
@@ -242,7 +265,7 @@ export default function ShoppingView({
               </button>
             </div>
 
-            {/* Formulario guardar/editar */}
+            {/* Formulario */}
             <form
               action={async (formData) => {
                 if (activeItem === 'add') {
@@ -286,7 +309,7 @@ export default function ShoppingView({
               </div>
             </form>
 
-            {/* Botón de eliminar dentro del Bottom Sheet al editar */}
+            {/* Eliminar dentro del sheet */}
             {activeItem !== 'add' && (
               <form
                 action={async (formData) => {
