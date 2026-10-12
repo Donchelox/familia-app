@@ -45,7 +45,7 @@ export function Nav() {
         {/* 3. Botón Flotante Central (+) */}
         <div className="flex-1 flex justify-center -mt-6">
           <Link
-            href="/tareas" // O a un modal / acción para crear un elemento rápido
+            href="/tareas"
             aria-label="Añadir nuevo"
             className="w-14 h-14 rounded-full bg-gradient-to-tr from-[#f25c19] via-[#ff6f24] to-[#ff8c37] flex items-center justify-center text-white shadow-[0_8px_20px_rgba(242,92,25,0.45)] border-4 border-[#121212] transition-transform active:scale-95"
           >
@@ -86,3 +86,5 @@ export function Nav() {
     </nav>
   )
 }
+
+export default Nav
