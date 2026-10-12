@@ -19,14 +19,13 @@ export function Nav({ family, role }: NavProps) {
 
   return (
     <nav className="fixed bottom-0 left-0 right-0 z-50 bg-[#131313] flex justify-center">
-      {/* Contenedor exacto de Figma: 402px ancho, 88px alto, padding 8px 0px 20px */}
       <div className="w-full max-w-[402px] h-[88px] px-2 pt-2 pb-5 flex flex-row justify-around items-center relative">
         
         {/* 1. Inicio */}
         <Link
           href="/"
           className={`flex flex-col items-center justify-center flex-1 transition-colors no-underline ${
-            isActive('/') ? 'text-[#ff5e1e]' : 'text-neutral-400 hover:text-white'
+            isActive('/') ? '!text-[#F76911]' : '!text-white/60 hover:!text-white'
           }`}
         >
           <svg className="w-6 h-6 stroke-current stroke-[2] fill-none" viewBox="0 0 24 24">
@@ -39,7 +38,7 @@ export function Nav({ family, role }: NavProps) {
         <Link
           href="/super"
           className={`flex flex-col items-center justify-center flex-1 transition-colors no-underline ${
-            isActive('/super') ? 'text-[#ff5e1e]' : 'text-neutral-400 hover:text-white'
+            isActive('/super') ? '!text-[#F76911]' : '!text-white/60 hover:!text-white'
           }`}
         >
           <svg className="w-6 h-6 stroke-current stroke-[2] fill-none" viewBox="0 0 24 24">
@@ -53,7 +52,7 @@ export function Nav({ family, role }: NavProps) {
           <Link
             href="/tareas"
             aria-label="Añadir nuevo"
-            className="w-14 h-14 rounded-full bg-gradient-to-tr from-[#ff5e1e] to-[#ff7d30] flex items-center justify-center text-white shadow-[0_8px_20px_rgba(255,94,30,0.35)] border-4 border-[#131313] transition-transform active:scale-95 no-underline"
+            className="w-14 h-14 rounded-full bg-gradient-to-tr from-[#F76911] to-[#F2A957] flex items-center justify-center !text-white shadow-[0_8px_20px_rgba(247,105,17,0.4)] border-4 border-[#131313] transition-transform active:scale-95 no-underline"
           >
             <svg className="w-7 h-7 stroke-white stroke-[2.5] fill-none" viewBox="0 0 24 24">
               <path strokeLinecap="round" strokeLinejoin="round" d="M12 4v16m8-8H4" />
@@ -65,7 +64,7 @@ export function Nav({ family, role }: NavProps) {
         <Link
           href="/colegio"
           className={`flex flex-col items-center justify-center flex-1 transition-colors no-underline ${
-            isActive('/colegio') ? 'text-[#ff5e1e]' : 'text-neutral-400 hover:text-white'
+            isActive('/colegio') ? '!text-[#F76911]' : '!text-white/60 hover:!text-white'
           }`}
         >
           <svg className="w-6 h-6 stroke-current stroke-[2] fill-none" viewBox="0 0 24 24">
@@ -79,7 +78,7 @@ export function Nav({ family, role }: NavProps) {
         <Link
           href="/meds"
           className={`flex flex-col items-center justify-center flex-1 transition-colors no-underline ${
-            isActive('/meds') ? 'text-[#ff5e1e]' : 'text-neutral-400 hover:text-white'
+            isActive('/meds') ? '!text-[#F76911]' : '!text-white/60 hover:!text-white'
           }`}
         >
           <svg className="w-6 h-6 stroke-current stroke-[2] fill-none" viewBox="0 0 24 24">

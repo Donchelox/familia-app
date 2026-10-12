@@ -98,7 +98,7 @@ export default async function Inicio() {
               aria-label="Ir a ajustes"
               className="w-12 h-12 rounded-full bg-[#F76911] text-white flex items-center justify-center font-bold text-lg shadow-md shrink-0 transition-transform active:scale-95 no-underline hover:opacity-90"
             >
-              {initials}
+              <span className="text-white font-bold">{initials}</span>
             </Link>
             <div className="leading-tight">
               <span className="text-sm font-normal text-neutral-300">Hola</span>
@@ -109,9 +109,9 @@ export default async function Inicio() {
           <button
             type="button"
             aria-label="Notificaciones"
-            className="relative p-2.5 rounded-full bg-[#1e1e1e] border border-neutral-800 text-neutral-200 hover:text-white transition-colors"
+            className="relative p-2.5 rounded-full bg-[#1e1e1e] border border-neutral-800 text-white hover:text-white transition-colors"
           >
-            <svg className="w-5 h-5 stroke-current stroke-2 fill-none" viewBox="0 0 24 24">
+            <svg className="w-5 h-5 stroke-white stroke-2 fill-none" viewBox="0 0 24 24">
               <path strokeLinecap="round" strokeLinejoin="round" d="M15 17h5l-1.405-1.405A2.032 2.032 0 0118 14.158V11a6.002 6.002 0 00-4-5.659V5a2 2 0 10-4 0v.341C7.67 6.165 6 8.388 6 11v3.159c0 .538-.214 1.055-.595 1.436L4 17h5m6 0v1a3 3 0 11-6 0v-1m6 0H9" />
             </svg>
             <span className="absolute top-1.5 right-1.5 w-2 h-2 bg-[#F76911] rounded-full ring-2 ring-[#1e1e1e]" />
@@ -120,7 +120,7 @@ export default async function Inicio() {
 
         {/* GRID DE ACCESOS DIRECTOS */}
         <section className="flex flex-col gap-3">
-          {/* Fila 1: Compras y Feria (2 tarjetas anchas) */}
+          {/* Fila 1: Compras y Feria */}
           <div className="grid grid-cols-2 gap-3">
             {/* Compras */}
             <Link
@@ -230,7 +230,7 @@ export default async function Inicio() {
               </svg>
               <h2 className="text-lg font-bold text-white tracking-tight">Próximos eventos</h2>
             </div>
-            <Link href="/colegio" className="text-sm font-semibold text-[#F76911] hover:underline no-underline">
+            <Link href="/colegio" className="text-sm font-semibold !text-[#F76911] hover:underline no-underline">
               + Ver todos
             </Link>
           </div>
@@ -244,10 +244,10 @@ export default async function Inicio() {
                 <Link
                   key={evt.id}
                   href={evt.href}
-                  className="flex items-center justify-between py-2 border-b border-neutral-800/40 transition-colors group no-underline"
+                  className="flex items-center justify-between py-2 border-b border-neutral-800/40 transition-colors group no-underline text-white"
                 >
                   <div className="space-y-1">
-                    <span className="inline-block px-2.5 py-0.5 rounded-full text-[11px] font-bold bg-[#fde9da] text-[#F76911]">
+                    <span className="inline-block px-2.5 py-0.5 rounded-full text-[11px] font-bold bg-[#fde9da] !text-[#F76911]">
                       {evt.category}
                     </span>
                     <h3 className="text-base font-bold text-white group-hover:text-[#F2A957] transition-colors leading-snug">

@@ -1,6 +1,15 @@
 @import "tailwindcss";
-@import url('https://fonts.googleapis.com/css2?family=Google+Sans+Flex:wght@100..1000&display=swap');
 
+/* 1. Definición de la fuente variable Google Sans Flex */
+@font-face {
+  font-family: 'Google Sans Flex';
+  src: url('https://fonts.gstatic.com/s/googlesansflex/v1/GoogleSansFlex-VariableFont_GRAD,ROND,opsz,wght.woff2') format('woff2');
+  font-weight: 100 1000;
+  font-style: normal;
+  font-display: swap;
+}
+
+/* 2. Reglas globales y reseteo */
 html,
 body {
   background-color: #131313;
@@ -8,19 +17,33 @@ body {
   margin: 0;
   padding: 0;
   min-height: 100vh;
-  font-family: 'Google Sans Flex', 'Google Sans', system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+  font-family: 'Google Sans Flex', 'Google Sans', system-ui, -apple-system, sans-serif !important;
   -webkit-font-smoothing: antialiased;
   -moz-osx-font-smoothing: grayscale;
 }
 
-/* Neutralizamos paddings residuales de clases heredadas del layout */
+/* 3. Forzar tipografía en títulos (eliminando Bricolage Grotesque) */
+h1, h2, h3, h4, h5, h6, p, span, button, a {
+  font-family: 'Google Sans Flex', 'Google Sans', system-ui, -apple-system, sans-serif !important;
+}
+
+/* 4. Neutralizar enlaces para evitar celestes residuales de CSS nativo */
+a {
+  color: inherit;
+  text-decoration: none;
+}
+
+a:visited {
+  color: inherit;
+}
+
+/* 5. Neutralizar contenedores del layout viejo */
 .layout,
 .content {
   background-color: #131313 !important;
   padding: 0 !important;
   margin: 0 !important;
   max-width: 100% !important;
-  font-family: inherit;
 }
 
 :root{--bg:#f2f5f7;--surface:#fff;--ink:#1b2a41;--muted:#5c6b80;--line:#d5dce4;--accent:#1f4e8c;--accent-ink:#fff;--sun:#f0b429;--danger:#b3261e;color-scheme:light dark}
