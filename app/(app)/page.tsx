@@ -88,7 +88,7 @@ export default async function Inicio() {
   return (
     <div className="w-full min-h-screen bg-[#131313] p-0 m-0 flex flex-col items-center">
       {/* Contenedor Figma 402px */}
-      <div className="w-full max-w-[402px] px-5 pt-6 pb-28 flex flex-col gap-6">
+      <div className="w-full max-w-[402px] flex flex-col gap-6">
         
         {/* HEADER: Avatar con enlace a /ajustes, Saludo y Campana */}
         <header className="flex items-center justify-between">
