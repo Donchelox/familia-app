@@ -1,6 +1,7 @@
 'use client'
 
 import { useState, useTransition } from 'react'
+import { useRouter } from 'next/navigation'
 import PushSubscriptionManager from '@/components/PushSubscriptionManager'
 import {
   addMedicationAction,
@@ -32,12 +33,17 @@ export default function MedsClientView({
   todayStr,
   currentHM,
 }: MedsClientViewProps) {
+  const router = useRouter()
   const [editingMed, setEditingMed] = useState<Medication | null>(null)
   const [isPending, startTransition] = useTransition()
 
-  const takenSet = new Set(takenKeys)
+  // Guardar copia local de las llaves de dosis tomadas para feedback visual inmediato
+  const [localTaken, setLocalTaken] = useState<Set<string>>(new Set(takenKeys))
 
-  // Desglosar dosis por hora
+  // Sincronizar si cambian las props
+  const takenSet = localTaken
+
+  // Desglosar dosis
   const allDoses: Array<{
     medId: string
     name: string
@@ -77,6 +83,26 @@ export default function MedsClientView({
   const pendingDoses = allDoses.filter((d) => !d.isTaken)
   const nextDose = pendingDoses.find((d) => d.time >= currentHM) || pendingDoses[0]
 
+  async function handleToggle(fd: FormData, medId: string, time: string, currentTaken: boolean) {
+    const key = `${medId}_${time}`
+    // Cambio optimista instantáneo
+    setLocalTaken((prev) => {
+      const next = new Set(prev)
+      if (currentTaken) {
+        next.delete(key)
+        next.delete(`${medId}_`)
+      } else {
+        next.add(key)
+      }
+      return next
+    })
+
+    startTransition(async () => {
+      await toggleDoseAction(fd)
+      router.refresh()
+    })
+  }
+
   return (
     <div style={{ maxWidth: '600px', margin: '0 auto', padding: '1rem' }}>
       <header style={{ marginBottom: '1.5rem' }}>
@@ -90,7 +116,7 @@ export default function MedsClientView({
 
       <PushSubscriptionManager familyId={familyId} />
 
-      {/* Tarjeta: Hoy */}
+      {/* Lista de hoy */}
       <section
         style={{
           backgroundColor: '#131d2a',
@@ -133,11 +159,9 @@ export default function MedsClientView({
                 >
                   <div style={{ display: 'flex', alignItems: 'center', gap: '0.85rem' }}>
                     <form
-                      action={(fd) => {
-                        startTransition(async () => {
-                          await toggleDoseAction(fd)
-                        })
-                      }}
+                      action={(fd) =>
+                        handleToggle(fd, doseItem.medId, doseItem.time, doseItem.isTaken)
+                      }
                     >
                       <input type="hidden" name="medicationId" value={doseItem.medId} />
                       <input type="hidden" name="date" value={todayStr} />
@@ -209,7 +233,6 @@ export default function MedsClientView({
                       </span>
                     )}
 
-                    {/* Botón lápiz para modificar o borrar */}
                     <button
                       type="button"
                       onClick={() => setEditingMed(doseItem.originalMed)}
@@ -234,7 +257,7 @@ export default function MedsClientView({
         )}
       </section>
 
-      {/* Formulario Añadir Medicamento */}
+      {/* Formulario Añadir */}
       <section
         style={{
           backgroundColor: '#131d2a',
@@ -247,7 +270,15 @@ export default function MedsClientView({
           Añadir medicamento
         </h2>
 
-        <form action={addMedicationAction} style={{ display: 'flex', flexDirection: 'column', gap: '1rem' }}>
+        <form
+          action={async (fd) => {
+            startTransition(async () => {
+              await addMedicationAction(fd)
+              router.refresh()
+            })
+          }}
+          style={{ display: 'flex', flexDirection: 'column', gap: '1rem' }}
+        >
           <div>
             <label style={{ display: 'block', fontSize: '0.85rem', color: '#94a3b8', marginBottom: '0.4rem' }}>
               Para quién
@@ -336,6 +367,7 @@ export default function MedsClientView({
 
           <button
             type="submit"
+            disabled={isPending}
             style={{
               marginTop: '0.5rem',
               padding: '0.85rem',
@@ -348,12 +380,12 @@ export default function MedsClientView({
               cursor: 'pointer',
             }}
           >
-            Guardar medicamento
+            {isPending ? 'Guardando...' : 'Guardar medicamento'}
           </button>
         </form>
       </section>
 
-      {/* Modal para Modificar o Eliminar Medicina */}
+      {/* Modal para Modificar o Eliminar */}
       {editingMed && (
         <div
           style={{
@@ -390,8 +422,11 @@ export default function MedsClientView({
 
             <form
               action={async (fd) => {
-                await updateMedicationAction(fd)
-                setEditingMed(null)
+                startTransition(async () => {
+                  await updateMedicationAction(fd)
+                  setEditingMed(null)
+                  router.refresh()
+                })
               }}
               style={{ display: 'flex', flexDirection: 'column', gap: '0.85rem' }}
             >
@@ -482,6 +517,7 @@ export default function MedsClientView({
               <div style={{ display: 'flex', gap: '0.75rem', marginTop: '0.5rem' }}>
                 <button
                   type="submit"
+                  disabled={isPending}
                   style={{
                     flex: 1,
                     padding: '0.75rem',
@@ -493,17 +529,19 @@ export default function MedsClientView({
                     cursor: 'pointer',
                   }}
                 >
-                  Guardar cambios
+                  {isPending ? 'Guardando...' : 'Guardar cambios'}
                 </button>
               </div>
             </form>
 
-            {/* Borrar Medicina */}
             <form
               action={async (fd) => {
                 if (confirm(`¿Seguro que deseas eliminar "${editingMed.name}"?`)) {
-                  await deleteMedicationAction(fd)
-                  setEditingMed(null)
+                  startTransition(async () => {
+                    await deleteMedicationAction(fd)
+                    setEditingMed(null)
+                    router.refresh()
+                  })
                 }
               }}
               style={{ marginTop: '0.75rem' }}
@@ -511,6 +549,7 @@ export default function MedsClientView({
               <input type="hidden" name="id" value={editingMed.id} />
               <button
                 type="submit"
+                disabled={isPending}
                 style={{
                   width: '100%',
                   padding: '0.65rem',

@@ -35,8 +35,9 @@ export async function addMedicationAction(formData: FormData) {
     const assignedTo = String(formData.get('assignedTo') || '').trim()
     const timesRaw = String(formData.get('times') || '').trim()
 
-    if (!name) return
+    if (!name) return { ok: false, error: 'Falta el nombre' }
 
+    // Obtener un member_id válido si existe
     const { data: members } = await supabase
       .from('members')
       .select('id, name')
@@ -65,12 +66,18 @@ export async function addMedicationAction(formData: FormData) {
       payload.member_id = defaultMemberId
     }
 
-    await supabase.from('medications').insert(payload)
+    const { error } = await supabase.from('medications').insert(payload)
+    if (error) {
+      console.error('Error insert medication:', error)
+      return { ok: false, error: error.message }
+    }
 
     revalidatePath('/meds')
     revalidatePath('/')
-  } catch (err) {
-    console.error('Error addMedicationAction:', err)
+    return { ok: true }
+  } catch (err: any) {
+    console.error('Excepción addMedicationAction:', err)
+    return { ok: false, error: err.message }
   }
 }
 
@@ -85,7 +92,7 @@ export async function updateMedicationAction(formData: FormData) {
     const assignedTo = String(formData.get('assignedTo') || '').trim()
     const timesRaw = String(formData.get('times') || '').trim()
 
-    if (!id || !name) return
+    if (!id || !name) return { ok: false, error: 'Datos incompletos' }
 
     const times = timesRaw
       .split(',')
@@ -94,7 +101,7 @@ export async function updateMedicationAction(formData: FormData) {
 
     const finalTimes = times.length > 0 ? times : ['08:00']
 
-    await supabase
+    const { error } = await supabase
       .from('medications')
       .update({
         name,
@@ -105,10 +112,17 @@ export async function updateMedicationAction(formData: FormData) {
       .eq('id', id)
       .eq('family_id', ctx.familyId)
 
+    if (error) {
+      console.error('Error updateMedicationAction:', error)
+      return { ok: false, error: error.message }
+    }
+
     revalidatePath('/meds')
     revalidatePath('/')
-  } catch (err) {
-    console.error('Error updateMedicationAction:', err)
+    return { ok: true }
+  } catch (err: any) {
+    console.error('Excepción updateMedicationAction:', err)
+    return { ok: false, error: err.message }
   }
 }
 
@@ -118,18 +132,25 @@ export async function deleteMedicationAction(formData: FormData) {
     const supabase = await getSupabase()
 
     const id = String(formData.get('id') || '')
-    if (!id) return
+    if (!id) return { ok: false }
 
-    await supabase
+    const { error } = await supabase
       .from('medications')
       .delete()
       .eq('id', id)
       .eq('family_id', ctx.familyId)
 
+    if (error) {
+      console.error('Error deleteMedicationAction:', error)
+      return { ok: false, error: error.message }
+    }
+
     revalidatePath('/meds')
     revalidatePath('/')
-  } catch (err) {
-    console.error('Error deleteMedicationAction:', err)
+    return { ok: true }
+  } catch (err: any) {
+    console.error('Excepción deleteMedicationAction:', err)
+    return { ok: false, error: err.message }
   }
 }
 
@@ -143,19 +164,21 @@ export async function toggleDoseAction(formData: FormData) {
     const date = String(formData.get('date') || '')
     const isTaken = formData.get('isTaken') === 'true'
 
-    if (!medicationId || !date) return
+    if (!medicationId || !date) return { ok: false }
 
     if (isTaken) {
-      // Si ya está marcada, desmarcar (borrar log)
-      await supabase
+      // Desmarcar dosis
+      const { error } = await supabase
         .from('dose_logs')
         .delete()
         .eq('family_id', ctx.familyId)
         .eq('medication_id', medicationId)
         .eq('date', date)
         .eq('scheduled_time', scheduledTime)
+
+      if (error) console.error('Error delete dose_log:', error)
     } else {
-      // Obtener el member_id asociado a la medicina o al usuario activo
+      // 1. Averiguar si la medicina tiene member_id
       const { data: medData } = await supabase
         .from('medications')
         .select('member_id')
@@ -164,13 +187,30 @@ export async function toggleDoseAction(formData: FormData) {
 
       let memberId = medData?.member_id
 
+      // 2. Si no tiene, buscar o crear un miembro por defecto para que la foreign key no falle
       if (!memberId) {
         const { data: members } = await supabase
           .from('members')
           .select('id')
           .eq('family_id', ctx.familyId)
           .limit(1)
-        memberId = members?.[0]?.id
+
+        if (members && members.length > 0) {
+          memberId = members[0].id
+        } else {
+          // Crear un miembro inicial para la familia
+          const { data: newMember } = await supabase
+            .from('members')
+            .insert({
+              family_id: ctx.familyId,
+              name: 'Marcelo',
+              role: 'parent',
+            })
+            .select('id')
+            .single()
+
+          memberId = newMember?.id
+        }
       }
 
       const logPayload: any = {
@@ -185,12 +225,18 @@ export async function toggleDoseAction(formData: FormData) {
         logPayload.member_id = memberId
       }
 
-      await supabase.from('dose_logs').insert(logPayload)
+      const { error } = await supabase.from('dose_logs').insert(logPayload)
+      if (error) {
+        console.error('Error insert dose_log:', error)
+        return { ok: false, error: error.message }
+      }
     }
 
     revalidatePath('/meds')
     revalidatePath('/')
-  } catch (err) {
-    console.error('Error toggleDoseAction:', err)
+    return { ok: true }
+  } catch (err: any) {
+    console.error('Excepción toggleDoseAction:', err)
+    return { ok: false, error: err.message }
   }
 }
