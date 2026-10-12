@@ -65,7 +65,9 @@ export default async function AjustesPage() {
                     </div>
                   </div>
 
-                  <form action={deleteFamilyMember.bind(null, member.id)}>
+                  {/* Formulario de eliminación con input hidden */}
+                  <form action={deleteFamilyMember}>
+                    <input type="hidden" name="memberId" value={member.id} />
                     <button
                       type="submit"
                       aria-label="Eliminar integrante"

@@ -11,39 +11,32 @@ export async function addFamilyMember(formData: FormData) {
   const type = (formData.get('type') as string) || 'person'
 
   if (!name || name.trim() === '') {
-    return { error: 'El nombre es obligatorio' }
+    return
   }
 
-  const { error } = await supabase.from('family_members').insert({
+  await supabase.from('family_members').insert({
     family_id: familyId,
     name: name.trim(),
     role,
     type,
   })
 
-  if (error) {
-    return { error: error.message }
-  }
-
   revalidatePath('/ajustes')
   revalidatePath('/')
-  return { success: true }
 }
 
-export async function deleteFamilyMember(memberId: string) {
+export async function deleteFamilyMember(formData: FormData) {
   const { supabase, familyId } = await getContext()
+  const memberId = formData.get('memberId') as string
 
-  const { error } = await supabase
+  if (!memberId) return
+
+  await supabase
     .from('family_members')
     .delete()
     .eq('id', memberId)
     .eq('family_id', familyId)
 
-  if (error) {
-    return { error: error.message }
-  }
-
   revalidatePath('/ajustes')
   revalidatePath('/')
-  return { success: true }
 }
