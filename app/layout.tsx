@@ -5,19 +5,13 @@ export const metadata: Metadata = {
   title: 'Casa',
   description: 'Organización familiar',
   manifest: '/manifest.webmanifest',
-  appleWebApp: {
-    capable: true,
-    statusBarStyle: 'default',
-    title: 'Casa',
-  },
   icons: {
-    icon: '/icon-192.png',
-    apple: '/icon-192.png',
+    icon: '/icon-192.webp',
   },
 }
 
 export const viewport: Viewport = {
-  themeColor: '#1f4e8c',
+  themeColor: '#CDF6F9', // Color de la barra de estado y navegación en Android
   viewportFit: 'cover',
 }
 
