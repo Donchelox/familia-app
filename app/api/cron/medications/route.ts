@@ -32,11 +32,11 @@ export async function GET(req: Request) {
     hour12: false,
   }).format(now)
 
-  // Buscar medicamentos programados
+  // Buscar medicamentos cuyo array 'times' contenga la hora actual (HH:MM)
   const { data: meds, error: medsErr } = await supabase
     .from('medications')
-    .select('id, name, dose, schedule_time, family_id')
-    .eq('schedule_time', currentHM)
+    .select('id, name, dose, times, family_id')
+    .contains('times', [currentHM])
 
   if (medsErr || !meds || meds.length === 0) {
     return NextResponse.json({ message: `Sin dosis a las ${currentHM}` })

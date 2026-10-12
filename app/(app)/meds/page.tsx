@@ -6,6 +6,14 @@ import { addMedication, toggleDose } from '@/app/actions/meds'
 
 export const dynamic = 'force-dynamic'
 
+interface Medication {
+  id: string
+  name: string
+  dose: string | null
+  times: string[]
+  assigned_to: string | null
+}
+
 export default async function MedsPage() {
   const ctx = await getContext()
   const cookieStore = await cookies()
@@ -27,28 +35,60 @@ export default async function MedsPage() {
     }
   )
 
-  // Obtener lista de medicamentos de la familia
-  const { data: meds } = await supabase
+  // 1. Obtener medicamentos de la familia
+  const { data: medsData } = await supabase
     .from('medications')
-    .select('*')
+    .select('id, name, dose, times, assigned_to')
     .eq('family_id', ctx.familyId)
-    .order('schedule_time', { ascending: true })
 
-  // Obtener fecha de hoy en formato YYYY-MM-DD (Chile)
+  const meds: Medication[] = (medsData as Medication[]) || []
+
+  // 2. Fecha de hoy en formato YYYY-MM-DD (Chile)
   const todayStr = new Intl.DateTimeFormat('en-CA', {
     timeZone: 'America/Santiago',
   }).format(new Date())
 
-  // Obtener dosis registradas hoy
+  // 3. Consultar dosis tomadas hoy
   const { data: doseLogs } = await supabase
     .from('dose_logs')
-    .select('medication_id')
+    .select('medication_id, scheduled_time')
     .eq('family_id', ctx.familyId)
-    .eq('taken_date', todayStr)
+    .eq('date', todayStr)
 
-  const takenIds = new Set((doseLogs || []).map((d) => d.medication_id))
+  // Conjunto de dosis tomadas: "medId_hora"
+  const takenSet = new Set(
+    (doseLogs || []).map((d) => `${d.medication_id}_${d.scheduled_time}`)
+  )
 
-  // Hora actual para determinar cuál es la "Próxima"
+  // 4. Aplanar la lista de dosis del día según las horas programadas
+  interface ScheduledDose {
+    medId: string
+    name: string
+    dose: string | null
+    time: string
+    assignedTo: string | null
+    isTaken: boolean
+  }
+
+  const allDoses: ScheduledDose[] = []
+  meds.forEach((med) => {
+    const times = Array.isArray(med.times) && med.times.length > 0 ? med.times : ['08:00']
+    times.forEach((t) => {
+      allDoses.push({
+        medId: med.id,
+        name: med.name,
+        dose: med.dose,
+        time: t,
+        assignedTo: med.assigned_to,
+        isTaken: takenSet.has(`${med.id}_${t}`),
+      })
+    })
+  })
+
+  // Ordenar cronológicamente por hora (ej: 08:00 antes de 14:00)
+  allDoses.sort((a, b) => a.time.localeCompare(b.time))
+
+  // Hora actual en Chile (HH:MM)
   const currentHM = new Intl.DateTimeFormat('es-CL', {
     timeZone: 'America/Santiago',
     hour: '2-digit',
@@ -56,8 +96,8 @@ export default async function MedsPage() {
     hour12: false,
   }).format(new Date())
 
-  const pendingMeds = (meds || []).filter((m) => !takenIds.has(m.id))
-  const nextMed = pendingMeds.find((m) => m.schedule_time >= currentHM) || pendingMeds[0]
+  const pendingDoses = allDoses.filter((d) => !d.isTaken)
+  const nextDose = pendingDoses.find((d) => d.time >= currentHM) || pendingDoses[0]
 
   return (
     <div style={{ maxWidth: '600px', margin: '0 auto', padding: '1rem' }}>
@@ -70,10 +110,10 @@ export default async function MedsPage() {
         </p>
       </header>
 
-      {/* Botón para solicitar y activar las notificaciones Push nativas */}
+      {/* Botón para registrar dispositivo en Web Push */}
       <PushSubscriptionManager familyId={ctx.familyId} />
 
-      {/* Tarjeta: Hoy */}
+      {/* Lista de dosis programadas para hoy */}
       <section
         style={{
           backgroundColor: '#131d2a',
@@ -87,45 +127,42 @@ export default async function MedsPage() {
           Hoy
         </h2>
 
-        {(!meds || meds.length === 0) ? (
+        {allDoses.length === 0 ? (
           <p style={{ color: '#64748b', margin: 0, fontSize: '0.9rem' }}>
             No hay medicamentos programados.
           </p>
         ) : (
           <div style={{ display: 'flex', flexDirection: 'column', gap: '0.85rem' }}>
-            {meds.map((med) => {
-              const isTaken = takenIds.has(med.id)
-              const isNext = nextMed && nextMed.id === med.id && !isTaken
+            {allDoses.map((doseItem, idx) => {
+              const isNext = nextDose && nextDose.medId === doseItem.medId && nextDose.time === doseItem.time && !doseItem.isTaken
 
               return (
                 <div
-                  key={med.id}
+                  key={`${doseItem.medId}_${doseItem.time}_${idx}`}
                   style={{
                     display: 'flex',
                     alignItems: 'center',
                     justifyContent: 'space-between',
                     padding: '0.75rem',
                     borderRadius: '12px',
-                    backgroundColor: isTaken ? '#0f172280' : '#1e293b50',
+                    backgroundColor: doseItem.isTaken ? '#0f172280' : '#1e293b50',
                     border: '1px solid',
                     borderColor: isNext ? '#CDF6F9' : '#334155',
                   }}
                 >
                   <div style={{ display: 'flex', alignItems: 'center', gap: '0.85rem' }}>
-                    {/* Form para marcar/desmarcar dosis */}
                     <form action={toggleDose}>
-                      <input type="hidden" name="medId" value={med.id} />
-                      <input type="hidden" name="familyId" value={ctx.familyId} />
+                      <input type="hidden" name="medicationId" value={doseItem.medId} />
                       <input type="hidden" name="date" value={todayStr} />
-                      <input type="hidden" name="isTaken" value={isTaken ? 'true' : 'false'} />
+                      <input type="hidden" name="scheduledTime" value={doseItem.time} />
                       <button
                         type="submit"
                         style={{
                           width: '28px',
                           height: '28px',
                           borderRadius: '8px',
-                          backgroundColor: isTaken ? '#3b82f6' : 'transparent',
-                          border: isTaken ? 'none' : '2px solid #64748b',
+                          backgroundColor: doseItem.isTaken ? '#3b82f6' : 'transparent',
+                          border: doseItem.isTaken ? 'none' : '2px solid #64748b',
                           color: '#fff',
                           display: 'flex',
                           alignItems: 'center',
@@ -134,7 +171,7 @@ export default async function MedsPage() {
                           fontWeight: 700,
                         }}
                       >
-                        {isTaken ? '✓' : ''}
+                        {doseItem.isTaken ? '✓' : ''}
                       </button>
                     </form>
 
@@ -143,24 +180,24 @@ export default async function MedsPage() {
                         style={{
                           fontWeight: 700,
                           fontSize: '1.05rem',
-                          color: isTaken ? '#64748b' : '#f8fafc',
+                          color: doseItem.isTaken ? '#64748b' : '#f8fafc',
                         }}
                       >
-                        {med.schedule_time || '--:--'}
+                        {doseItem.time}
                       </span>
                       <div>
                         <div
                           style={{
                             fontSize: '0.95rem',
                             fontWeight: 600,
-                            color: isTaken ? '#64748b' : '#f1f5f9',
-                            textDecoration: isTaken ? 'line-through' : 'none',
+                            color: doseItem.isTaken ? '#64748b' : '#f1f5f9',
+                            textDecoration: doseItem.isTaken ? 'line-through' : 'none',
                           }}
                         >
-                          {med.name} {med.dose ? `· ${med.dose}` : ''}
+                          {doseItem.name} {doseItem.dose ? `· ${doseItem.dose}` : ''}
                         </div>
                         <div style={{ fontSize: '0.8rem', color: '#64748b' }}>
-                          {med.assigned_to || ctx.familyName}
+                          {doseItem.assignedTo || 'Todos'}
                         </div>
                       </div>
                     </div>
@@ -188,7 +225,7 @@ export default async function MedsPage() {
         )}
       </section>
 
-      {/* Formulario: Añadir medicamento */}
+      {/* Formulario para añadir medicamento */}
       <section
         style={{
           backgroundColor: '#131d2a',
@@ -202,8 +239,6 @@ export default async function MedsPage() {
         </h2>
 
         <form action={addMedication} style={{ display: 'flex', flexDirection: 'column', gap: '1rem' }}>
-          <input type="hidden" name="familyId" value={ctx.familyId} />
-
           <div>
             <label style={{ display: 'block', fontSize: '0.85rem', color: '#94a3b8', marginBottom: '0.4rem' }}>
               Para quién
@@ -270,11 +305,12 @@ export default async function MedsPage() {
 
           <div>
             <label style={{ display: 'block', fontSize: '0.85rem', color: '#94a3b8', marginBottom: '0.4rem' }}>
-              Horas (separadas por coma o formato HH:MM)
+              Horas (separadas por coma)
             </label>
+            {/* ⚠️ El name debe ser 'times' para que coincida con app/actions/meds.ts */}
             <input
               type="text"
-              name="scheduleTime"
+              name="times"
               required
               placeholder="Ej: 08:00, 14:00, 20:00"
               style={{
