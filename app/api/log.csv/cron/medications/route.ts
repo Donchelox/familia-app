@@ -23,7 +23,7 @@ export async function GET(req: Request) {
     process.env.VAPID_PRIVATE_KEY!
   )
 
-  // Hora actual en Chile (HH:MM)
+  // Obtener hora actual en Chile (HH:MM)
   const now = new Date()
   const currentHM = new Intl.DateTimeFormat('es-CL', {
     timeZone: 'America/Santiago',
@@ -32,14 +32,14 @@ export async function GET(req: Request) {
     hour12: false,
   }).format(now)
 
-  // Buscar medicamentos programados para esta hora
+  // Consultar medicamentos programados para esta hora
   const { data: meds, error: medsErr } = await supabase
     .from('medications')
     .select('id, name, dose, schedule_time, family_id')
     .eq('schedule_time', currentHM)
 
   if (medsErr || !meds || meds.length === 0) {
-    return NextResponse.json({ message: `Sin dosis a las ${currentHM}` })
+    return NextResponse.json({ message: `Sin dosis programadas a las ${currentHM}` })
   }
 
   const results = []
