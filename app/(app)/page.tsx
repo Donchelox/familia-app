@@ -81,22 +81,25 @@ export default async function Inicio() {
     })
   })
 
-  // Estilo de degradado exacto de Figma:
   const cardGradientStyle = {
     background: 'linear-gradient(134.95deg, #F76911 47.75%, #F2A957 100%)',
   }
 
   return (
-    <div className="w-full min-h-screen bg-[#131313] flex flex-col items-center">
+    <div className="w-full min-h-screen bg-[#131313] p-0 m-0 flex flex-col items-center">
       {/* Contenedor Figma 402px */}
-      <div className="w-full max-w-[402px] px-5 pt-7 pb-32 flex flex-col gap-6">
+      <div className="w-full max-w-[402px] px-5 pt-6 pb-28 flex flex-col gap-6">
         
-        {/* HEADER: Avatar, Saludo y Campana */}
+        {/* HEADER: Avatar con enlace a /ajustes, Saludo y Campana */}
         <header className="flex items-center justify-between">
           <div className="flex items-center gap-3">
-            <div className="w-12 h-12 rounded-full bg-[#F76911] text-white flex items-center justify-center font-bold text-lg shadow-md shrink-0">
+            <Link
+              href="/ajustes"
+              aria-label="Ir a ajustes"
+              className="w-12 h-12 rounded-full bg-[#F76911] text-white flex items-center justify-center font-bold text-lg shadow-md shrink-0 transition-transform active:scale-95 no-underline hover:opacity-90"
+            >
               {initials}
-            </div>
+            </Link>
             <div className="leading-tight">
               <span className="text-sm font-normal text-neutral-300">Hola</span>
               <h1 className="text-2xl font-black tracking-tight text-white">{userName}</h1>
@@ -117,7 +120,7 @@ export default async function Inicio() {
 
         {/* GRID DE ACCESOS DIRECTOS */}
         <section className="flex flex-col gap-3">
-          {/* Fila 1: Compras y Feria (2 columnas anchas) */}
+          {/* Fila 1: Compras y Feria (2 tarjetas anchas) */}
           <div className="grid grid-cols-2 gap-3">
             {/* Compras */}
             <Link
@@ -156,7 +159,7 @@ export default async function Inicio() {
             </Link>
           </div>
 
-          {/* Fila 2: Medicinas, Colegio, Tareas (3 tarjetas cuadradas de 120-130px) */}
+          {/* Fila 2: Medicinas, Colegio, Tareas */}
           <div className="grid grid-cols-3 gap-2.5">
             {/* Medicinas */}
             <Link
