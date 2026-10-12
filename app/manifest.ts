@@ -8,8 +8,8 @@ export default function manifest(): MetadataRoute.Manifest {
     start_url: '/',
     display: 'standalone',
     orientation: 'portrait',
-    background_color: '#0f1722', // O '#CDF6F9' si quieres que el fondo del splash nativo sea claro
-    theme_color: '#CDF6F9',      // Color de la barra de estado en Android
+    background_color: '#131313', // O '#CDF6F9' si quieres que el fondo del splash nativo sea claro
+    theme_color: '#131313',      // Color de la barra de estado en Android
     icons: [
       {
         src: '/icon-192.webp',
