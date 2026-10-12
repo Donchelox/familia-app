@@ -3,7 +3,12 @@
 import Link from 'next/link'
 import { usePathname } from 'next/navigation'
 
-export function Nav() {
+interface NavProps {
+  family?: string
+  role?: string
+}
+
+export function Nav({ family, role }: NavProps) {
   const pathname = usePathname()
 
   const isActive = (path: string) => {
