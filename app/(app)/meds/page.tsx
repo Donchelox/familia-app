@@ -1,104 +1,78 @@
-import { getContext } from '@/lib/family'
-import { createServerClient } from '@supabase/ssr'
-import { cookies } from 'next/headers'
+'use client'
+
+import { useState, useTransition } from 'react'
 import PushSubscriptionManager from '@/components/PushSubscriptionManager'
-import { addMedicationAction, toggleDoseAction } from '@/app/actions/meds'
+import {
+  addMedicationAction,
+  updateMedicationAction,
+  deleteMedicationAction,
+  toggleDoseAction,
+} from '@/app/actions/meds'
 
-export const dynamic = 'force-dynamic'
-
-interface ScheduledDose {
-  medId: string
+interface Medication {
+  id: string
   name: string
   dose: string | null
-  time: string
-  assignedTo: string | null
-  isTaken: boolean
+  times: string[] | null
+  assigned_to: string | null
 }
 
-export default async function MedsPage() {
-  const ctx = await getContext()
-  const cookieStore = await cookies()
+interface MedsClientViewProps {
+  familyId: string
+  meds: Medication[]
+  takenKeys: string[]
+  todayStr: string
+  currentHM: string
+}
 
-  const supabase = createServerClient(
-    process.env.NEXT_PUBLIC_SUPABASE_URL!,
-    process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!,
-    {
-      cookies: {
-        getAll() {
-          return cookieStore.getAll()
-        },
-        setAll(cookiesToSet) {
-          cookiesToSet.forEach(({ name, value, options }) =>
-            cookieStore.set(name, value, options)
-          )
-        },
-      },
-    }
-  )
+export function MedsClientView({
+  familyId,
+  meds,
+  takenKeys,
+  todayStr,
+  currentHM,
+}: MedsClientViewProps) {
+  const [editingMed, setEditingMed] = useState<Medication | null>(null)
+  const [isPending, startTransition] = useTransition()
 
-  // 1. Obtener todos los medicamentos de la familia
-  const { data: rawMeds } = await supabase
-    .from('medications')
-    .select('*')
-    .eq('family_id', ctx.familyId)
+  const takenSet = new Set(takenKeys)
 
-  const meds = rawMeds || []
+  // Desglosar dosis
+  const allDoses: Array<{
+    medId: string
+    name: string
+    dose: string | null
+    time: string
+    assignedTo: string | null
+    isTaken: boolean
+    originalMed: Medication
+  }> = []
 
-  // 2. Fecha actual en formato YYYY-MM-DD (Chile)
-  const todayStr = new Intl.DateTimeFormat('en-CA', {
-    timeZone: 'America/Santiago',
-  }).format(new Date())
-
-  // 3. Consultar dosis marcadas como tomadas hoy
-  const { data: doseLogs } = await supabase
-    .from('dose_logs')
-    .select('medication_id, scheduled_time')
-    .eq('family_id', ctx.familyId)
-    .eq('date', todayStr)
-
-  const takenSet = new Set(
-    (doseLogs || []).map((d) => `${d.medication_id}_${d.scheduled_time || ''}`)
-  )
-
-  // 4. Aplanar todas las dosis programadas sin descartar ninguna fila
-  const allDoses: ScheduledDose[] = []
-
-  meds.forEach((med: any) => {
+  meds.forEach((med) => {
     let tList: string[] = []
     if (Array.isArray(med.times) && med.times.length > 0) {
       tList = med.times
-    } else if (typeof med.times === 'string' && med.times.trim().length > 0) {
-      tList = med.times.split(',').map((s: string) => s.trim())
+    } else if (typeof med.times === 'string' && (med.times as string).trim().length > 0) {
+      tList = (med.times as string).split(',').map((s) => s.trim())
     } else {
       tList = ['08:00']
     }
 
     tList.forEach((t) => {
-      const isTaken =
-        takenSet.has(`${med.id}_${t}`) ||
-        takenSet.has(`${med.id}_`)
-
+      const isTaken = takenSet.has(`${med.id}_${t}`) || takenSet.has(`${med.id}_`)
       allDoses.push({
         medId: med.id,
         name: med.name,
         dose: med.dose,
         time: t,
-        assignedTo: med.assigned_to || med.member_name || 'Todos',
+        assignedTo: med.assigned_to || 'Todos',
         isTaken,
+        originalMed: med,
       })
     })
   })
 
-  // Ordenar cronológicamente por hora (ej. 13:00, 14:55, 18:00)
   allDoses.sort((a, b) => a.time.localeCompare(b.time))
-
-  // Hora actual en Chile (HH:MM)
-  const currentHM = new Intl.DateTimeFormat('es-CL', {
-    timeZone: 'America/Santiago',
-    hour: '2-digit',
-    minute: '2-digit',
-    hour12: false,
-  }).format(new Date())
 
   const pendingDoses = allDoses.filter((d) => !d.isTaken)
   const nextDose = pendingDoses.find((d) => d.time >= currentHM) || pendingDoses[0]
@@ -114,10 +88,9 @@ export default async function MedsPage() {
         </p>
       </header>
 
-      {/* Botón Push PWA */}
-      <PushSubscriptionManager familyId={ctx.familyId} />
+      <PushSubscriptionManager familyId={familyId} />
 
-      {/* Lista de medicamentos para Hoy */}
+      {/* Tarjeta: Hoy */}
       <section
         style={{
           backgroundColor: '#131d2a',
@@ -159,13 +132,20 @@ export default async function MedsPage() {
                   }}
                 >
                   <div style={{ display: 'flex', alignItems: 'center', gap: '0.85rem' }}>
-                    <form action={toggleDoseAction}>
+                    <form
+                      action={(fd) => {
+                        startTransition(async () => {
+                          await toggleDoseAction(fd)
+                        })
+                      }}
+                    >
                       <input type="hidden" name="medicationId" value={doseItem.medId} />
                       <input type="hidden" name="date" value={todayStr} />
                       <input type="hidden" name="scheduledTime" value={doseItem.time} />
                       <input type="hidden" name="isTaken" value={doseItem.isTaken ? 'true' : 'false'} />
                       <button
                         type="submit"
+                        disabled={isPending}
                         style={{
                           width: '28px',
                           height: '28px',
@@ -212,21 +192,41 @@ export default async function MedsPage() {
                     </div>
                   </div>
 
-                  {isNext && (
-                    <span
+                  <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
+                    {isNext && (
+                      <span
+                        style={{
+                          padding: '0.2rem 0.55rem',
+                          borderRadius: '20px',
+                          backgroundColor: '#CDF6F920',
+                          color: '#CDF6F9',
+                          fontSize: '0.75rem',
+                          fontWeight: 600,
+                          border: '1px solid #CDF6F940',
+                        }}
+                      >
+                        Próxima
+                      </span>
+                    )}
+
+                    {/* Botón para editar */}
+                    <button
+                      type="button"
+                      onClick={() => setEditingMed(doseItem.originalMed)}
+                      title="Modificar medicina"
                       style={{
-                        padding: '0.2rem 0.55rem',
-                        borderRadius: '20px',
-                        backgroundColor: '#CDF6F920',
-                        color: '#CDF6F9',
-                        fontSize: '0.75rem',
-                        fontWeight: 600,
-                        border: '1px solid #CDF6F940',
+                        background: 'transparent',
+                        border: 'none',
+                        color: '#94a3b8',
+                        cursor: 'pointer',
+                        padding: '0.3rem',
+                        fontSize: '0.9rem',
+                        borderRadius: '6px',
                       }}
                     >
-                      Próxima
-                    </span>
-                  )}
+                      ✏️
+                    </button>
+                  </div>
                 </div>
               )
             })}
@@ -352,6 +352,243 @@ export default async function MedsPage() {
           </button>
         </form>
       </section>
+
+      {/* Modal para Modificar o Eliminar Medicina */}
+      {editingMed && (
+        <div
+          style={{
+            position: 'fixed',
+            inset: 0,
+            backgroundColor: '#000000aa',
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'center',
+            padding: '1rem',
+            zIndex: 50,
+          }}
+        >
+          <div
+            style={{
+              backgroundColor: '#131d2a',
+              borderRadius: '16px',
+              padding: '1.5rem',
+              maxWidth: '450px',
+              width: '100%',
+              border: '1px solid #334155',
+            }}
+          >
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '1rem' }}>
+              <h3 style={{ margin: 0, color: '#f8fafc', fontSize: '1.2rem' }}>Modificar medicina</h3>
+              <button
+                type="button"
+                onClick={() => setEditingMed(null)}
+                style={{ background: 'transparent', border: 'none', color: '#94a3b8', fontSize: '1.2rem', cursor: 'pointer' }}
+              >
+                ✕
+              </button>
+            </div>
+
+            <form
+              action={async (fd) => {
+                await updateMedicationAction(fd)
+                setEditingMed(null)
+              }}
+              style={{ display: 'flex', flexDirection: 'column', gap: '0.85rem' }}
+            >
+              <input type="hidden" name="id" value={editingMed.id} />
+
+              <div>
+                <label style={{ display: 'block', fontSize: '0.8rem', color: '#94a3b8', marginBottom: '0.3rem' }}>
+                  Para quién
+                </label>
+                <input
+                  type="text"
+                  name="assignedTo"
+                  defaultValue={editingMed.assigned_to || ''}
+                  style={{
+                    width: '100%',
+                    padding: '0.65rem',
+                    borderRadius: '8px',
+                    backgroundColor: '#0f1722',
+                    border: '1px solid #334155',
+                    color: '#fff',
+                    boxSizing: 'border-box',
+                  }}
+                />
+              </div>
+
+              <div>
+                <label style={{ display: 'block', fontSize: '0.8rem', color: '#94a3b8', marginBottom: '0.3rem' }}>
+                  Nombre
+                </label>
+                <input
+                  type="text"
+                  name="name"
+                  required
+                  defaultValue={editingMed.name}
+                  style={{
+                    width: '100%',
+                    padding: '0.65rem',
+                    borderRadius: '8px',
+                    backgroundColor: '#0f1722',
+                    border: '1px solid #334155',
+                    color: '#fff',
+                    boxSizing: 'border-box',
+                  }}
+                />
+              </div>
+
+              <div>
+                <label style={{ display: 'block', fontSize: '0.8rem', color: '#94a3b8', marginBottom: '0.3rem' }}>
+                  Dosis
+                </label>
+                <input
+                  type="text"
+                  name="dose"
+                  defaultValue={editingMed.dose || ''}
+                  style={{
+                    width: '100%',
+                    padding: '0.65rem',
+                    borderRadius: '8px',
+                    backgroundColor: '#0f1722',
+                    border: '1px solid #334155',
+                    color: '#fff',
+                    boxSizing: 'border-box',
+                  }}
+                />
+              </div>
+
+              <div>
+                <label style={{ display: 'block', fontSize: '0.8rem', color: '#94a3b8', marginBottom: '0.3rem' }}>
+                  Horas (separadas por coma)
+                </label>
+                <input
+                  type="text"
+                  name="times"
+                  required
+                  defaultValue={Array.isArray(editingMed.times) ? editingMed.times.join(', ') : (editingMed.times || '')}
+                  style={{
+                    width: '100%',
+                    padding: '0.65rem',
+                    borderRadius: '8px',
+                    backgroundColor: '#0f1722',
+                    border: '1px solid #334155',
+                    color: '#fff',
+                    boxSizing: 'border-box',
+                  }}
+                />
+              </div>
+
+              <div style={{ display: 'flex', gap: '0.75rem', marginTop: '0.5rem' }}>
+                <button
+                  type="submit"
+                  style={{
+                    flex: 1,
+                    padding: '0.75rem',
+                    borderRadius: '8px',
+                    backgroundColor: '#CDF6F9',
+                    color: '#0f1722',
+                    fontWeight: 700,
+                    border: 'none',
+                    cursor: 'pointer',
+                  }}
+                >
+                  Guardar cambios
+                </button>
+              </div>
+            </form>
+
+            {/* Formulario de Borrado */}
+            <form
+              action={async (fd) => {
+                if (confirm(`¿Seguro que deseas eliminar "${editingMed.name}"?`)) {
+                  await deleteMedicationAction(fd)
+                  setEditingMed(null)
+                }
+              }}
+              style={{ marginTop: '0.75rem' }}
+            >
+              <input type="hidden" name="id" value={editingMed.id} />
+              <button
+                type="submit"
+                style={{
+                  width: '100%',
+                  padding: '0.65rem',
+                  borderRadius: '8px',
+                  backgroundColor: '#7f1d1d30',
+                  color: '#f87171',
+                  border: '1px solid #7f1d1d80',
+                  cursor: 'pointer',
+                  fontWeight: 600,
+                }}
+              >
+                Eliminar medicina
+              </button>
+            </form>
+          </div>
+        </div>
+      )}
     </div>
+  )
+}
+
+// Componente del servidor principal
+import { getContext as getContextServer } from '@/lib/family'
+import { createServerClient as createServerClientAsync } from '@supabase/ssr'
+import { cookies as cookiesServer } from 'next/headers'
+
+export default async function MedsPageWrapper() {
+  const ctx = await getContextServer()
+  const cookieStore = await cookiesServer()
+
+  const supabase = createServerClientAsync(
+    process.env.NEXT_PUBLIC_SUPABASE_URL!,
+    process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!,
+    {
+      cookies: {
+        getAll() {
+          return cookieStore.getAll()
+        },
+        setAll(cookiesToSet) {
+          cookiesToSet.forEach(({ name, value, options }) =>
+            cookieStore.set(name, value, options)
+          )
+        },
+      },
+    }
+  )
+
+  const { data: rawMeds } = await supabase
+    .from('medications')
+    .select('*')
+    .eq('family_id', ctx.familyId)
+
+  const todayStr = new Intl.DateTimeFormat('en-CA', {
+    timeZone: 'America/Santiago',
+  }).format(new Date())
+
+  const { data: doseLogs } = await supabase
+    .from('dose_logs')
+    .select('medication_id, scheduled_time')
+    .eq('family_id', ctx.familyId)
+    .eq('date', todayStr)
+
+  const takenKeys = (doseLogs || []).map((d) => `${d.medication_id}_${d.scheduled_time || ''}`)
+
+  const currentHM = new Intl.DateTimeFormat('es-CL', {
+    timeZone: 'America/Santiago',
+    hour: '2-digit',
+    minute: '2-digit',
+    hour12: false,
+  }).format(new Date())
+
+  return (
+    <MedsClientView
+      familyId={ctx.familyId}
+      meds={rawMeds || []}
+      takenKeys={takenKeys}
+      todayStr={todayStr}
+      currentHM={currentHM}
+    />
   )
 }
