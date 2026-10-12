@@ -72,18 +72,20 @@ export default async function Inicio() {
     .join('')
     .toUpperCase()
 
-  // 2. CONTEO DE COMPRAS Y FERIA
+  // 2. CONTEO SEPARADO DE COMPRAS (SÚPER) Y FERIA
   const shopItems = shopAllRes.data ?? []
+
   const feriaItems = shopItems.filter((item: any) => {
-    const loc = (item.location || item.category || item.place || '').toLowerCase()
-    return loc.includes('feria')
-  })
-  const superItems = shopItems.filter((item: any) => {
-    const loc = (item.location || item.category || item.place || '').toLowerCase()
-    return !loc.includes('feria')
+    const listVal = (item.list || item.location || item.category || '').toLowerCase()
+    return listVal === 'feria'
   })
 
-  const superCount = superItems.length > 0 ? superItems.length : shopItems.length
+  const superItems = shopItems.filter((item: any) => {
+    const listVal = (item.list || item.location || item.category || '').toLowerCase()
+    return listVal !== 'feria'
+  })
+
+  const superCount = superItems.length
   const feriaCount = feriaItems.length
 
   // 3. MEDICINAS PENDIENTES DE HOY
@@ -100,18 +102,20 @@ export default async function Inicio() {
     .filter((dose) => !taken.has(`${dose.id}|${dose.time}`))
     .sort((a, b) => a.time.localeCompare(b.time))
 
-  // 4. COLEGIO: Pruebas + Tareas escolares pendientes (tolerante a done null/false)
+  // 4. COLEGIO: Pruebas + Tareas escolares pendientes
   const allTests = testsRes.data ?? []
-  const hwItems = (hwRes.data ?? []).filter((h: any) => h.done === false || h.done === null || h.done === undefined)
+  const hwItems = (hwRes.data ?? []).filter(
+    (h: any) => h.done === false || h.done === null || h.done === undefined
+  )
   const schoolTotalCount = allTests.length + hwItems.length
 
   // 5. TAREAS GENERALES
   const generalTodosCount = todosRes.count ?? (todosRes.data?.length ?? 0)
 
-  // 6. TOTAL DE RECORDATORIOS / NOTIFICACIONES
+  // 6. RECORDATORIOS / NOTIFICACIONES
   const notificationCount = pendingMeds.length
 
-  // 7. LISTA DE PRÓXIMOS EVENTOS
+  // 7. PRÓXIMOS EVENTOS
   type EventItem = {
     id: string
     category: 'Colegio' | 'Medicinas' | 'Tareas' | 'Compras'
@@ -153,12 +157,13 @@ export default async function Inicio() {
   })
 
   shopItems.slice(0, 1).forEach((item: any) => {
+    const isFeriaItem = (item.list || item.location || '').toLowerCase() === 'feria'
     upcomingEvents.push({
       id: `shop-${item.id}`,
       category: 'Compras',
       title: item.name,
-      description: 'Lista de compras',
-      href: '/super',
+      description: isFeriaItem ? 'Lista de la feria' : 'Lista del súper',
+      href: isFeriaItem ? '/feria' : '/super',
     })
   })
 
@@ -168,7 +173,7 @@ export default async function Inicio() {
 
   return (
     <div className="w-full flex flex-col gap-6">
-      {/* HEADER: Avatar individual, Saludo y Campana */}
+      {/* HEADER: Avatar individual, Saludo y Campana a /notificaciones */}
       <header className="flex items-center justify-between">
         <div className="flex items-center gap-3">
           <Link
@@ -184,7 +189,7 @@ export default async function Inicio() {
           </div>
         </div>
 
-        {/* Campana que lleva al historial de notificaciones */}
+        {/* Campana al historial de notificaciones */}
         <Link
           href="/notificaciones"
           aria-label="Ver historial de notificaciones"
@@ -209,7 +214,7 @@ export default async function Inicio() {
       <section className="flex flex-col gap-3">
         {/* Fila 1: Compras (Súper) y Feria */}
         <div className="grid grid-cols-2 gap-3">
-          {/* Compras */}
+          {/* Compras -> /super */}
           <Link
             href="/super"
             style={cardGradientStyle}
@@ -228,9 +233,9 @@ export default async function Inicio() {
             <span className="text-base font-black tracking-wide text-white">Compras</span>
           </Link>
 
-          {/* Feria */}
+          {/* Feria -> /feria */}
           <Link
-            href="/super"
+            href="/feria"
             style={cardGradientStyle}
             className="relative h-[120px] rounded-[20px] p-3 flex flex-col justify-between overflow-hidden shadow-md text-white transition-all hover:border-2 hover:border-white/20 active:scale-[0.98] no-underline"
           >
@@ -250,7 +255,7 @@ export default async function Inicio() {
 
         {/* Fila 2: Medicinas, Colegio, Tareas */}
         <div className="grid grid-cols-3 gap-2.5">
-          {/* Medicinas */}
+          {/* Medicinas -> /meds */}
           <Link
             href="/meds"
             style={cardGradientStyle}
@@ -272,7 +277,7 @@ export default async function Inicio() {
             <span className="text-xs font-black tracking-wide text-white relative z-10">Medicinas</span>
           </Link>
 
-          {/* Colegio (Total combinado de pruebas + tareas escolares) */}
+          {/* Colegio -> /colegio */}
           <Link
             href="/colegio"
             style={cardGradientStyle}
@@ -296,7 +301,7 @@ export default async function Inicio() {
             <span className="text-xs font-black tracking-wide text-white relative z-10">Colegio</span>
           </Link>
 
-          {/* Tareas (Generales del hogar) */}
+          {/* Tareas -> /tareas */}
           <Link
             href="/tareas"
             style={cardGradientStyle}
