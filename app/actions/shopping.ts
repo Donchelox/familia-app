@@ -76,7 +76,23 @@ export async function deleteShoppingItem(formData: FormData) {
   revalidatePath('/')
 }
 
-// Aliases para retrocompatibilidad
+export async function clearBought(formData: FormData) {
+  const { supabase, familyId } = await getContext()
+  const list = (formData.get('list') as string) || 'super'
+
+  await supabase
+    .from('shopping_items')
+    .delete()
+    .eq('family_id', familyId)
+    .eq('list', list)
+    .eq('done', true)
+
+  revalidatePath('/super')
+  revalidatePath('/feria')
+  revalidatePath('/')
+}
+
+// Aliases para compatibilidad
 export const addItems = addShoppingItem
 export const toggleItem = toggleShoppingItem
 export const deleteItem = deleteShoppingItem
