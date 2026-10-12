@@ -1,231 +1,140 @@
 'use server'
 
-import { getContext } from '@/lib/family'
-import { createServerClient } from '@supabase/ssr'
-import { cookies } from 'next/headers'
 import { revalidatePath } from 'next/cache'
+import { getContext } from '@/lib/family'
+import { todayStr } from '@/lib/dates'
 
-async function getSupabase() {
-  const cookieStore = await cookies()
-  return createServerClient(
-    process.env.NEXT_PUBLIC_SUPABASE_URL!,
-    process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!,
-    {
-      cookies: {
-        getAll() {
-          return cookieStore.getAll()
-        },
-        setAll(cookiesToSet) {
-          cookiesToSet.forEach(({ name, value, options }) =>
-            cookieStore.set(name, value, options)
-          )
-        },
-      },
-    }
-  )
+const TIME_RE = /^([01]\d|2[0-3]):[0-5]\d$/
+const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i
+
+const field = (fd: FormData, k: string, max = 200) =>
+  String(fd.get(k) ?? '').trim().slice(0, max)
+
+const timesOf = (fd: FormData) => {
+  const t = [...new Set(fd.getAll('times').map((v) => String(v).trim()).filter((v) => TIME_RE.test(v)))].sort()
+  return t.length ? t : ['08:00']
 }
 
+const refreshMeds = () => {
+  revalidatePath('/meds')
+  revalidatePath('/')
+}
+
+// getContext() queda FUERA de los try/catch: internamente usa redirect(), que no debe atraparse.
+
 export async function addMedicationAction(formData: FormData) {
-  try {
-    const ctx = await getContext()
-    const supabase = await getSupabase()
+  const ctx = await getContext()
+  if (ctx.role === 'viewer') return { ok: false, error: 'Sin permiso' }
 
-    const name = String(formData.get('name') || '').trim()
-    const dose = String(formData.get('dose') || '').trim()
-    const memberId = String(formData.get('memberId') || '').trim()
-    
-    // Obtener todos los campos de hora enviados por el formulario
-    const timesRaw = formData.getAll('times').map(t => String(t).trim()).filter(Boolean)
+  const name = field(formData, 'name')
+  if (!name) return { ok: false, error: 'Falta el nombre' }
+  const dose = field(formData, 'dose')
+  const person = field(formData, 'person') || 'Toda la familia'
 
-    if (!name) return { ok: false, error: 'Falta el nombre' }
-
-    let assignedName: string | null = null
-    if (memberId) {
-      const { data: member } = await supabase
-        .from('members')
-        .select('name')
-        .eq('id', memberId)
-        .single()
-      assignedName = member?.name || null
-    }
-
-    const finalTimes = timesRaw.length > 0 ? timesRaw : ['08:00']
-
-    const payload: any = {
-      family_id: ctx.familyId,
-      name,
-      dose: dose || null,
-      times: finalTimes,
-      assigned_to: assignedName,
-      active: true,
-    }
-
-    if (memberId) {
-      payload.member_id = memberId
-    }
-
-    const { error } = await supabase.from('medications').insert(payload)
-    if (error) {
-      console.error('Error al insertar medicamento:', error)
-      return { ok: false, error: error.message }
-    }
-
-    revalidatePath('/meds')
-    revalidatePath('/')
-    return { ok: true }
-  } catch (err: any) {
-    console.error('Excepción addMedicationAction:', err)
-    return { ok: false, error: err.message }
+  const { error } = await ctx.supabase.from('medications').insert({
+    family_id: ctx.familyId,
+    name,
+    dose: dose || null,
+    times: timesOf(formData),
+    person,
+  })
+  if (error) {
+    console.error('addMedicationAction:', error)
+    return { ok: false, error: 'No se pudo guardar el medicamento' }
   }
+  refreshMeds()
+  return { ok: true }
 }
 
 export async function updateMedicationAction(formData: FormData) {
-  try {
-    const ctx = await getContext()
-    const supabase = await getSupabase()
+  const ctx = await getContext()
+  if (ctx.role === 'viewer') return { ok: false, error: 'Sin permiso' }
 
-    const id = String(formData.get('id') || '')
-    const name = String(formData.get('name') || '').trim()
-    const dose = String(formData.get('dose') || '').trim()
-    const memberId = String(formData.get('memberId') || '').trim()
-    const timesRaw = formData.getAll('times').map(t => String(t).trim()).filter(Boolean)
+  const id = field(formData, 'id')
+  const name = field(formData, 'name')
+  if (!UUID_RE.test(id) || !name) return { ok: false, error: 'Datos incompletos' }
+  const dose = field(formData, 'dose')
+  const person = field(formData, 'person') || 'Toda la familia'
 
-    if (!id || !name) return { ok: false, error: 'Datos incompletos' }
-
-    let assignedName: string | null = null
-    if (memberId) {
-      const { data: member } = await supabase
-        .from('members')
-        .select('name')
-        .eq('id', memberId)
-        .single()
-      assignedName = member?.name || null
-    }
-
-    const finalTimes = timesRaw.length > 0 ? timesRaw : ['08:00']
-
-    const updatePayload: any = {
-      name,
-      dose: dose || null,
-      assigned_to: assignedName,
-      times: finalTimes,
-    }
-
-    if (memberId) {
-      updatePayload.member_id = memberId
-    }
-
-    const { error } = await supabase
-      .from('medications')
-      .update(updatePayload)
-      .eq('id', id)
-      .eq('family_id', ctx.familyId)
-
-    if (error) {
-      console.error('Error al actualizar medicamento:', error)
-      return { ok: false, error: error.message }
-    }
-
-    revalidatePath('/meds')
-    revalidatePath('/')
-    return { ok: true }
-  } catch (err: any) {
-    console.error('Excepción updateMedicationAction:', err)
-    return { ok: false, error: err.message }
+  const { error } = await ctx.supabase
+    .from('medications')
+    .update({ name, dose: dose || null, times: timesOf(formData), person })
+    .eq('id', id)
+    .eq('family_id', ctx.familyId)
+  if (error) {
+    console.error('updateMedicationAction:', error)
+    return { ok: false, error: 'No se pudo actualizar el medicamento' }
   }
+  refreshMeds()
+  return { ok: true }
 }
 
 export async function deleteMedicationAction(formData: FormData) {
-  try {
-    const ctx = await getContext()
-    const supabase = await getSupabase()
+  const ctx = await getContext()
+  if (ctx.role === 'viewer') return { ok: false, error: 'Sin permiso' }
 
-    const id = String(formData.get('id') || '')
-    if (!id) return { ok: false }
+  const id = field(formData, 'id')
+  if (!UUID_RE.test(id)) return { ok: false }
 
-    const { error } = await supabase
-      .from('medications')
-      .delete()
-      .eq('id', id)
-      .eq('family_id', ctx.familyId)
-
-    if (error) {
-      console.error('Error deleteMedicationAction:', error)
-      return { ok: false, error: error.message }
-    }
-
-    revalidatePath('/meds')
-    revalidatePath('/')
-    return { ok: true }
-  } catch (err: any) {
-    console.error('Excepción deleteMedicationAction:', err)
-    return { ok: false, error: err.message }
+  const { error } = await ctx.supabase
+    .from('medications')
+    .delete()
+    .eq('id', id)
+    .eq('family_id', ctx.familyId)
+  if (error) {
+    console.error('deleteMedicationAction:', error)
+    return { ok: false, error: 'No se pudo eliminar el medicamento' }
   }
+  refreshMeds()
+  return { ok: true }
 }
 
 export async function toggleDoseAction(formData: FormData) {
-  try {
-    const ctx = await getContext()
-    const supabase = await getSupabase()
+  const ctx = await getContext()
+  if (ctx.role === 'viewer') return { ok: false, error: 'Sin permiso' }
 
-    const medicationId = String(formData.get('medicationId') || '')
-    const scheduledTime = String(formData.get('scheduledTime') || '')
-    const date = String(formData.get('date') || '')
-    const isTaken = formData.get('isTaken') === 'true'
+  const medicationId = field(formData, 'medicationId')
+  const scheduledTime = field(formData, 'scheduledTime', 5)
+  const isTaken = formData.get('isTaken') === 'true'
+  if (!UUID_RE.test(medicationId) || !TIME_RE.test(scheduledTime)) return { ok: false }
 
-    if (!medicationId || !date) return { ok: false }
+  // La fecha la define el servidor (hora de Chile), no el cliente
+  const day = todayStr()
 
-    if (isTaken) {
-      await supabase
-        .from('dose_logs')
-        .delete()
-        .eq('family_id', ctx.familyId)
-        .eq('medication_id', medicationId)
-        .eq('date', date)
-        .eq('scheduled_time', scheduledTime)
-    } else {
-      const { data: medData } = await supabase
-        .from('medications')
-        .select('member_id')
-        .eq('id', medicationId)
-        .single()
+  // El medicamento debe pertenecer a mi familia
+  const { data: med } = await ctx.supabase
+    .from('medications')
+    .select('id')
+    .eq('id', medicationId)
+    .eq('family_id', ctx.familyId)
+    .maybeSingle()
+  if (!med) return { ok: false }
 
-      let memberId = medData?.member_id
-
-      if (!memberId) {
-        const { data: members } = await supabase
-          .from('members')
-          .select('id')
-          .eq('family_id', ctx.familyId)
-          .limit(1)
-
-        memberId = members?.[0]?.id
-      }
-
-      const logPayload: any = {
-        family_id: ctx.familyId,
-        medication_id: medicationId,
-        scheduled_time: scheduledTime,
-        date,
-        taken_at: new Date().toISOString(),
-      }
-
-      if (memberId) {
-        logPayload.member_id = memberId
-      }
-
-      const { error } = await supabase.from('dose_logs').insert(logPayload)
-      if (error) {
-        console.error('Error al insertar dose_log:', error)
-        return { ok: false, error: error.message }
-      }
+  if (isTaken) {
+    const { error } = await ctx.supabase
+      .from('dose_logs')
+      .delete()
+      .eq('family_id', ctx.familyId)
+      .eq('medication_id', medicationId)
+      .eq('day', day)
+      .eq('time', scheduledTime)
+    if (error) {
+      console.error('toggleDoseAction delete:', error)
+      return { ok: false, error: 'No se pudo desmarcar la dosis' }
     }
-
-    revalidatePath('/meds')
-    revalidatePath('/')
-    return { ok: true }
-  } catch (err: any) {
-    console.error('Excepción toggleDoseAction:', err)
-    return { ok: false, error: err.message }
+  } else {
+    const { error } = await ctx.supabase
+      .from('dose_logs')
+      .upsert(
+        { family_id: ctx.familyId, medication_id: medicationId, day, time: scheduledTime },
+        { onConflict: 'medication_id,day,time', ignoreDuplicates: true }
+      )
+    if (error) {
+      console.error('toggleDoseAction insert:', error)
+      return { ok: false, error: 'No se pudo marcar la dosis' }
+    }
   }
+
+  refreshMeds()
+  return { ok: true }
 }

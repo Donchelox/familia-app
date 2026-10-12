@@ -1,14 +1,40 @@
 import { getContext } from '@/lib/family'
 import { TZ } from '@/lib/dates'
 
+export const dynamic = 'force-dynamic'
+
+const PAGE = 1000 // Supabase devuelve como máximo 1000 filas por consulta
+const MAX_PAGES = 100
+
+// Escapa comillas y neutraliza fórmulas de Excel (=, +, -, @)
+const q = (v: unknown) => {
+  let s = String(v ?? '')
+  if (/^[=+\-@\t\r]/.test(s)) s = "'" + s
+  return '"' + s.replace(/"/g, '""') + '"'
+}
+
 export async function GET() {
   const ctx = await getContext()
   if (ctx.role !== 'admin') return new Response('No autorizado', { status: 403 })
-  const { data } = await ctx.supabase
-    .from('activity_log').select('created_at, user_name, module, action, item')
-    .eq('family_id', ctx.familyId).order('created_at').limit(20000)
-  const q = (v: unknown) => '"' + String(v ?? '').replace(/"/g, '""') + '"'
-  const rows = (data ?? []).map((r) => {
+
+  const all: { created_at: string; user_name: string | null; module: string; action: string; item: string | null }[] = []
+  for (let page = 0; page < MAX_PAGES; page++) {
+    const { data, error } = await ctx.supabase
+      .from('activity_log')
+      .select('created_at, user_name, module, action, item')
+      .eq('family_id', ctx.familyId)
+      .order('created_at')
+      .order('id')
+      .range(page * PAGE, page * PAGE + PAGE - 1)
+    if (error) {
+      console.error('log.csv:', error)
+      return new Response('Error al generar el archivo', { status: 500 })
+    }
+    all.push(...(data ?? []))
+    if (!data || data.length < PAGE) break
+  }
+
+  const rows = all.map((r) => {
     const d = new Date(r.created_at)
     return [
       d.toLocaleDateString('sv', { timeZone: TZ }),

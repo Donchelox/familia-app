@@ -7,6 +7,7 @@ export const metadata: Metadata = {
   manifest: '/manifest.webmanifest',
   icons: {
     icon: '/icon-192.webp',
+    apple: '/icon-192.png', // iOS usa este ícono al instalar la app
   },
 }
 

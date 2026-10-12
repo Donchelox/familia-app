@@ -4,6 +4,9 @@ import { createClient } from '@/lib/supabase/server'
 import { getContext } from '@/lib/family'
 import { str, refresh } from '@/lib/util'
 
+const ROLES = ['admin', 'editor', 'viewer']
+const emailOk = (s: string) => s.length <= 254 && /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(s)
+
 export async function signOut() {
   const supabase = await createClient()
   await supabase.auth.signOut()
@@ -11,8 +14,11 @@ export async function signOut() {
 }
 export async function inviteMember(fd: FormData) {
   const { supabase, familyId } = await getContext()
+  const email = str(fd, 'email').toLowerCase()
+  const role = str(fd, 'role')
+  if (!emailOk(email) || !ROLES.includes(role)) return
   await supabase.from('invites').upsert(
-    { family_id: familyId, email: str(fd, 'email').toLowerCase(), role: str(fd, 'role') },
+    { family_id: familyId, email, role },
     { onConflict: 'family_id,email' }
   )
   refresh()
@@ -20,8 +26,10 @@ export async function inviteMember(fd: FormData) {
 export async function setRole(fd: FormData) {
   const { supabase, user, familyId } = await getContext()
   const uid = str(fd, 'user_id')
+  const role = str(fd, 'role')
   if (uid === user.id) return // evita quedarse sin administrador
-  await supabase.from('members').update({ role: str(fd, 'role') }).eq('family_id', familyId).eq('user_id', uid)
+  if (!ROLES.includes(role)) return
+  await supabase.from('members').update({ role }).eq('family_id', familyId).eq('user_id', uid)
   refresh()
 }
 export async function removeMember(fd: FormData) {

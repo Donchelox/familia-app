@@ -1,37 +1,27 @@
-import { createServerClient } from '@supabase/ssr'
-import { cookies } from 'next/headers'
 import { NextResponse } from 'next/server'
+import { getContext } from '@/lib/family'
 
 export async function POST(req: Request) {
-  const cookieStore = await cookies()
-  const supabase = createServerClient(
-    process.env.NEXT_PUBLIC_SUPABASE_URL!,
-    process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!,
-    {
-      cookies: {
-        getAll() {
-          return cookieStore.getAll()
-        },
-        setAll(cookiesToSet) {
-          cookiesToSet.forEach(({ name, value, options }) =>
-            cookieStore.set(name, value, options)
-          )
-        },
-      },
-    }
-  )
+  // La familia sale de la sesión, no de lo que mande el cliente
+  const ctx = await getContext()
 
-  const { data: { user } } = await supabase.auth.getUser()
-  if (!user) {
-    return NextResponse.json({ error: 'No autorizado' }, { status: 401 })
+  const body = await req.json().catch(() => null)
+  const endpoint = body?.endpoint
+  const p256dh = body?.p256dh
+  const auth = body?.auth
+
+  if (
+    typeof endpoint !== 'string' || !endpoint.startsWith('https://') || endpoint.length > 2000 ||
+    typeof p256dh !== 'string' || p256dh.length > 200 ||
+    typeof auth !== 'string' || auth.length > 100
+  ) {
+    return NextResponse.json({ error: 'Datos inválidos' }, { status: 400 })
   }
 
-  const { familyId, endpoint, p256dh, auth } = await req.json()
-
-  const { error } = await supabase.from('push_subscriptions').upsert(
+  const { error } = await ctx.supabase.from('push_subscriptions').upsert(
     {
-      user_id: user.id,
-      family_id: familyId,
+      user_id: ctx.user.id,
+      family_id: ctx.familyId,
       endpoint,
       p256dh,
       auth,
@@ -40,7 +30,8 @@ export async function POST(req: Request) {
   )
 
   if (error) {
-    return NextResponse.json({ error: error.message }, { status: 500 })
+    console.error('push/subscribe:', error)
+    return NextResponse.json({ error: 'No se pudo guardar la suscripción' }, { status: 500 })
   }
 
   return NextResponse.json({ success: true })

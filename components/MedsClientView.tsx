@@ -15,8 +15,7 @@ export interface Medication {
   name: string
   dose: string | null
   times: string[] | null
-  assigned_to: string | null
-  member_id?: string | null
+  person: string | null
 }
 
 export interface Member {
@@ -32,6 +31,8 @@ interface MedsClientViewProps {
   todayStr: string
   currentHM: string
 }
+
+const ALL_FAMILY = 'Toda la familia'
 
 export default function MedsClientView({
   familyId,
@@ -68,8 +69,6 @@ export default function MedsClientView({
     if (editingMed) {
       if (Array.isArray(editingMed.times) && editingMed.times.length > 0) {
         setEditTimes(editingMed.times)
-      } else if (typeof editingMed.times === 'string' && (editingMed.times as string).trim().length > 0) {
-        setEditTimes((editingMed.times as string).split(',').map((s) => s.trim()))
       } else {
         setEditTimes(['08:00'])
       }
@@ -84,30 +83,21 @@ export default function MedsClientView({
     name: string
     dose: string | null
     time: string
-    assignedTo: string | null
+    assignedTo: string
     isTaken: boolean
     originalMed: Medication
   }> = []
 
   medsList.forEach((med) => {
-    let tList: string[] = []
-    if (Array.isArray(med.times) && med.times.length > 0) {
-      tList = med.times
-    } else if (typeof med.times === 'string' && (med.times as string).trim().length > 0) {
-      tList = (med.times as string).split(',').map((s) => s.trim())
-    } else {
-      tList = ['08:00']
-    }
-
+    const tList = Array.isArray(med.times) && med.times.length > 0 ? med.times : ['08:00']
     tList.forEach((t) => {
-      const isTaken = takenSet.has(`${med.id}_${t}`) || takenSet.has(`${med.id}_`)
       allDoses.push({
         medId: med.id,
         name: med.name,
         dose: med.dose,
         time: t,
-        assignedTo: med.assigned_to || 'Todos',
-        isTaken,
+        assignedTo: med.person || ALL_FAMILY,
+        isTaken: takenSet.has(`${med.id}_${t}`),
         originalMed: med,
       })
     })
@@ -122,12 +112,8 @@ export default function MedsClientView({
     const key = `${medId}_${time}`
     setLocalTaken((prev) => {
       const next = new Set(prev)
-      if (currentTaken) {
-        next.delete(key)
-        next.delete(`${medId}_`)
-      } else {
-        next.add(key)
-      }
+      if (currentTaken) next.delete(key)
+      else next.add(key)
       return next
     })
 
@@ -320,8 +306,8 @@ export default function MedsClientView({
               Para quién
             </label>
             <select
-              name="memberId"
-              defaultValue=""
+              name="person"
+              defaultValue={ALL_FAMILY}
               style={{
                 width: '100%',
                 padding: '0.75rem',
@@ -333,9 +319,9 @@ export default function MedsClientView({
                 boxSizing: 'border-box',
               }}
             >
-              <option value="">Toda la familia (sin asignar)</option>
+              <option value={ALL_FAMILY}>Toda la familia (sin asignar)</option>
               {members.map((m) => (
-                <option key={m.id} value={m.id}>
+                <option key={m.id} value={m.name}>
                   {m.name}
                 </option>
               ))}
@@ -350,6 +336,7 @@ export default function MedsClientView({
               type="text"
               name="name"
               required
+              maxLength={200}
               placeholder="Ej: Paracetamol"
               style={{
                 width: '100%',
@@ -371,6 +358,7 @@ export default function MedsClientView({
             <input
               type="text"
               name="dose"
+              maxLength={200}
               placeholder="Ej: 1 comprimido"
               style={{
                 width: '100%',
@@ -512,8 +500,7 @@ export default function MedsClientView({
                 const updatedTimes = editTimes.filter(Boolean)
                 const updatedName = String(fd.get('name') || '').trim()
                 const updatedDose = String(fd.get('dose') || '').trim()
-                const selectedMemberId = String(fd.get('memberId') || '')
-                const memberObj = members.find((m) => m.id === selectedMemberId)
+                const updatedPerson = String(fd.get('person') || '').trim() || ALL_FAMILY
 
                 setMedsList((prev) =>
                   prev.map((m) =>
@@ -523,8 +510,7 @@ export default function MedsClientView({
                           name: updatedName,
                           dose: updatedDose || null,
                           times: updatedTimes,
-                          assigned_to: memberObj ? memberObj.name : null,
-                          member_id: selectedMemberId || null,
+                          person: updatedPerson,
                         }
                       : m
                   )
@@ -545,8 +531,8 @@ export default function MedsClientView({
                   Para quién
                 </label>
                 <select
-                  name="memberId"
-                  defaultValue={editingMed.member_id || members.find((m) => m.name === editingMed.assigned_to)?.id || ''}
+                  name="person"
+                  defaultValue={editingMed.person || ALL_FAMILY}
                   style={{
                     width: '100%',
                     padding: '0.65rem',
@@ -557,9 +543,9 @@ export default function MedsClientView({
                     boxSizing: 'border-box',
                   }}
                 >
-                  <option value="">Toda la familia (sin asignar)</option>
+                  <option value={ALL_FAMILY}>Toda la familia (sin asignar)</option>
                   {members.map((m) => (
-                    <option key={m.id} value={m.id}>
+                    <option key={m.id} value={m.name}>
                       {m.name}
                     </option>
                   ))}
@@ -574,6 +560,7 @@ export default function MedsClientView({
                   type="text"
                   name="name"
                   required
+                  maxLength={200}
                   defaultValue={editingMed.name}
                   style={{
                     width: '100%',
@@ -594,6 +581,7 @@ export default function MedsClientView({
                 <input
                   type="text"
                   name="dose"
+                  maxLength={200}
                   defaultValue={editingMed.dose || ''}
                   style={{
                     width: '100%',

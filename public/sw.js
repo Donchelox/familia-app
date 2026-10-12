@@ -1,7 +1,7 @@
 self.addEventListener('push', function (event) {
   let title = '💊 Recordatorio de Medicamento'
   let body = 'Es hora de tu dosis programada.'
-  let url = '/medicamentos'
+  let url = '/meds'
 
   if (event.data) {
     try {
@@ -30,7 +30,7 @@ self.addEventListener('push', function (event) {
 
 self.addEventListener('notificationclick', function (event) {
   event.notification.close()
-  const targetUrl = (event.notification.data && event.notification.data.url) || '/medicamentos'
+  const targetUrl = (event.notification.data && event.notification.data.url) || '/meds'
 
   event.waitUntil(
     clients.matchAll({ type: 'window', includeUncontrolled: true }).then((clientList) => {
