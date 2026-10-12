@@ -2,7 +2,7 @@ import { getContext } from '@/lib/family'
 import { createServerClient } from '@supabase/ssr'
 import { cookies } from 'next/headers'
 import PushSubscriptionManager from '@/components/PushSubscriptionManager'
-import { addMedicationAction, toggleDoseAction } from '@/app/actions/meds'
+import { addMedication, toggleDose } from '@/app/actions/meds'
 
 export const dynamic = 'force-dynamic'
 
@@ -113,7 +113,7 @@ export default async function MedsPage() {
                 >
                   <div style={{ display: 'flex', alignItems: 'center', gap: '0.85rem' }}>
                     {/* Form para marcar/desmarcar dosis */}
-                    <form action={toggleDoseAction}>
+                    <form action={toggleDose}>
                       <input type="hidden" name="medId" value={med.id} />
                       <input type="hidden" name="familyId" value={ctx.familyId} />
                       <input type="hidden" name="date" value={todayStr} />
@@ -201,7 +201,7 @@ export default async function MedsPage() {
           Añadir medicamento
         </h2>
 
-        <form action={addMedicationAction} style={{ display: 'flex', flexDirection: 'column', gap: '1rem' }}>
+        <form action={addMedication} style={{ display: 'flex', flexDirection: 'column', gap: '1rem' }}>
           <input type="hidden" name="familyId" value={ctx.familyId} />
 
           <div>
