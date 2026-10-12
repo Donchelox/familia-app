@@ -1,3 +1,7 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
 :root{--bg:#f2f5f7;--surface:#fff;--ink:#1b2a41;--muted:#5c6b80;--line:#d5dce4;--accent:#1f4e8c;--accent-ink:#fff;--sun:#f0b429;--danger:#b3261e;color-scheme:light dark}
 @media (prefers-color-scheme:dark){:root{--bg:#0f1722;--surface:#17212f;--ink:#e8eef6;--muted:#9aa9bc;--line:#2a3647;--accent:#6ea3ee;--accent-ink:#0f1722;--danger:#f08a82}}
 *{box-sizing:border-box}
