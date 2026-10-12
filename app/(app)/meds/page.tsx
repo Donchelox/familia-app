@@ -26,18 +26,25 @@ export default async function MedsPage() {
     }
   )
 
-  // Obtener medicamentos
+  // 1. Obtener medicamentos
   const { data: rawMeds } = await supabase
     .from('medications')
     .select('*')
     .eq('family_id', ctx.familyId)
 
-  // Fecha actual en Chile (YYYY-MM-DD)
+  // 2. Obtener miembros de la familia
+  const { data: members } = await supabase
+    .from('members')
+    .select('id, name')
+    .eq('family_id', ctx.familyId)
+    .order('name', { ascending: true })
+
+  // 3. Fecha actual en Chile (YYYY-MM-DD)
   const todayStr = new Intl.DateTimeFormat('en-CA', {
     timeZone: 'America/Santiago',
   }).format(new Date())
 
-  // Dosis tomadas hoy
+  // 4. Dosis tomadas hoy
   const { data: doseLogs } = await supabase
     .from('dose_logs')
     .select('medication_id, scheduled_time')
@@ -46,7 +53,7 @@ export default async function MedsPage() {
 
   const takenKeys = (doseLogs || []).map((d) => `${d.medication_id}_${d.scheduled_time || ''}`)
 
-  // Hora actual en Chile (HH:MM)
+  // 5. Hora actual en Chile (HH:MM)
   const currentHM = new Intl.DateTimeFormat('es-CL', {
     timeZone: 'America/Santiago',
     hour: '2-digit',
@@ -58,6 +65,7 @@ export default async function MedsPage() {
     <MedsClientView
       familyId={ctx.familyId}
       meds={rawMeds || []}
+      members={members || []}
       takenKeys={takenKeys}
       todayStr={todayStr}
       currentHM={currentHM}

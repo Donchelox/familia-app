@@ -1,6 +1,6 @@
 'use client'
 
-import { useState, useTransition } from 'react'
+import { useState, useEffect, useTransition } from 'react'
 import { useRouter } from 'next/navigation'
 import PushSubscriptionManager from '@/components/PushSubscriptionManager'
 import {
@@ -16,11 +16,18 @@ export interface Medication {
   dose: string | null
   times: string[] | null
   assigned_to: string | null
+  member_id?: string | null
+}
+
+export interface Member {
+  id: string
+  name: string
 }
 
 interface MedsClientViewProps {
   familyId: string
   meds: Medication[]
+  members: Member[]
   takenKeys: string[]
   todayStr: string
   currentHM: string
@@ -29,6 +36,7 @@ interface MedsClientViewProps {
 export default function MedsClientView({
   familyId,
   meds,
+  members,
   takenKeys,
   todayStr,
   currentHM,
@@ -37,13 +45,40 @@ export default function MedsClientView({
   const [editingMed, setEditingMed] = useState<Medication | null>(null)
   const [isPending, startTransition] = useTransition()
 
-  // Guardar copia local de las llaves de dosis tomadas para feedback visual inmediato
+  // Estados locales
+  const [medsList, setMedsList] = useState<Medication[]>(meds)
   const [localTaken, setLocalTaken] = useState<Set<string>>(new Set(takenKeys))
 
-  // Sincronizar si cambian las props
+  // Lista dinámica de horas para el formulario de añadir
+  const [addTimes, setAddTimes] = useState<string[]>(['08:00'])
+
+  // Lista dinámica de horas para el modal de edición
+  const [editTimes, setEditTimes] = useState<string[]>(['08:00'])
+
+  useEffect(() => {
+    setMedsList(meds)
+  }, [meds])
+
+  useEffect(() => {
+    setLocalTaken(new Set(takenKeys))
+  }, [takenKeys])
+
+  // Cargar horas al abrir el modal de edición
+  useEffect(() => {
+    if (editingMed) {
+      if (Array.isArray(editingMed.times) && editingMed.times.length > 0) {
+        setEditTimes(editingMed.times)
+      } else if (typeof editingMed.times === 'string' && (editingMed.times as string).trim().length > 0) {
+        setEditTimes((editingMed.times as string).split(',').map((s) => s.trim()))
+      } else {
+        setEditTimes(['08:00'])
+      }
+    }
+  }, [editingMed])
+
   const takenSet = localTaken
 
-  // Desglosar dosis
+  // Desglosar dosis diarias
   const allDoses: Array<{
     medId: string
     name: string
@@ -54,7 +89,7 @@ export default function MedsClientView({
     originalMed: Medication
   }> = []
 
-  meds.forEach((med) => {
+  medsList.forEach((med) => {
     let tList: string[] = []
     if (Array.isArray(med.times) && med.times.length > 0) {
       tList = med.times
@@ -85,7 +120,6 @@ export default function MedsClientView({
 
   async function handleToggle(fd: FormData, medId: string, time: string, currentTaken: boolean) {
     const key = `${medId}_${time}`
-    // Cambio optimista instantáneo
     setLocalTaken((prev) => {
       const next = new Set(prev)
       if (currentTaken) {
@@ -116,7 +150,7 @@ export default function MedsClientView({
 
       <PushSubscriptionManager familyId={familyId} />
 
-      {/* Lista de hoy */}
+      {/* Tarjeta: Hoy */}
       <section
         style={{
           backgroundColor: '#131d2a',
@@ -257,7 +291,7 @@ export default function MedsClientView({
         )}
       </section>
 
-      {/* Formulario Añadir */}
+      {/* Formulario Añadir Medicamento */}
       <section
         style={{
           backgroundColor: '#131d2a',
@@ -274,19 +308,20 @@ export default function MedsClientView({
           action={async (fd) => {
             startTransition(async () => {
               await addMedicationAction(fd)
+              setAddTimes(['08:00'])
               router.refresh()
             })
           }}
           style={{ display: 'flex', flexDirection: 'column', gap: '1rem' }}
         >
+          {/* Desplegable de Miembros */}
           <div>
             <label style={{ display: 'block', fontSize: '0.85rem', color: '#94a3b8', marginBottom: '0.4rem' }}>
               Para quién
             </label>
-            <input
-              type="text"
-              name="assignedTo"
-              placeholder="Ej: Marcelo"
+            <select
+              name="memberId"
+              defaultValue=""
               style={{
                 width: '100%',
                 padding: '0.75rem',
@@ -297,7 +332,14 @@ export default function MedsClientView({
                 fontSize: '0.95rem',
                 boxSizing: 'border-box',
               }}
-            />
+            >
+              <option value="">Toda la familia (sin asignar)</option>
+              {members.map((m) => (
+                <option key={m.id} value={m.id}>
+                  {m.name}
+                </option>
+              ))}
+            </select>
           </div>
 
           <div>
@@ -343,26 +385,71 @@ export default function MedsClientView({
             />
           </div>
 
+          {/* Selector de Horas con Input Time */}
           <div>
             <label style={{ display: 'block', fontSize: '0.85rem', color: '#94a3b8', marginBottom: '0.4rem' }}>
-              Horas (separadas por coma)
+              Horarios de toma
             </label>
-            <input
-              type="text"
-              name="times"
-              required
-              placeholder="Ej: 08:00, 14:00, 20:00"
-              style={{
-                width: '100%',
-                padding: '0.75rem',
-                borderRadius: '8px',
-                backgroundColor: '#0f1722',
-                border: '1px solid #334155',
-                color: '#fff',
-                fontSize: '0.95rem',
-                boxSizing: 'border-box',
-              }}
-            />
+            <div style={{ display: 'flex', flexDirection: 'column', gap: '0.5rem' }}>
+              {addTimes.map((tVal, idx) => (
+                <div key={idx} style={{ display: 'flex', gap: '0.5rem', alignItems: 'center' }}>
+                  <input
+                    type="time"
+                    name="times"
+                    required
+                    value={tVal}
+                    onChange={(e) => {
+                      const updated = [...addTimes]
+                      updated[idx] = e.target.value
+                      setAddTimes(updated)
+                    }}
+                    style={{
+                      flex: 1,
+                      padding: '0.65rem 0.75rem',
+                      borderRadius: '8px',
+                      backgroundColor: '#0f1722',
+                      border: '1px solid #334155',
+                      color: '#fff',
+                      fontSize: '0.95rem',
+                      boxSizing: 'border-box',
+                    }}
+                  />
+                  {addTimes.length > 1 && (
+                    <button
+                      type="button"
+                      onClick={() => setAddTimes(addTimes.filter((_, i) => i !== idx))}
+                      style={{
+                        padding: '0.55rem 0.8rem',
+                        backgroundColor: '#7f1d1d20',
+                        color: '#f87171',
+                        border: '1px solid #7f1d1d60',
+                        borderRadius: '8px',
+                        cursor: 'pointer',
+                      }}
+                    >
+                      ✕
+                    </button>
+                  )}
+                </div>
+              ))}
+              <button
+                type="button"
+                onClick={() => setAddTimes([...addTimes, '12:00'])}
+                style={{
+                  alignSelf: 'flex-start',
+                  padding: '0.4rem 0.75rem',
+                  backgroundColor: '#1e293b',
+                  color: '#CDF6F9',
+                  border: '1px dashed #38bdf860',
+                  borderRadius: '6px',
+                  fontSize: '0.8rem',
+                  cursor: 'pointer',
+                  marginTop: '0.2rem',
+                }}
+              >
+                + Añadir otra hora
+              </button>
+            </div>
           </div>
 
           <button
@@ -422,6 +509,27 @@ export default function MedsClientView({
 
             <form
               action={async (fd) => {
+                const updatedTimes = editTimes.filter(Boolean)
+                const updatedName = String(fd.get('name') || '').trim()
+                const updatedDose = String(fd.get('dose') || '').trim()
+                const selectedMemberId = String(fd.get('memberId') || '')
+                const memberObj = members.find((m) => m.id === selectedMemberId)
+
+                setMedsList((prev) =>
+                  prev.map((m) =>
+                    m.id === editingMed.id
+                      ? {
+                          ...m,
+                          name: updatedName,
+                          dose: updatedDose || null,
+                          times: updatedTimes,
+                          assigned_to: memberObj ? memberObj.name : null,
+                          member_id: selectedMemberId || null,
+                        }
+                      : m
+                  )
+                )
+
                 startTransition(async () => {
                   await updateMedicationAction(fd)
                   setEditingMed(null)
@@ -436,10 +544,9 @@ export default function MedsClientView({
                 <label style={{ display: 'block', fontSize: '0.8rem', color: '#94a3b8', marginBottom: '0.3rem' }}>
                   Para quién
                 </label>
-                <input
-                  type="text"
-                  name="assignedTo"
-                  defaultValue={editingMed.assigned_to || ''}
+                <select
+                  name="memberId"
+                  defaultValue={editingMed.member_id || members.find((m) => m.name === editingMed.assigned_to)?.id || ''}
                   style={{
                     width: '100%',
                     padding: '0.65rem',
@@ -449,7 +556,14 @@ export default function MedsClientView({
                     color: '#fff',
                     boxSizing: 'border-box',
                   }}
-                />
+                >
+                  <option value="">Toda la familia (sin asignar)</option>
+                  {members.map((m) => (
+                    <option key={m.id} value={m.id}>
+                      {m.name}
+                    </option>
+                  ))}
+                </select>
               </div>
 
               <div>
@@ -493,25 +607,70 @@ export default function MedsClientView({
                 />
               </div>
 
+              {/* Selector de Horas en Edición con Input Time */}
               <div>
                 <label style={{ display: 'block', fontSize: '0.8rem', color: '#94a3b8', marginBottom: '0.3rem' }}>
-                  Horas (separadas por coma)
+                  Horarios de toma
                 </label>
-                <input
-                  type="text"
-                  name="times"
-                  required
-                  defaultValue={Array.isArray(editingMed.times) ? editingMed.times.join(', ') : (editingMed.times || '')}
-                  style={{
-                    width: '100%',
-                    padding: '0.65rem',
-                    borderRadius: '8px',
-                    backgroundColor: '#0f1722',
-                    border: '1px solid #334155',
-                    color: '#fff',
-                    boxSizing: 'border-box',
-                  }}
-                />
+                <div style={{ display: 'flex', flexDirection: 'column', gap: '0.4rem' }}>
+                  {editTimes.map((tVal, idx) => (
+                    <div key={idx} style={{ display: 'flex', gap: '0.5rem', alignItems: 'center' }}>
+                      <input
+                        type="time"
+                        name="times"
+                        required
+                        value={tVal}
+                        onChange={(e) => {
+                          const updated = [...editTimes]
+                          updated[idx] = e.target.value
+                          setEditTimes(updated)
+                        }}
+                        style={{
+                          flex: 1,
+                          padding: '0.55rem 0.65rem',
+                          borderRadius: '8px',
+                          backgroundColor: '#0f1722',
+                          border: '1px solid #334155',
+                          color: '#fff',
+                          boxSizing: 'border-box',
+                        }}
+                      />
+                      {editTimes.length > 1 && (
+                        <button
+                          type="button"
+                          onClick={() => setEditTimes(editTimes.filter((_, i) => i !== idx))}
+                          style={{
+                            padding: '0.45rem 0.7rem',
+                            backgroundColor: '#7f1d1d20',
+                            color: '#f87171',
+                            border: '1px solid #7f1d1d60',
+                            borderRadius: '8px',
+                            cursor: 'pointer',
+                          }}
+                        >
+                          ✕
+                        </button>
+                      )}
+                    </div>
+                  ))}
+                  <button
+                    type="button"
+                    onClick={() => setEditTimes([...editTimes, '12:00'])}
+                    style={{
+                      alignSelf: 'flex-start',
+                      padding: '0.35rem 0.65rem',
+                      backgroundColor: '#1e293b',
+                      color: '#CDF6F9',
+                      border: '1px dashed #38bdf860',
+                      borderRadius: '6px',
+                      fontSize: '0.75rem',
+                      cursor: 'pointer',
+                      marginTop: '0.2rem',
+                    }}
+                  >
+                    + Añadir otra hora
+                  </button>
+                </div>
               </div>
 
               <div style={{ display: 'flex', gap: '0.75rem', marginTop: '0.5rem' }}>
@@ -537,6 +696,7 @@ export default function MedsClientView({
             <form
               action={async (fd) => {
                 if (confirm(`¿Seguro que deseas eliminar "${editingMed.name}"?`)) {
+                  setMedsList((prev) => prev.filter((m) => m.id !== editingMed.id))
                   startTransition(async () => {
                     await deleteMedicationAction(fd)
                     setEditingMed(null)

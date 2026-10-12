@@ -32,43 +32,41 @@ export async function addMedicationAction(formData: FormData) {
 
     const name = String(formData.get('name') || '').trim()
     const dose = String(formData.get('dose') || '').trim()
-    const assignedTo = String(formData.get('assignedTo') || '').trim()
-    const timesRaw = String(formData.get('times') || '').trim()
+    const memberId = String(formData.get('memberId') || '').trim()
+    
+    // Obtener todos los campos de hora enviados por el formulario
+    const timesRaw = formData.getAll('times').map(t => String(t).trim()).filter(Boolean)
 
     if (!name) return { ok: false, error: 'Falta el nombre' }
 
-    // Obtener un member_id válido si existe
-    const { data: members } = await supabase
-      .from('members')
-      .select('id, name')
-      .eq('family_id', ctx.familyId)
-      .limit(1)
+    let assignedName: string | null = null
+    if (memberId) {
+      const { data: member } = await supabase
+        .from('members')
+        .select('name')
+        .eq('id', memberId)
+        .single()
+      assignedName = member?.name || null
+    }
 
-    const defaultMemberId = members && members.length > 0 ? members[0].id : null
-
-    const times = timesRaw
-      .split(',')
-      .map((t) => t.trim())
-      .filter(Boolean)
-
-    const finalTimes = times.length > 0 ? times : ['08:00']
+    const finalTimes = timesRaw.length > 0 ? timesRaw : ['08:00']
 
     const payload: any = {
       family_id: ctx.familyId,
       name,
       dose: dose || null,
       times: finalTimes,
-      assigned_to: assignedTo || (members && members.length > 0 ? members[0].name : null),
+      assigned_to: assignedName,
       active: true,
     }
 
-    if (defaultMemberId) {
-      payload.member_id = defaultMemberId
+    if (memberId) {
+      payload.member_id = memberId
     }
 
     const { error } = await supabase.from('medications').insert(payload)
     if (error) {
-      console.error('Error insert medication:', error)
+      console.error('Error al insertar medicamento:', error)
       return { ok: false, error: error.message }
     }
 
@@ -89,31 +87,42 @@ export async function updateMedicationAction(formData: FormData) {
     const id = String(formData.get('id') || '')
     const name = String(formData.get('name') || '').trim()
     const dose = String(formData.get('dose') || '').trim()
-    const assignedTo = String(formData.get('assignedTo') || '').trim()
-    const timesRaw = String(formData.get('times') || '').trim()
+    const memberId = String(formData.get('memberId') || '').trim()
+    const timesRaw = formData.getAll('times').map(t => String(t).trim()).filter(Boolean)
 
     if (!id || !name) return { ok: false, error: 'Datos incompletos' }
 
-    const times = timesRaw
-      .split(',')
-      .map((t) => t.trim())
-      .filter(Boolean)
+    let assignedName: string | null = null
+    if (memberId) {
+      const { data: member } = await supabase
+        .from('members')
+        .select('name')
+        .eq('id', memberId)
+        .single()
+      assignedName = member?.name || null
+    }
 
-    const finalTimes = times.length > 0 ? times : ['08:00']
+    const finalTimes = timesRaw.length > 0 ? timesRaw : ['08:00']
+
+    const updatePayload: any = {
+      name,
+      dose: dose || null,
+      assigned_to: assignedName,
+      times: finalTimes,
+    }
+
+    if (memberId) {
+      updatePayload.member_id = memberId
+    }
 
     const { error } = await supabase
       .from('medications')
-      .update({
-        name,
-        dose: dose || null,
-        assigned_to: assignedTo || null,
-        times: finalTimes,
-      })
+      .update(updatePayload)
       .eq('id', id)
       .eq('family_id', ctx.familyId)
 
     if (error) {
-      console.error('Error updateMedicationAction:', error)
+      console.error('Error al actualizar medicamento:', error)
       return { ok: false, error: error.message }
     }
 
@@ -167,18 +176,14 @@ export async function toggleDoseAction(formData: FormData) {
     if (!medicationId || !date) return { ok: false }
 
     if (isTaken) {
-      // Desmarcar dosis
-      const { error } = await supabase
+      await supabase
         .from('dose_logs')
         .delete()
         .eq('family_id', ctx.familyId)
         .eq('medication_id', medicationId)
         .eq('date', date)
         .eq('scheduled_time', scheduledTime)
-
-      if (error) console.error('Error delete dose_log:', error)
     } else {
-      // 1. Averiguar si la medicina tiene member_id
       const { data: medData } = await supabase
         .from('medications')
         .select('member_id')
@@ -187,7 +192,6 @@ export async function toggleDoseAction(formData: FormData) {
 
       let memberId = medData?.member_id
 
-      // 2. Si no tiene, buscar o crear un miembro por defecto para que la foreign key no falle
       if (!memberId) {
         const { data: members } = await supabase
           .from('members')
@@ -195,22 +199,7 @@ export async function toggleDoseAction(formData: FormData) {
           .eq('family_id', ctx.familyId)
           .limit(1)
 
-        if (members && members.length > 0) {
-          memberId = members[0].id
-        } else {
-          // Crear un miembro inicial para la familia
-          const { data: newMember } = await supabase
-            .from('members')
-            .insert({
-              family_id: ctx.familyId,
-              name: 'Marcelo',
-              role: 'parent',
-            })
-            .select('id')
-            .single()
-
-          memberId = newMember?.id
-        }
+        memberId = members?.[0]?.id
       }
 
       const logPayload: any = {
@@ -227,7 +216,7 @@ export async function toggleDoseAction(formData: FormData) {
 
       const { error } = await supabase.from('dose_logs').insert(logPayload)
       if (error) {
-        console.error('Error insert dose_log:', error)
+        console.error('Error al insertar dose_log:', error)
         return { ok: false, error: error.message }
       }
     }
