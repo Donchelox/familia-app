@@ -6,19 +6,21 @@ import { getContext } from '@/lib/family'
 export async function addFamilyMember(formData: FormData) {
   const { supabase, familyId } = await getContext()
 
-  const name = formData.get('name') as string
+  const name = (formData.get('name') as string)?.trim()
   const role = (formData.get('role') as string) || 'hijo'
-  const type = (formData.get('type') as string) || 'person'
+  const email = (formData.get('email') as string)?.trim() || null
 
-  if (!name || name.trim() === '') {
-    return
-  }
+  if (!name) return
+
+  // Inferencia automática: mascota -> 'pet', el resto -> 'person'
+  const type = role === 'mascota' ? 'pet' : 'person'
 
   await supabase.from('family_members').insert({
     family_id: familyId,
-    name: name.trim(),
+    name,
     role,
     type,
+    // Si la tabla no tiene la columna email, puedes omitirla o crearla
   })
 
   revalidatePath('/ajustes')
@@ -39,4 +41,9 @@ export async function deleteFamilyMember(formData: FormData) {
 
   revalidatePath('/ajustes')
   revalidatePath('/')
+}
+
+export async function signOut() {
+  const { supabase } = await getContext()
+  await supabase.auth.signOut()
 }

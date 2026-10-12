@@ -1,19 +1,24 @@
 import Link from 'next/link'
 import { getContext } from '@/lib/family'
-import { addFamilyMember, deleteFamilyMember } from '@/app/actions/members'
+import { deleteFamilyMember, signOut } from '@/app/actions/members'
+import { AddMemberForm } from '@/components/AddMemberForm'
 
 export default async function AjustesPage() {
-  const { supabase, familyId } = await getContext()
+  const { supabase, familyId, familyName } = await getContext()
 
-  const { data: members } = await supabase
-    .from('family_members')
-    .select('*')
-    .eq('family_id', familyId)
-    .order('created_at', { ascending: true })
+  const [membersRes, userRes] = await Promise.all([
+    supabase
+      .from('family_members')
+      .select('*')
+      .eq('family_id', familyId)
+      .order('created_at', { ascending: true }),
+    supabase.auth.getUser(),
+  ])
 
-  const cardGradientStyle = {
-    background: 'linear-gradient(134.95deg, #F76911 47.75%, #F2A957 100%)',
-  }
+  const members = membersRes.data ?? []
+  const user = userRes.data?.user
+  const userEmail = user?.email || 'Sin correo asociado'
+  const userName = user?.user_metadata?.full_name || familyName || 'Usuario'
 
   return (
     <div className="w-full min-h-screen bg-[#131313] p-0 m-0 flex flex-col items-center text-white">
@@ -33,17 +38,31 @@ export default async function AjustesPage() {
           <h1 className="text-xl font-black tracking-tight text-white">Ajustes del Hogar</h1>
         </header>
 
-        {/* Listado de integrantes */}
+        {/* 1. SECCIÓN: Perfil y Cuenta */}
+        <section className="p-4 rounded-[20px] bg-[#1a1a1a] border border-neutral-800/80 flex flex-col gap-3">
+          <h2 className="text-sm font-bold text-white">Tu Cuenta</h2>
+          <div className="flex items-center gap-3">
+            <div className="w-11 h-11 rounded-full bg-[#F76911] text-white flex items-center justify-center font-bold text-base">
+              {userName.slice(0, 2).toUpperCase()}
+            </div>
+            <div className="leading-tight">
+              <p className="text-sm font-bold text-white">{userName}</p>
+              <p className="text-xs text-neutral-400">{userEmail}</p>
+            </div>
+          </div>
+        </section>
+
+        {/* 2. SECCIÓN: Integrantes del Hogar */}
         <section className="flex flex-col gap-3">
           <div>
-            <h2 className="text-base font-bold text-white">Integrantes de la familia</h2>
+            <h2 className="text-base font-bold text-white">Integrantes del hogar</h2>
             <p className="text-xs text-neutral-400 mt-0.5">
-              Perfiles visuales para asignar medicinas, eventos y tareas sin cuenta de usuario.
+              Hijos y mascotas no requieren acceso con correo; adultos y familiares pueden iniciar sesión.
             </p>
           </div>
 
           <div className="flex flex-col gap-2.5">
-            {(!members || members.length === 0) ? (
+            {members.length === 0 ? (
               <div className="p-4 rounded-[20px] bg-[#1a1a1a] border border-neutral-800 text-xs text-neutral-400 text-center">
                 Aún no has agregado integrantes adicionales.
               </div>
@@ -65,7 +84,6 @@ export default async function AjustesPage() {
                     </div>
                   </div>
 
-                  {/* Formulario de eliminación con input hidden */}
                   <form action={deleteFamilyMember}>
                     <input type="hidden" name="memberId" value={member.id} />
                     <button
@@ -82,62 +100,38 @@ export default async function AjustesPage() {
               ))
             )}
           </div>
+
+          {/* Formulario interactivo con rol y tipo inferido */}
+          <AddMemberForm />
         </section>
 
-        {/* Formulario para añadir */}
-        <section>
-          <form
-            action={addFamilyMember}
-            className="p-4 rounded-[20px] bg-[#1a1a1a] border border-neutral-800 flex flex-col gap-3.5"
-          >
-            <h3 className="text-sm font-bold text-white">Añadir integrante o mascota</h3>
-            
-            <div className="flex flex-col gap-1.5">
-              <label htmlFor="name" className="text-xs text-neutral-300 font-medium">Nombre</label>
-              <input
-                id="name"
-                name="name"
-                type="text"
-                placeholder="Ej. Nombre del peque o mascota"
-                required
-                className="w-full bg-[#131313] border border-neutral-800 rounded-xl px-3.5 py-2.5 text-sm text-white placeholder-neutral-500 focus:outline-none focus:border-[#F76911]"
-              />
+        {/* 3. SECCIÓN: Preferencias y Horarios */}
+        <section className="p-4 rounded-[20px] bg-[#1a1a1a] border border-neutral-800/80 flex flex-col gap-3">
+          <h2 className="text-sm font-bold text-white">Preferencias y Notificaciones</h2>
+          <div className="flex items-center justify-between py-1 border-b border-neutral-800/60">
+            <div>
+              <p className="text-xs font-semibold text-white">Recordatorios de Medicinas</p>
+              <p className="text-[11px] text-neutral-400">Avisos según dosis programadas</p>
             </div>
-
-            <div className="grid grid-cols-2 gap-3">
-              <div className="flex flex-col gap-1.5">
-                <label htmlFor="role" className="text-xs text-neutral-300 font-medium">Rol / Relación</label>
-                <select
-                  id="role"
-                  name="role"
-                  className="w-full bg-[#131313] border border-neutral-800 rounded-xl px-3 py-2.5 text-sm text-white focus:outline-none focus:border-[#F76911]"
-                >
-                  <option value="hijo">Hijo / Hija</option>
-                  <option value="mascota">Mascota</option>
-                  <option value="adulto">Adulto</option>
-                  <option value="familiar">Familiar</option>
-                </select>
-              </div>
-
-              <div className="flex flex-col gap-1.5">
-                <label htmlFor="type" className="text-xs text-neutral-300 font-medium">Tipo</label>
-                <select
-                  id="type"
-                  name="type"
-                  className="w-full bg-[#131313] border border-neutral-800 rounded-xl px-3 py-2.5 text-sm text-white focus:outline-none focus:border-[#F76911]"
-                >
-                  <option value="person">Persona</option>
-                  <option value="pet">Mascota</option>
-                </select>
-              </div>
+            <span className="text-xs font-bold text-[#F76911]">Activo</span>
+          </div>
+          <div className="flex items-center justify-between py-1">
+            <div>
+              <p className="text-xs font-semibold text-white">Resumen Diario Matutino</p>
+              <p className="text-[11px] text-neutral-400">Tareas y eventos a las 08:00</p>
             </div>
+            <span className="text-xs font-bold text-[#F76911]">Activo</span>
+          </div>
+        </section>
 
+        {/* 4. SECCIÓN: Cerrar Sesión */}
+        <section className="pt-2">
+          <form action={signOut}>
             <button
               type="submit"
-              style={cardGradientStyle}
-              className="w-full py-2.5 rounded-xl font-bold text-sm text-white transition-transform active:scale-[0.98] shadow-md mt-1"
+              className="w-full py-3 rounded-xl bg-[#221313] border border-red-900/40 text-red-400 hover:text-red-300 hover:bg-[#2e1717] font-bold text-sm transition-colors active:scale-[0.98]"
             >
-              + Guardar integrante
+              Cerrar sesión
             </button>
           </form>
         </section>
