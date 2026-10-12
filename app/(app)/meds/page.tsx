@@ -2,7 +2,7 @@ import { getContext } from '@/lib/family'
 import { createServerClient } from '@supabase/ssr'
 import { cookies } from 'next/headers'
 import PushSubscriptionManager from '@/components/PushSubscriptionManager'
-import { addMedication, toggleDose } from '@/app/actions/meds'
+import { addMedicationAction, toggleDoseAction } from '@/app/actions/meds'
 
 export const dynamic = 'force-dynamic'
 
@@ -36,7 +36,7 @@ export default async function MedsPage() {
     }
   )
 
-  // 1. Obtener medicamentos activos igual que en el Inicio
+  // 1. Obtener medicamentos de la familia
   const { data: medsData } = await supabase
     .from('medications')
     .select('id, name, dose, times, assigned_to, active')
@@ -47,12 +47,12 @@ export default async function MedsPage() {
     (m) => m.active !== false
   )
 
-  // 2. Fecha de hoy en formato YYYY-MM-DD (Chile)
+  // 2. Fecha hoy (Chile)
   const todayStr = new Intl.DateTimeFormat('en-CA', {
     timeZone: 'America/Santiago',
   }).format(new Date())
 
-  // 3. Consultar dosis tomadas hoy
+  // 3. Dosis tomadas hoy
   const { data: doseLogs } = await supabase
     .from('dose_logs')
     .select('medication_id, scheduled_time')
@@ -63,7 +63,7 @@ export default async function MedsPage() {
     (doseLogs || []).map((d) => `${d.medication_id}_${d.scheduled_time || ''}`)
   )
 
-  // 4. Aplanar la lista de dosis del día
+  // 4. Aplanar lista de dosis por hora
   interface ScheduledDose {
     medId: string
     name: string
@@ -82,14 +82,13 @@ export default async function MedsPage() {
     } else if (typeof med.times === 'string' && (med.times as string).length > 0) {
       tList = (med.times as string).split(',').map((s) => s.trim())
     } else {
-      tList = ['--:--']
+      tList = ['08:00']
     }
 
     tList.forEach((t) => {
       const isTaken =
         takenSet.has(`${med.id}_${t}`) ||
-        takenSet.has(`${med.id}_`) ||
-        (doseLogs || []).some((d) => d.medication_id === med.id)
+        takenSet.has(`${med.id}_`)
 
       allDoses.push({
         medId: med.id,
@@ -102,10 +101,9 @@ export default async function MedsPage() {
     })
   })
 
-  // Ordenar por hora
   allDoses.sort((a, b) => a.time.localeCompare(b.time))
 
-  // Hora actual en Chile (HH:MM)
+  // Hora actual en Chile
   const currentHM = new Intl.DateTimeFormat('es-CL', {
     timeZone: 'America/Santiago',
     hour: '2-digit',
@@ -127,10 +125,10 @@ export default async function MedsPage() {
         </p>
       </header>
 
-      {/* Botón de activación de notificaciones Push */}
+      {/* Botón de suscripción a push */}
       <PushSubscriptionManager familyId={ctx.familyId} />
 
-      {/* Lista de dosis para hoy */}
+      {/* Lista de medicamentos */}
       <section
         style={{
           backgroundColor: '#131d2a',
@@ -172,10 +170,11 @@ export default async function MedsPage() {
                   }}
                 >
                   <div style={{ display: 'flex', alignItems: 'center', gap: '0.85rem' }}>
-                    <form action={toggleDose}>
+                    <form action={toggleDoseAction}>
                       <input type="hidden" name="medicationId" value={doseItem.medId} />
                       <input type="hidden" name="date" value={todayStr} />
                       <input type="hidden" name="scheduledTime" value={doseItem.time} />
+                      <input type="hidden" name="isTaken" value={doseItem.isTaken ? 'true' : 'false'} />
                       <button
                         type="submit"
                         style={{
@@ -246,7 +245,7 @@ export default async function MedsPage() {
         )}
       </section>
 
-      {/* Formulario para añadir medicamento */}
+      {/* Formulario de agregar */}
       <section
         style={{
           backgroundColor: '#131d2a',
@@ -259,7 +258,7 @@ export default async function MedsPage() {
           Añadir medicamento
         </h2>
 
-        <form action={addMedication} style={{ display: 'flex', flexDirection: 'column', gap: '1rem' }}>
+        <form action={addMedicationAction} style={{ display: 'flex', flexDirection: 'column', gap: '1rem' }}>
           <div>
             <label style={{ display: 'block', fontSize: '0.85rem', color: '#94a3b8', marginBottom: '0.4rem' }}>
               Para quién

@@ -23,7 +23,7 @@ export async function GET(req: Request) {
     process.env.VAPID_PRIVATE_KEY!
   )
 
-  // Hora actual en Chile (HH:MM)
+  // Obtener hora actual en Chile (HH:MM)
   const now = new Date()
   const currentHM = new Intl.DateTimeFormat('es-CL', {
     timeZone: 'America/Santiago',
@@ -32,7 +32,7 @@ export async function GET(req: Request) {
     hour12: false,
   }).format(now)
 
-  // Consultar medicamentos activos cuyo array 'times' contenga la hora actual
+  // Buscar medicamentos activos cuyo array 'times' contenga la hora actual
   const { data: meds, error: medsErr } = await supabase
     .from('medications')
     .select('id, name, dose, times, family_id, active')

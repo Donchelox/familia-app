@@ -1,31 +1,90 @@
 'use server'
+
 import { getContext } from '@/lib/family'
-import { todayStr } from '@/lib/dates'
-import { str, refresh } from '@/lib/util'
+import { createServerClient } from '@supabase/ssr'
+import { cookies } from 'next/headers'
+import { revalidatePath } from 'next/cache'
 
-const TIME = /^([01]?\d|2[0-3]):[0-5]\d$/
+async function getSupabase() {
+  const cookieStore = await cookies()
+  return createServerClient(
+    process.env.NEXT_PUBLIC_SUPABASE_URL!,
+    process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!,
+    {
+      cookies: {
+        getAll() {
+          return cookieStore.getAll()
+        },
+        setAll(cookiesToSet) {
+          cookiesToSet.forEach(({ name, value, options }) =>
+            cookieStore.set(name, value, options)
+          )
+        },
+      },
+    }
+  )
+}
 
-/* Los medicamentos no se escriben en activity_log. */
-export async function addMedication(fd: FormData) {
+export async function addMedicationAction(formData: FormData) {
   const ctx = await getContext()
-  const times = [...new Set(str(fd, 'times').split(',').map((t) => t.trim()).filter(Boolean))]
-  if (!times.length || !times.every((t) => TIME.test(t))) return
-  await ctx.supabase.from('medications').insert({
-    family_id: ctx.familyId, person: str(fd, 'person'), name: str(fd, 'name'), dose: str(fd, 'dose'),
-    times: times.map((t) => t.padStart(5, '0')).sort(),
+  const supabase = await getSupabase()
+
+  const name = String(formData.get('name') || '').trim()
+  const dose = String(formData.get('dose') || '').trim()
+  const assignedTo = String(formData.get('assignedTo') || '').trim()
+  const timesRaw = String(formData.get('times') || '').trim()
+
+  if (!name) return
+
+  const times = timesRaw
+    .split(',')
+    .map((s) => s.trim())
+    .filter(Boolean)
+
+  const finalTimes = times.length > 0 ? times : ['08:00']
+
+  await supabase.from('medications').insert({
+    family_id: ctx.familyId,
+    name,
+    dose: dose || null,
+    times: finalTimes,
+    assigned_to: assignedTo || null,
+    active: true,
   })
-  refresh()
+
+  revalidatePath('/meds')
+  revalidatePath('/')
 }
-export async function deleteMedication(fd: FormData) {
+
+export async function toggleDoseAction(formData: FormData) {
   const ctx = await getContext()
-  await ctx.supabase.from('medications').delete().eq('family_id', ctx.familyId).eq('id', str(fd, 'id'))
-  refresh()
-}
-export async function toggleDose(fd: FormData) {
-  const ctx = await getContext()
-  const key = { medication_id: str(fd, 'id'), day: todayStr(), time: str(fd, 'time') }
-  const { data } = await ctx.supabase.from('dose_logs').select('time').match(key).maybeSingle()
-  if (data) await ctx.supabase.from('dose_logs').delete().match(key)
-  else await ctx.supabase.from('dose_logs').insert({ ...key, family_id: ctx.familyId })
-  refresh()
+  const supabase = await getSupabase()
+
+  const medicationId = String(formData.get('medicationId') || '')
+  const scheduledTime = String(formData.get('scheduledTime') || '')
+  const date = String(formData.get('date') || '')
+  const isTaken = formData.get('isTaken') === 'true'
+
+  if (!medicationId || !date) return
+
+  if (isTaken) {
+    await supabase
+      .from('dose_logs')
+      .delete()
+      .eq('family_id', ctx.familyId)
+      .eq('medication_id', medicationId)
+      .eq('date', date)
+      .eq('scheduled_time', scheduledTime)
+  } else {
+    await supabase.from('dose_logs').insert({
+      family_id: ctx.familyId,
+      medication_id: medicationId,
+      scheduled_time: scheduledTime,
+      date,
+      taken_at: new Date().toISOString(),
+    })
+  }
+
+  revalidatePath('/meds')
+  revalidatePath('/')
 }
