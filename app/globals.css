@@ -26,6 +26,20 @@ body {
   -moz-osx-font-smoothing: grayscale;
 }
 
+/* Bloquear gestos de zoom táctiles (pellizco y doble tap) */
+html,
+body {
+  touch-action: pan-x pan-y;
+  -webkit-text-size-adjust: 100%;
+}
+
+/* Evitar zoom automático que hace iOS al enfocar campos de texto */
+input,
+select,
+textarea {
+  font-size: 16px !important;
+}
+
 /* 3. Forzar tipografía en todos los elementos de texto */
 h1, h2, h3, h4, h5, h6, p, span, button, a, input, select, textarea {
   font-family: 'Google Sans Flex', 'Google Sans', system-ui, -apple-system, sans-serif;

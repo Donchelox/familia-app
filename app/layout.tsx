@@ -1,6 +1,16 @@
 import type { Metadata, Viewport } from 'next'
 import './globals.css'
 
+import type { Viewport } from 'next'
+
+export const viewport: Viewport = {
+  width: 'device-width',
+  initialScale: 1,
+  maximumScale: 1,
+  userScalable: false,
+  themeColor: '#131313',
+}
+
 export const metadata: Metadata = {
   title: 'Casa',
   description: 'Organización familiar',
