@@ -5,7 +5,6 @@ import { todayStr, nowHHMM, rel } from '@/lib/dates'
 export default async function Inicio() {
   const { supabase, familyId } = await getContext()
   const today = todayStr()
-  const now = nowHHMM()
 
   // Consultas paralelas a la base de datos
   const [
@@ -22,21 +21,20 @@ export default async function Inicio() {
       .from('shopping_items')
       .select('*')
       .eq('family_id', familyId)
-      .eq('done', false),
+      .or('done.eq.false,done.is.null'),
     supabase
       .from('todos')
       .select('id, title', { count: 'exact' })
       .eq('family_id', familyId)
-      .eq('done', false),
+      .or('done.eq.false,done.is.null'),
     supabase
       .from('school_tests')
-      .select('id, subject, test_date, topics')
+      .select('*')
       .eq('family_id', familyId),
     supabase
       .from('school_homework')
-      .select('id, title, due_date', { count: 'exact' })
-      .eq('family_id', familyId)
-      .eq('done', false),
+      .select('*')
+      .eq('family_id', familyId),
     supabase
       .from('medications')
       .select('id, name, person, times')
@@ -74,16 +72,12 @@ export default async function Inicio() {
     .join('')
     .toUpperCase()
 
-  // 2. CONTEO DE COMPRAS Y FERIA (tolerante a esquema)
+  // 2. CONTEO DE COMPRAS Y FERIA
   const shopItems = shopAllRes.data ?? []
-  
-  // Si los ítems tienen columna location o category con valor 'feria'
   const feriaItems = shopItems.filter((item: any) => {
     const loc = (item.location || item.category || item.place || '').toLowerCase()
     return loc.includes('feria')
   })
-
-  // Supermercado: todo lo que no sea feria
   const superItems = shopItems.filter((item: any) => {
     const loc = (item.location || item.category || item.place || '').toLowerCase()
     return !loc.includes('feria')
@@ -106,18 +100,18 @@ export default async function Inicio() {
     .filter((dose) => !taken.has(`${dose.id}|${dose.time}`))
     .sort((a, b) => a.time.localeCompare(b.time))
 
-  // 4. COLEGIO: Pruebas + Tareas escolares
+  // 4. COLEGIO: Pruebas + Tareas escolares pendientes (tolerante a done null/false)
   const allTests = testsRes.data ?? []
-  const pendingHomeworkCount = hwRes.count ?? 0
-  const schoolTotalCount = allTests.length + pendingHomeworkCount
+  const hwItems = (hwRes.data ?? []).filter((h: any) => h.done === false || h.done === null || h.done === undefined)
+  const schoolTotalCount = allTests.length + hwItems.length
 
   // 5. TAREAS GENERALES
-  const generalTodosCount = todosRes.count ?? 0
+  const generalTodosCount = todosRes.count ?? (todosRes.data?.length ?? 0)
 
-  // 6. TOTAL DE RECORDATORIOS / NOTIFICACIONES DEL DÍA
+  // 6. TOTAL DE RECORDATORIOS / NOTIFICACIONES
   const notificationCount = pendingMeds.length
 
-  // 7. PRÓXIMOS EVENTOS CONCURRENTES
+  // 7. LISTA DE PRÓXIMOS EVENTOS
   type EventItem = {
     id: string
     category: 'Colegio' | 'Medicinas' | 'Tareas' | 'Compras'
@@ -128,11 +122,11 @@ export default async function Inicio() {
 
   const upcomingEvents: EventItem[] = []
 
-  allTests.slice(0, 2).forEach((test) => {
+  allTests.slice(0, 2).forEach((test: any) => {
     upcomingEvents.push({
       id: `test-${test.id}`,
       category: 'Colegio',
-      title: test.subject,
+      title: test.subject || 'Prueba',
       description: test.topics || (test.test_date ? `Fecha: ${rel(test.test_date).toLowerCase()}` : 'Prueba pendiente'),
       href: '/colegio',
     })
@@ -174,7 +168,7 @@ export default async function Inicio() {
 
   return (
     <div className="w-full flex flex-col gap-6">
-      {/* HEADER: Avatar individual, Saludo con nombre del usuario y Campana a /notificaciones */}
+      {/* HEADER: Avatar individual, Saludo y Campana */}
       <header className="flex items-center justify-between">
         <div className="flex items-center gap-3">
           <Link
@@ -278,7 +272,7 @@ export default async function Inicio() {
             <span className="text-xs font-black tracking-wide text-white relative z-10">Medicinas</span>
           </Link>
 
-          {/* Colegio */}
+          {/* Colegio (Total combinado de pruebas + tareas escolares) */}
           <Link
             href="/colegio"
             style={cardGradientStyle}
@@ -302,7 +296,7 @@ export default async function Inicio() {
             <span className="text-xs font-black tracking-wide text-white relative z-10">Colegio</span>
           </Link>
 
-          {/* Tareas */}
+          {/* Tareas (Generales del hogar) */}
           <Link
             href="/tareas"
             style={cardGradientStyle}
@@ -340,7 +334,7 @@ export default async function Inicio() {
           </Link>
         </div>
 
-        {/* Lista de Eventos con Badges */}
+        {/* Lista de Eventos */}
         <div className="space-y-4">
           {upcomingEvents.length === 0 ? (
             <p className="text-neutral-500 text-sm py-4">No hay eventos pendientes hoy.</p>

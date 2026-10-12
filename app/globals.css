@@ -9,9 +9,19 @@
   font-display: swap;
 }
 
-/* 2. Reseteo base y fondo estricto */
+/* 2. Reseteo base y fondo */
 *, *::before, *::after {
   box-sizing: border-box;
+}
+
+/* Ocultar barra de scroll en todos los elementos permitiendo scroll normal */
+* {
+  -ms-overflow-style: none;  /* IE y Edge */
+  scrollbar-width: none;     /* Firefox */
+}
+
+*::-webkit-scrollbar {
+  display: none;             /* Chrome, Safari, Opera y Webview/PWA */
 }
 
 html,
@@ -24,28 +34,16 @@ body {
   font-family: 'Google Sans Flex', 'Google Sans', system-ui, -apple-system, sans-serif;
   -webkit-font-smoothing: antialiased;
   -moz-osx-font-smoothing: grayscale;
-}
-
-/* Bloquear gestos de zoom táctiles (pellizco y doble tap) */
-html,
-body {
   touch-action: pan-x pan-y;
   -webkit-text-size-adjust: 100%;
 }
 
-/* Evitar zoom automático que hace iOS al enfocar campos de texto */
-input,
-select,
-textarea {
-  font-size: 16px !important;
-}
-
-/* 3. Forzar tipografía en todos los elementos de texto */
+/* 3. Tipografía forzada */
 h1, h2, h3, h4, h5, h6, p, span, button, a, input, select, textarea {
   font-family: 'Google Sans Flex', 'Google Sans', system-ui, -apple-system, sans-serif;
 }
 
-/* 4. Neutralizar tags <a> para que no inyecten azul ni subrayado */
+/* 4. Enlaces neutrales */
 a {
   color: inherit;
   text-decoration: none;
@@ -55,7 +53,7 @@ a:visited {
   color: inherit;
 }
 
-/* Solo neutralizamos las clases legacy, NO la etiqueta main */
+/* 5. Neutralizar layouts legacy */
 .layout,
 .content {
   background-color: #131313 !important;
@@ -63,4 +61,9 @@ a:visited {
   margin: 0 !important;
   max-width: 100% !important;
   border: none !important;
+}
+
+/* 6. Evitar zoom automático en inputs en iOS */
+input, select, textarea {
+  font-size: 16px !important;
 }
