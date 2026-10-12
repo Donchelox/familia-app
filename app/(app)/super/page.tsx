@@ -1,7 +1,8 @@
 import Link from 'next/link'
 import { getContext } from '@/lib/family'
 import HistoryBox from '@/components/HistoryBox'
-import { addItems, toggleItem, deleteItem, clearBought } from '@/app/actions/shopping'
+import AddShoppingSheet from '@/components/AddShoppingSheet'
+import { toggleItem, deleteItem, clearBought } from '@/app/actions/shopping'
 
 export default async function Super({
   searchParams,
@@ -25,12 +26,8 @@ export default async function Super({
   const items = (data ?? []).filter((i) => !i.done)
   const bought = (data ?? []).filter((i) => i.done)
 
-  const cardGradientStyle = {
-    background: 'linear-gradient(134.95deg, #F76911 47.75%, #F2A957 100%)',
-  }
-
   return (
-    <div className="w-full flex flex-col gap-6 relative min-h-[calc(100vh-140px)]">
+    <div className="w-full flex flex-col gap-6 relative min-h-[calc(100vh-80px)] pb-24">
       {/* 1. HEADER IDÉNTICO A FIGMA */}
       <header className="flex items-center justify-between">
         <div className="flex items-center gap-3">
@@ -92,30 +89,7 @@ export default async function Super({
         </Link>
       </div>
 
-      {/* 3. INPUT RÁPIDO PARA AÑADIR */}
-      {canEdit && (
-        <form action={addItems} className="flex gap-2">
-          <input type="hidden" name="list" value={list} />
-          <input
-            name="name"
-            placeholder={
-              fe ? 'Paltas, limones, tomates…' : 'Leche, pan, café, detergente…'
-            }
-            aria-label="Productos a añadir"
-            required
-            className="flex-1 bg-[#1a1a1a] border border-neutral-800 rounded-[16px] px-4 py-3 text-sm text-white placeholder-neutral-500 focus:outline-none focus:border-[#F76911]"
-          />
-          <button
-            type="submit"
-            style={cardGradientStyle}
-            className="px-5 py-3 rounded-[16px] font-bold text-sm text-white shrink-0 active:scale-95 transition-transform shadow-md"
-          >
-            Añadir
-          </button>
-        </form>
-      )}
-
-      {/* 4. SECCIÓN DE ÍTEMS CON ESTILO FIGMA */}
+      {/* 3. SECCIÓN DE ÍTEMS CON ESTILO FIGMA */}
       <section className="flex flex-col gap-3">
         <div className="flex items-center gap-2">
           <svg className="w-5 h-5 text-[#F76911]" fill="currentColor" viewBox="0 0 24 24">
@@ -152,7 +126,7 @@ export default async function Super({
                 </div>
 
                 <div className="flex items-center gap-3">
-                  {/* Botón Comprado / Listo */}
+                  {/* Botón Comprar */}
                   <form action={toggleItem}>
                     <input type="hidden" name="id" value={i.id} />
                     <button
@@ -202,16 +176,8 @@ export default async function Super({
         </div>
       </section>
 
-      {/* 5. BOTÓN FLOTANTE "+ AÑADIR" IDÉNTICO A FIGMA */}
-      {canEdit && (
-        <a
-          href="#name"
-          style={cardGradientStyle}
-          className="fixed bottom-24 right-5 sm:right-[calc(50%-180px)] px-6 py-3 rounded-full font-bold text-sm text-white shadow-xl flex items-center gap-1.5 active:scale-95 transition-transform no-underline z-20"
-        >
-          <span>+ Añadir</span>
-        </a>
-      )}
+      {/* 4. BOTTOM SHEET ACCIONADO POR EL BOTÓN FLOTANTE */}
+      {canEdit && <AddShoppingSheet list={list as 'super' | 'feria'} />}
     </div>
   )
 }
