@@ -1,67 +1,6 @@
 @import "tailwindcss";
 
-/* 1. Fuente variable Google Sans Flex */
-@font-face {
-  font-family: 'Google Sans Flex';
-  src: url('https://fonts.gstatic.com/s/googlesansflex/v1/GoogleSansFlex-VariableFont_GRAD,ROND,opsz,wght.woff2') format('woff2');
-  font-weight: 100 1000;
-  font-style: normal;
-  font-display: swap;
-}
-
-/* 2. Reseteo base y desactivación de menú contextual y selección */
-*, *::before, *::after {
-  box-sizing: border-box;
-  -webkit-touch-callout: none !important; /* Desactiva menú contextual al mantener presionado en iOS/Safari/Android WebView */
-  -webkit-tap-highlight-color: transparent !important; /* Quita el destello gris/azul al tocar */
-}
-
-/* Bloqueo global de selección en toda la app */
-html,
-body,
-div,
-span,
-h1, h2, h3, h4, h5, h6,
-p,
-a,
-button,
-svg,
-img {
-  -webkit-user-select: none !important;
-  -moz-user-select: none !important;
-  -ms-user-select: none !important;
-  user-select: none !important;
-  -webkit-touch-callout: none !important;
-}
-
-/* Evitar arrastrar enlaces o imágenes */
-a, img, button {
-  -webkit-user-drag: none;
-  user-drag: none;
-}
-
-/* Permitir interacción y edición normal dentro de formularios */
-input,
-textarea {
-  -webkit-user-select: text !important;
-  -moz-user-select: text !important;
-  -ms-user-select: text !important;
-  user-select: text !important;
-  -webkit-touch-callout: default !important;
-  font-size: 16px !important; /* Evita zoom automático en Safari */
-}
-
-/* 3. Ocultar scrollbars manteniendo scroll funcional */
-* {
-  -ms-overflow-style: none;
-  scrollbar-width: none;
-}
-
-*::-webkit-scrollbar {
-  display: none;
-}
-
-/* 4. Estilos de fondo y tipografía */
+/* Tipografía del sistema y Sans moderna */
 html,
 body {
   background-color: #131313;
@@ -69,22 +8,22 @@ body {
   margin: 0;
   padding: 0;
   min-height: 100vh;
-  font-family: 'Google Sans Flex', 'Google Sans', system-ui, -apple-system, sans-serif;
+  font-family: system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
   -webkit-font-smoothing: antialiased;
   -moz-osx-font-smoothing: grayscale;
-  touch-action: pan-x pan-y;
-  -webkit-text-size-adjust: 100%;
 }
 
-h1, h2, h3, h4, h5, h6, p, span, button, a, input, select, textarea {
-  font-family: 'Google Sans Flex', 'Google Sans', system-ui, -apple-system, sans-serif;
+*, *::before, *::after {
+  box-sizing: border-box;
+  -webkit-touch-callout: none !important;
+  -webkit-tap-highlight-color: transparent !important;
 }
 
-a {
-  color: inherit;
-  text-decoration: none;
+/* Ocultar scrollbars */
+* {
+  -ms-overflow-style: none;
+  scrollbar-width: none;
 }
-
-a:visited {
-  color: inherit;
+*::-webkit-scrollbar {
+  display: none;
 }

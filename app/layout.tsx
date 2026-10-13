@@ -1,5 +1,8 @@
 import type { Metadata, Viewport } from 'next'
 import './globals.css'
+import PreventContextMenu from '@/components/PreventContextMenu'
+
+
 
 export const viewport: Viewport = {
   themeColor: '#131313',
@@ -20,10 +23,15 @@ export const metadata: Metadata = {
   },
 }
 
-export default function RootLayout({ children }: { children: React.ReactNode }) {
+export default function RootLayout({
+  children,
+}: {
+  children: React.ReactNode
+}) {
   return (
-    <html lang="es" className="bg-[#131313] text-white">
-      <body className="bg-[#131313] text-white min-h-screen antialiased">
+    <html lang="es" suppressHydrationWarning>
+      <body className="bg-[#131313] text-white" suppressHydrationWarning>
+        <PreventContextMenu />
         {children}
       </body>
     </html>
