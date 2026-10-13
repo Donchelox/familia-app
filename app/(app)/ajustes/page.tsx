@@ -1,6 +1,5 @@
 import { getContext } from '@/lib/family'
 import AjustesView from '@/components/AjustesView'
-import packageJson from '@/package.json'
 
 export default async function AjustesPage() {
   const { supabase, familyId, familyName } = await getContext()
@@ -27,7 +26,7 @@ export default async function AjustesPage() {
     user?.user_metadata?.name ||
     'Usuario'
 
-  // Si no están definidos aún en la base de datos, por defecto están activos (true)
+  // Preferencias iniciales (por defecto activas si no existen en BD)
   const medRemindersEnabled =
     familyRes.data?.med_reminders_enabled ??
     user?.user_metadata?.med_reminders_enabled ??
@@ -46,17 +45,7 @@ export default async function AjustesPage() {
       members={members}
       initialMedReminders={medRemindersEnabled}
       initialMorningSummary={morningSummaryEnabled}
+      appVersion="1.0.0"
     />
   )
 }
-
-// Y en el return del componente:
-<AjustesView
-  userName={userName}
-  userEmail={userEmail}
-  familyName={familyName || 'Familia'}
-  members={members}
-  initialMedReminders={medRemindersEnabled}
-  initialMorningSummary={morningSummaryEnabled}
-  appVersion={packageJson.version}
-/>
