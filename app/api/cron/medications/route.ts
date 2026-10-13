@@ -31,11 +31,26 @@ export async function GET(req: Request) {
   const hm = nowHHMM() // hora de Chile, HH:MM
   const day = todayStr()
 
-  // 1. Medicamentos con una toma a esta hora
+  // Ventana de recordatorios: aviso a la hora exacta y luego cada RETRY_EVERY min
+  // hasta RETRY_WINDOW min mientras la dosis no esté marcada como tomada.
+  // (Asume que el cron se ejecuta cada minuto.)
+  const RETRY_EVERY = 5
+  const RETRY_WINDOW = 120
+  const [h, m] = hm.split(':').map(Number)
+  const nowMin = h * 60 + m
+  const slots: { time: string; elapsed: number }[] = []
+  for (let elapsed = 0; elapsed <= RETRY_WINDOW; elapsed += RETRY_EVERY) {
+    const t = nowMin - elapsed
+    if (t < 0) break // no cruzar medianoche: dose_logs es por día
+    slots.push({ time: `${String(Math.floor(t / 60)).padStart(2, '0')}:${String(t % 60).padStart(2, '0')}`, elapsed })
+  }
+  const slotTimes = slots.map((s) => s.time)
+
+  // 1. Medicamentos con alguna toma en la ventana
   const { data: meds, error: medsErr } = await supabase
     .from('medications')
-    .select('id, name, dose, person, family_id')
-    .contains('times', [hm])
+    .select('id, name, dose, person, family_id, times')
+    .overlaps('times', slotTimes)
   if (medsErr) {
     console.error('cron meds:', medsErr)
     return NextResponse.json({ error: 'Error consultando medicamentos' }, { status: 500 })
@@ -47,32 +62,45 @@ export async function GET(req: Request) {
   const { data: fams } = await supabase.from('families').select('id, reminder_push').in('id', famIds)
   const pushOn = new Set((fams ?? []).filter((f) => f.reminder_push).map((f) => f.id))
 
-  // 3. Omitir dosis ya marcadas como tomadas hoy a esta hora
+  // 3. Omitir dosis ya marcadas como tomadas hoy (por medicamento + horario)
   const { data: logs } = await supabase
     .from('dose_logs')
-    .select('medication_id')
+    .select('medication_id, time')
     .eq('day', day)
-    .eq('time', hm)
+    .in('time', slotTimes)
     .in('medication_id', meds.map((m) => m.id))
-  const taken = new Set((logs ?? []).map((l) => l.medication_id))
+  const taken = new Set((logs ?? []).map((l) => `${l.medication_id}_${String(l.time).slice(0, 5)}`))
 
-  const due = meds.filter((m) => pushOn.has(m.family_id) && !taken.has(m.id))
+  const due: { med: (typeof meds)[number]; scheduledTime: string; elapsed: number }[] = []
+  for (const med of meds) {
+    if (!pushOn.has(med.family_id)) continue
+    const medTimes: string[] = Array.isArray(med.times) ? med.times : []
+    for (const s of slots) {
+      if (medTimes.includes(s.time) && !taken.has(`${med.id}_${s.time}`)) {
+        due.push({ med, scheduledTime: s.time, elapsed: s.elapsed })
+      }
+    }
+  }
   if (!due.length) return NextResponse.json({ ok: true, hm, sent: 0 })
 
   // 4. Suscripciones de esas familias
   const { data: subs } = await supabase
     .from('push_subscriptions')
     .select('id, family_id, endpoint, p256dh, auth')
-    .in('family_id', [...new Set(due.map((m) => m.family_id))])
+    .in('family_id', [...new Set(due.map((d) => d.med.family_id))])
 
   let sent = 0
   const jobs: Promise<void>[] = []
-  for (const med of due) {
+  for (const { med, scheduledTime, elapsed } of due) {
+    const who = `${med.person ? med.person + ' · ' : ''}${med.dose || 'Dosis habitual'}`
     const payload = JSON.stringify({
-      title: `💊 ${med.name}`,
-      body: `${med.person ? med.person + ' · ' : ''}${med.dose || 'Dosis habitual'}. Es momento de tomarlo.`,
+      title: elapsed > 0 ? `⏰ ${med.name} (pendiente)` : `💊 ${med.name}`,
+      body: elapsed > 0
+        ? `${who}. Pendiente desde las ${scheduledTime} (hace ${elapsed} min).`
+        : `${who}. Es momento de tomarlo.`,
       url: '/meds',
-      tag: `med-${med.id}-${hm}`,
+      // Mismo tag por dosis: cada reintento reemplaza al anterior (renotify en sw.js)
+      tag: `med-${med.id}-${day}-${scheduledTime}`,
     })
     for (const sub of (subs ?? []).filter((s) => s.family_id === med.family_id)) {
       jobs.push(
