@@ -72,7 +72,72 @@ export async function addShoppingItem(formData: FormData) {
   revalidatePath('/')
 }
 
-// 2. MARCAR / DESMARCAR COMPRADO (TOGGLE)
+// 2. ACTUALIZAR ÍTEM (Nombre, cantidad o categoría)
+export async function updateShoppingItem(
+  arg1: string | FormData,
+  arg2?: { name?: string; quantity?: string | null; category?: string | null }
+) {
+  const { supabase, familyId } = await getContext()
+
+  let id = ''
+  const updates: Record<string, any> = {}
+
+  if (arg1 instanceof FormData) {
+    id = (arg1.get('id') as string)?.trim()
+    const name = (arg1.get('name') as string)?.trim()
+    const quantity = (arg1.get('quantity') as string)?.trim()
+    const category = (arg1.get('category') as string)?.trim()
+
+    if (name) updates.name = name
+    if (quantity !== undefined) updates.quantity = quantity || null
+    if (category !== undefined) updates.category = category || null
+  } else {
+    id = arg1
+    if (arg2) {
+      if (arg2.name !== undefined) updates.name = arg2.name.trim()
+      if (arg2.quantity !== undefined) updates.quantity = arg2.quantity
+      if (arg2.category !== undefined) updates.category = arg2.category
+    }
+  }
+
+  if (!id || Object.keys(updates).length === 0) return
+
+  const userRes = await supabase.auth.getUser()
+  const actorName = await getActorName(supabase, userRes.data?.user, familyId)
+
+  const { data: item } = await supabase
+    .from('shopping_items')
+    .select('name, list')
+    .eq('id', id)
+    .eq('family_id', familyId)
+    .single()
+
+  const { error } = await supabase
+    .from('shopping_items')
+    .update(updates)
+    .eq('id', id)
+    .eq('family_id', familyId)
+
+  if (!error && item) {
+    const listLabel = item.list === 'feria' ? 'Feria' : 'Supermercado'
+    await recordActivity(supabase, {
+      familyId,
+      actorName,
+      entity: 'shopping',
+      entityId: id,
+      action: 'update',
+      title: `Actualizado en ${listLabel}: ${updates.name || item.name}`,
+      scheduledAt: null,
+      details: { list: item.list, ...updates },
+    })
+  }
+
+  revalidatePath('/super')
+  revalidatePath('/feria')
+  revalidatePath('/')
+}
+
+// 3. MARCAR / DESMARCAR COMPRADO (TOGGLE)
 export async function toggleShoppingItem(id: string, currentDone: boolean) {
   const { supabase, familyId } = await getContext()
   const nextDone = !currentDone
@@ -112,7 +177,7 @@ export async function toggleShoppingItem(id: string, currentDone: boolean) {
   revalidatePath('/')
 }
 
-// 3. ELIMINAR UN ÍTEM ESPECÍFICO
+// 4. ELIMINAR UN ÍTEM ESPECÍFICO
 export async function deleteShoppingItem(id: string) {
   const { supabase, familyId } = await getContext()
 
@@ -151,7 +216,7 @@ export async function deleteShoppingItem(id: string) {
   revalidatePath('/')
 }
 
-// 4. LIMPIAR TODOS LOS COMPRADOS (CLEAR COMPLETED)
+// 5. LIMPIAR TODOS LOS COMPRADOS (CLEAR COMPLETED)
 export async function clearCompletedShopping(listType: 'super' | 'feria') {
   const { supabase, familyId } = await getContext()
 
@@ -194,7 +259,7 @@ export async function clearCompletedShopping(listType: 'super' | 'feria') {
   revalidatePath('/')
 }
 
-// 5. AÑADIR MÚLTIPLES ÍTEMS (Compatible con llamada directa o con FormData)
+// 6. AÑADIR MÚLTIPLES ÍTEMS (Compatible con AddShoppingSheet)
 export async function addItems(
   arg1: 'super' | 'feria' | FormData,
   arg2?: string[]
