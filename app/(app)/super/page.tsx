@@ -4,6 +4,7 @@ import { useState, useEffect } from 'react'
 import Link from 'next/link'
 import { useRouter } from 'next/navigation'
 import { createClient } from '@/lib/supabase/client'
+import { addShoppingItem } from '@/app/actions/shopping'
 
 interface ShoppingItem {
   id: string
@@ -102,12 +103,16 @@ export default function SuperPage() {
         .update({ name: name.trim(), category })
         .eq('id', editingItem.id)
     } else {
-      await supabase.from('shopping_items').insert({
-        name: name.trim(),
-        category,
-        list: 'super',
-        done: false,
-      })
+      const fd = new FormData()
+      fd.set('name', name.trim())
+      fd.set('list', 'super')
+      fd.set('category', category)
+      const res = await addShoppingItem(fd)
+      if (!res?.ok) {
+        alert('No se pudo guardar: ' + (res?.error ?? 'error desconocido'))
+        setSaving(false)
+        return
+      }
     }
 
     setSaving(false)

@@ -33,7 +33,7 @@ export async function addShoppingItem(formData: FormData) {
   const category = (formData.get('category') as string)?.trim() || null
   const quantity = (formData.get('quantity') as string)?.trim() || null
 
-  if (!name) return
+  if (!name) return { ok: false, error: 'Falta el nombre' }
 
   const userRes = await supabase.auth.getUser()
   const actorName = await getActorName(supabase, userRes.data?.user, familyId)
@@ -53,7 +53,12 @@ export async function addShoppingItem(formData: FormData) {
     .select('id, name, list')
     .single()
 
-  if (!error && newItem) {
+  if (error) {
+    console.error('addShoppingItem:', error)
+    return { ok: false, error: error.message }
+  }
+
+  if (newItem) {
     const listLabel = newItem.list === 'feria' ? 'Feria' : 'Supermercado'
     await recordActivity(supabase, {
       familyId,
@@ -70,6 +75,7 @@ export async function addShoppingItem(formData: FormData) {
   revalidatePath('/super')
   revalidatePath('/feria')
   revalidatePath('/')
+  return { ok: true }
 }
 
 // 2. ACTUALIZAR ÍTEM (Nombre, cantidad o categoría)

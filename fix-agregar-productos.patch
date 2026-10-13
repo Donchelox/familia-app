@@ -1,0 +1,115 @@
+diff --git a/app/(app)/feria/page.tsx b/app/(app)/feria/page.tsx
+index ea6de9a..6a4752e 100644
+--- a/app/(app)/feria/page.tsx
++++ b/app/(app)/feria/page.tsx
+@@ -4,6 +4,7 @@ import { useState, useEffect } from 'react'
+ import Link from 'next/link'
+ import { useRouter } from 'next/navigation'
+ import { createClient } from '@/lib/supabase/client'
++import { addShoppingItem } from '@/app/actions/shopping'
+ 
+ interface FeriaItem {
+   id: string
+@@ -92,12 +93,16 @@ export default function FeriaPage() {
+         .update({ name: name.trim(), quantity: quantity.trim() })
+         .eq('id', editingItem.id)
+     } else {
+-      await supabase.from('shopping_items').insert({
+-        name: name.trim(),
+-        quantity: quantity.trim(),
+-        list: 'feria',
+-        done: false,
+-      })
++      const fd = new FormData()
++      fd.set('name', name.trim())
++      fd.set('list', 'feria')
++      fd.set('quantity', quantity.trim())
++      const res = await addShoppingItem(fd)
++      if (!res?.ok) {
++        alert('No se pudo guardar: ' + (res?.error ?? 'error desconocido'))
++        setSaving(false)
++        return
++      }
+     }
+ 
+     setSaving(false)
+diff --git a/app/(app)/super/page.tsx b/app/(app)/super/page.tsx
+index fd3b02a..4df6a82 100644
+--- a/app/(app)/super/page.tsx
++++ b/app/(app)/super/page.tsx
+@@ -4,6 +4,7 @@ import { useState, useEffect } from 'react'
+ import Link from 'next/link'
+ import { useRouter } from 'next/navigation'
+ import { createClient } from '@/lib/supabase/client'
++import { addShoppingItem } from '@/app/actions/shopping'
+ 
+ interface ShoppingItem {
+   id: string
+@@ -102,12 +103,16 @@ export default function SuperPage() {
+         .update({ name: name.trim(), category })
+         .eq('id', editingItem.id)
+     } else {
+-      await supabase.from('shopping_items').insert({
+-        name: name.trim(),
+-        category,
+-        list: 'super',
+-        done: false,
+-      })
++      const fd = new FormData()
++      fd.set('name', name.trim())
++      fd.set('list', 'super')
++      fd.set('category', category)
++      const res = await addShoppingItem(fd)
++      if (!res?.ok) {
++        alert('No se pudo guardar: ' + (res?.error ?? 'error desconocido'))
++        setSaving(false)
++        return
++      }
+     }
+ 
+     setSaving(false)
+diff --git a/app/actions/shopping.ts b/app/actions/shopping.ts
+index 8df99a5..bed3b15 100644
+--- a/app/actions/shopping.ts
++++ b/app/actions/shopping.ts
+@@ -33,7 +33,7 @@ export async function addShoppingItem(formData: FormData) {
+   const category = (formData.get('category') as string)?.trim() || null
+   const quantity = (formData.get('quantity') as string)?.trim() || null
+ 
+-  if (!name) return
++  if (!name) return { ok: false, error: 'Falta el nombre' }
+ 
+   const userRes = await supabase.auth.getUser()
+   const actorName = await getActorName(supabase, userRes.data?.user, familyId)
+@@ -53,7 +53,12 @@ export async function addShoppingItem(formData: FormData) {
+     .select('id, name, list')
+     .single()
+ 
+-  if (!error && newItem) {
++  if (error) {
++    console.error('addShoppingItem:', error)
++    return { ok: false, error: error.message }
++  }
++
++  if (newItem) {
+     const listLabel = newItem.list === 'feria' ? 'Feria' : 'Supermercado'
+     await recordActivity(supabase, {
+       familyId,
+@@ -70,6 +75,7 @@ export async function addShoppingItem(formData: FormData) {
+   revalidatePath('/super')
+   revalidatePath('/feria')
+   revalidatePath('/')
++  return { ok: true }
+ }
+ 
+ // 2. ACTUALIZAR ÍTEM (Nombre, cantidad o categoría)
+diff --git a/supabase/fix-shopping-columns.sql b/supabase/fix-shopping-columns.sql
+new file mode 100644
+index 0000000..10aee01
+--- /dev/null
++++ b/supabase/fix-shopping-columns.sql
+@@ -0,0 +1,4 @@
++-- Columnas que el código ya usa en shopping_items (Súper: category, Feria: quantity)
++alter table shopping_items
++  add column if not exists category text,
++  add column if not exists quantity text;
