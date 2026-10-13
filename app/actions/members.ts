@@ -100,3 +100,29 @@ export async function signOut() {
   await supabase.auth.signOut()
   redirect('/login')
 }
+
+export async function updatePreferences(formData: FormData) {
+  const { supabase, familyId } = await getContext()
+  const medReminders = formData.get('medReminders') === 'true'
+  const morningSummary = formData.get('morningSummary') === 'true'
+
+  // Guarda en la tabla families (o user metadata como fallback)
+  await supabase
+    .from('families')
+    .update({
+      med_reminders_enabled: medReminders,
+      morning_summary_enabled: morningSummary,
+    })
+    .eq('id', familyId)
+
+  // Guardamos también en los metadatos del usuario para disponibilidad inmediata
+  await supabase.auth.updateUser({
+    data: {
+      med_reminders_enabled: medReminders,
+      morning_summary_enabled: morningSummary,
+    },
+  })
+
+  revalidatePath('/ajustes')
+  revalidatePath('/')
+}

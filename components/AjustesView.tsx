@@ -1,12 +1,13 @@
 'use client'
 
-import { useState } from 'react'
+import { useState, useTransition } from 'react'
 import Link from 'next/link'
 import {
   updateAccount,
   addFamilyMember,
   updateFamilyMember,
   deleteFamilyMember,
+  updatePreferences,
   signOut,
 } from '@/app/actions/members'
 
@@ -22,6 +23,8 @@ interface AjustesViewProps {
   userEmail: string
   familyName: string
   members: FamilyMember[]
+  initialMedReminders?: boolean
+  initialMorningSummary?: boolean
 }
 
 type SheetMode =
@@ -35,8 +38,15 @@ export default function AjustesView({
   userEmail,
   familyName,
   members,
+  initialMedReminders = true,
+  initialMorningSummary = true,
 }: AjustesViewProps) {
   const [sheet, setSheet] = useState<SheetMode>(null)
+  const [isPending, startTransition] = useTransition()
+
+  // Estados locales para los Toggles de Preferencias
+  const [medReminders, setMedReminders] = useState<boolean>(initialMedReminders)
+  const [morningSummary, setMorningSummary] = useState<boolean>(initialMorningSummary)
 
   // Estados para Editar Perfil / Cuenta
   const [accountName, setAccountName] = useState(userName)
@@ -50,6 +60,30 @@ export default function AjustesView({
 
   const cardGradientStyle = {
     background: 'linear-gradient(134.95deg, #F76911 47.75%, #F2A957 100%)',
+  }
+
+  // Manejador del toggle de medicamentos
+  const handleToggleMedReminders = () => {
+    const nextVal = !medReminders
+    setMedReminders(nextVal)
+    startTransition(async () => {
+      const fd = new FormData()
+      fd.append('medReminders', String(nextVal))
+      fd.append('morningSummary', String(morningSummary))
+      await updatePreferences(fd)
+    })
+  }
+
+  // Manejador del toggle de resumen diario
+  const handleToggleMorningSummary = () => {
+    const nextVal = !morningSummary
+    setMorningSummary(nextVal)
+    startTransition(async () => {
+      const fd = new FormData()
+      fd.append('medReminders', String(medReminders))
+      fd.append('morningSummary', String(nextVal))
+      await updatePreferences(fd)
+    })
   }
 
   const openAccountEdit = () => {
@@ -108,7 +142,7 @@ export default function AjustesView({
         </Link>
       </header>
 
-      {/* 2. SECCIÓN: TU CUENTA Y FAMILIA */}
+      {/* 2. SECCIÓN: TU CUENTA */}
       <section className="flex flex-col gap-3">
         <div className="flex items-center gap-2">
           <svg className="w-5 h-5 text-[#F76911]" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
@@ -125,7 +159,9 @@ export default function AjustesView({
             <div className="flex flex-col">
               <span className="text-base font-bold text-white leading-snug">{userName}</span>
               <span className="text-xs text-[#F2A957] font-semibold">{familyName}</span>
-              <span className="text-xs text-neutral-400 font-medium truncate max-w-[190px]">{userEmail || 'Sin correo'}</span>
+              <span className="text-xs text-neutral-400 font-medium truncate max-w-[190px]">
+                {userEmail || 'Sin correo'}
+              </span>
             </div>
           </div>
 
@@ -187,14 +223,14 @@ export default function AjustesView({
           type="button"
           onClick={openAddMember}
           style={cardGradientStyle}
-          className="w-full py-4 mt-2 rounded-[20px] font-black text-sm text-white shadow-[0_4px_16px_rgba(247,105,17,0.3)] flex items-center justify-center gap-2 active:scale-[0.98] transition-transform"
+          className="w-full py-4 mt-2 rounded-[20px] font-black text-sm text-white shadow-[0_4px_16px_rgba(247,105,17,0.3)] flex items-center justify-center gap-2 active:scale-[0.98] transition-transform cursor-pointer"
         >
           <span className="text-lg leading-none">+</span>
           <span>Añadir integrante</span>
         </button>
       </section>
 
-      {/* 4. PREFERENCIAS */}
+      {/* 4. SECCIÓN: PREFERENCIAS CON TOGGLES INTERACTIVOS */}
       <section className="flex flex-col gap-3">
         <div className="flex items-center gap-2">
           <svg className="w-5 h-5 text-[#F76911]" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
@@ -204,20 +240,53 @@ export default function AjustesView({
           <h2 className="text-base font-bold text-white tracking-tight">Preferencias</h2>
         </div>
 
-        <div className="p-4 rounded-[20px] bg-[#1a1a1a] border border-neutral-800/80 flex flex-col gap-3">
-          <div className="flex items-center justify-between py-1 border-b border-neutral-800/60">
-            <div>
-              <p className="text-sm font-bold text-white">Recordatorios de Medicinas</p>
-              <p className="text-xs text-neutral-400">Avisos según dosis programadas</p>
+        <div className="p-4 rounded-[20px] bg-[#1a1a1a] border border-neutral-800/80 flex flex-col gap-4">
+          {/* Toggle 1: Recordatorios de Medicinas */}
+          <div className="flex items-center justify-between py-1 border-b border-neutral-800/60 pb-3">
+            <div className="pr-4">
+              <p className="text-sm font-bold text-white leading-tight">Recordatorios de Medicinas</p>
+              <p className="text-xs text-neutral-400 mt-0.5">Avisos según dosis programadas</p>
             </div>
-            <span className="text-xs font-bold text-[#F76911]">Activo</span>
+
+            <button
+              type="button"
+              role="switch"
+              aria-checked={medReminders}
+              onClick={handleToggleMedReminders}
+              className={`relative inline-flex h-7 w-12 shrink-0 cursor-pointer rounded-full border-2 border-transparent transition-colors duration-200 ease-in-out focus:outline-none ${
+                medReminders ? 'bg-[#F76911]' : 'bg-neutral-800'
+              }`}
+            >
+              <span
+                className={`pointer-events-none inline-block h-6 w-6 transform rounded-full bg-white shadow-lg ring-0 transition duration-200 ease-in-out ${
+                  medReminders ? 'translate-x-5' : 'translate-x-0'
+                }`}
+              />
+            </button>
           </div>
+
+          {/* Toggle 2: Resumen Diario Matutino */}
           <div className="flex items-center justify-between py-1">
-            <div>
-              <p className="text-sm font-bold text-white">Resumen Matutino</p>
-              <p className="text-xs text-neutral-400">Tareas y eventos escolares a las 08:00</p>
+            <div className="pr-4">
+              <p className="text-sm font-bold text-white leading-tight">Resumen Matutino</p>
+              <p className="text-xs text-neutral-400 mt-0.5">Tareas y eventos escolares a las 08:00</p>
             </div>
-            <span className="text-xs font-bold text-[#F76911]">Activo</span>
+
+            <button
+              type="button"
+              role="switch"
+              aria-checked={morningSummary}
+              onClick={handleToggleMorningSummary}
+              className={`relative inline-flex h-7 w-12 shrink-0 cursor-pointer rounded-full border-2 border-transparent transition-colors duration-200 ease-in-out focus:outline-none ${
+                morningSummary ? 'bg-[#F76911]' : 'bg-neutral-800'
+              }`}
+            >
+              <span
+                className={`pointer-events-none inline-block h-6 w-6 transform rounded-full bg-white shadow-lg ring-0 transition duration-200 ease-in-out ${
+                  morningSummary ? 'translate-x-5' : 'translate-x-0'
+                }`}
+              />
+            </button>
           </div>
         </div>
       </section>
@@ -227,7 +296,7 @@ export default function AjustesView({
         <form action={signOut}>
           <button
             type="submit"
-            className="w-full py-3.5 rounded-2xl bg-[#201212] border border-red-900/40 text-red-400 hover:text-red-300 hover:bg-[#2c1616] font-bold text-sm transition-colors active:scale-[0.98]"
+            className="w-full py-3.5 rounded-2xl bg-[#201212] border border-red-900/40 text-red-400 hover:text-red-300 hover:bg-[#2c1616] font-bold text-sm transition-colors active:scale-[0.98] cursor-pointer"
           >
             Cerrar sesión
           </button>
@@ -267,7 +336,7 @@ export default function AjustesView({
               </button>
             </div>
 
-            {/* CASO: EDITAR TU CUENTA (Nombre, Familia y Correo) */}
+            {/* Caso 1: Editar Cuenta */}
             {sheet.type === 'edit_account' && (
               <form
                 action={async (formData) => {
@@ -314,7 +383,7 @@ export default function AjustesView({
                     className="w-full bg-[#131313] border border-neutral-800 rounded-2xl px-4 py-3 text-sm text-white placeholder-neutral-500 focus:outline-none focus:border-[#F76911]"
                   />
                   <span className="text-[11px] text-neutral-500">
-                    Si cambias el correo, Supabase enviará un email de confirmación.
+                    Si cambias el correo, Supabase enviará un correo de confirmación.
                   </span>
                 </div>
 
@@ -337,7 +406,7 @@ export default function AjustesView({
               </form>
             )}
 
-            {/* CASO: AÑADIR O EDITAR INTEGRANTE */}
+            {/* Caso 2: Añadir / Editar Integrante */}
             {(sheet.type === 'add_member' || sheet.type === 'edit_member') && (
               <form
                 action={async (formData) => {

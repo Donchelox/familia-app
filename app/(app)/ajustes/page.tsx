@@ -4,13 +4,18 @@ import AjustesView from '@/components/AjustesView'
 export default async function AjustesPage() {
   const { supabase, familyId, familyName } = await getContext()
 
-  const [membersRes, userRes] = await Promise.all([
+  const [membersRes, userRes, familyRes] = await Promise.all([
     supabase
       .from('family_members')
       .select('*')
       .eq('family_id', familyId)
       .order('created_at', { ascending: true }),
     supabase.auth.getUser(),
+    supabase
+      .from('families')
+      .select('med_reminders_enabled, morning_summary_enabled')
+      .eq('id', familyId)
+      .single(),
   ])
 
   const members = membersRes.data ?? []
@@ -21,12 +26,25 @@ export default async function AjustesPage() {
     user?.user_metadata?.name ||
     'Usuario'
 
+  // Si no están definidos aún en la base de datos, por defecto están activos (true)
+  const medRemindersEnabled =
+    familyRes.data?.med_reminders_enabled ??
+    user?.user_metadata?.med_reminders_enabled ??
+    true
+
+  const morningSummaryEnabled =
+    familyRes.data?.morning_summary_enabled ??
+    user?.user_metadata?.morning_summary_enabled ??
+    true
+
   return (
     <AjustesView
       userName={userName}
       userEmail={userEmail}
       familyName={familyName || 'Familia'}
       members={members}
+      initialMedReminders={medRemindersEnabled}
+      initialMorningSummary={morningSummaryEnabled}
     />
   )
 }
