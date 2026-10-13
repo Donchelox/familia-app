@@ -20,6 +20,7 @@ export type FamilyMember = {
 interface AjustesViewProps {
   userName: string
   userEmail: string
+  familyName: string
   members: FamilyMember[]
 }
 
@@ -29,11 +30,20 @@ type SheetMode =
   | { type: 'add_member' }
   | { type: 'edit_member'; member: FamilyMember }
 
-export default function AjustesView({ userName, userEmail, members }: AjustesViewProps) {
+export default function AjustesView({
+  userName,
+  userEmail,
+  familyName,
+  members,
+}: AjustesViewProps) {
   const [sheet, setSheet] = useState<SheetMode>(null)
 
-  // Estados locales para los formularios del Sheet
+  // Estados para Editar Perfil / Cuenta
   const [accountName, setAccountName] = useState(userName)
+  const [accountEmail, setAccountEmail] = useState(userEmail)
+  const [currentFamilyName, setCurrentFamilyName] = useState(familyName)
+
+  // Estados para Integrantes
   const [memberName, setMemberName] = useState('')
   const [memberRole, setMemberRole] = useState('Hijo')
   const [memberType, setMemberType] = useState('child')
@@ -44,6 +54,8 @@ export default function AjustesView({ userName, userEmail, members }: AjustesVie
 
   const openAccountEdit = () => {
     setAccountName(userName)
+    setAccountEmail(userEmail)
+    setCurrentFamilyName(familyName)
     setSheet({ type: 'edit_account' })
   }
 
@@ -65,7 +77,7 @@ export default function AjustesView({ userName, userEmail, members }: AjustesVie
 
   return (
     <div className="w-full flex flex-col gap-6 relative min-h-[calc(100vh-80px)] pb-28">
-      {/* 1. HEADER IDÉNTICO A SUPER / FERIA */}
+      {/* 1. HEADER */}
       <header className="flex items-center justify-between">
         <div className="flex items-center gap-3">
           <Link
@@ -96,7 +108,7 @@ export default function AjustesView({ userName, userEmail, members }: AjustesVie
         </Link>
       </header>
 
-      {/* 2. SECCIÓN: TU CUENTA */}
+      {/* 2. SECCIÓN: TU CUENTA Y FAMILIA */}
       <section className="flex flex-col gap-3">
         <div className="flex items-center gap-2">
           <svg className="w-5 h-5 text-[#F76911]" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
@@ -107,12 +119,13 @@ export default function AjustesView({ userName, userEmail, members }: AjustesVie
 
         <div className="p-4 rounded-[20px] bg-[#1a1a1a] border border-neutral-800/80 flex items-center justify-between">
           <div className="flex items-center gap-3.5">
-            <div className="w-12 h-12 rounded-full bg-[#F76911] text-white flex items-center justify-center font-bold text-base shadow-md">
+            <div className="w-12 h-12 rounded-full bg-[#F76911] text-white flex items-center justify-center font-bold text-base shadow-md shrink-0">
               {userName.slice(0, 2).toUpperCase()}
             </div>
             <div className="flex flex-col">
               <span className="text-base font-bold text-white leading-snug">{userName}</span>
-              <span className="text-xs text-neutral-400 font-medium truncate max-w-[200px]">{userEmail}</span>
+              <span className="text-xs text-[#F2A957] font-semibold">{familyName}</span>
+              <span className="text-xs text-neutral-400 font-medium truncate max-w-[190px]">{userEmail || 'Sin correo'}</span>
             </div>
           </div>
 
@@ -170,7 +183,6 @@ export default function AjustesView({ userName, userEmail, members }: AjustesVie
           )}
         </div>
 
-        {/* BOTÓN GRANDE DESTACADO: AÑADIR INTEGRANTE */}
         <button
           type="button"
           onClick={openAddMember}
@@ -182,7 +194,7 @@ export default function AjustesView({ userName, userEmail, members }: AjustesVie
         </button>
       </section>
 
-      {/* 4. SECCIÓN: PREFERENCIAS Y NOTIFICACIONES */}
+      {/* 4. PREFERENCIAS */}
       <section className="flex flex-col gap-3">
         <div className="flex items-center gap-2">
           <svg className="w-5 h-5 text-[#F76911]" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
@@ -210,7 +222,7 @@ export default function AjustesView({ userName, userEmail, members }: AjustesVie
         </div>
       </section>
 
-      {/* 5. SECCIÓN: CERRAR SESIÓN */}
+      {/* 5. CERRAR SESIÓN */}
       <section className="pt-2">
         <form action={signOut}>
           <button
@@ -227,22 +239,21 @@ export default function AjustesView({ userName, userEmail, members }: AjustesVie
         <div className="fixed inset-0 z-50 flex items-end justify-center">
           <div className="fixed inset-0 bg-black/75 backdrop-blur-sm transition-opacity" onClick={closeSheet} />
 
-          <div className="relative w-full max-w-[402px] bg-[#1a1a1a] rounded-t-[28px] border-t border-neutral-800 p-6 flex flex-col gap-4 shadow-2xl z-10 animate-in slide-in-from-bottom duration-200">
-            <div className="w-12 h-1.5 bg-neutral-700 rounded-full mx-auto" />
+          <div className="relative w-full max-w-[402px] bg-[#1a1a1a] rounded-t-[28px] border-t border-neutral-800 p-6 flex flex-col gap-4 shadow-2xl z-10 animate-in slide-in-from-bottom duration-200 max-h-[90vh] overflow-y-auto">
+            <div className="w-12 h-1.5 bg-neutral-700 rounded-full mx-auto shrink-0" />
 
-            {/* Header del Bottom Sheet */}
             <div className="flex items-center justify-between">
               <div>
                 <h3 className="text-base font-black text-white">
                   {sheet.type === 'edit_account'
-                    ? 'Editar tu Perfil'
+                    ? 'Editar Cuenta y Familia'
                     : sheet.type === 'add_member'
                     ? 'Añadir integrante'
                     : 'Editar integrante'}
                 </h3>
                 <p className="text-xs text-neutral-400 mt-0.5">
                   {sheet.type === 'edit_account'
-                    ? 'Actualiza el nombre con el que te identificas en la app.'
+                    ? 'Actualiza tus datos de acceso y el nombre de tu hogar.'
                     : 'Configura el nombre y el rol en la familia.'}
                 </p>
               </div>
@@ -256,7 +267,7 @@ export default function AjustesView({ userName, userEmail, members }: AjustesVie
               </button>
             </div>
 
-            {/* Caso A: Editar Cuenta Personal */}
+            {/* CASO: EDITAR TU CUENTA (Nombre, Familia y Correo) */}
             {sheet.type === 'edit_account' && (
               <form
                 action={async (formData) => {
@@ -266,16 +277,45 @@ export default function AjustesView({ userName, userEmail, members }: AjustesVie
                 className="flex flex-col gap-3.5"
               >
                 <div className="flex flex-col gap-1.5">
-                  <label className="text-xs font-bold text-neutral-300">Nombre completo</label>
+                  <label className="text-xs font-bold text-neutral-300">Tu nombre</label>
                   <input
                     name="fullName"
                     type="text"
                     value={accountName}
                     onChange={(e) => setAccountName(e.target.value)}
-                    autoFocus
+                    placeholder="Ej. Marcelo Vásquez"
                     required
-                    className="w-full bg-[#131313] border border-neutral-800 rounded-2xl px-4 py-3.5 text-sm text-white placeholder-neutral-500 focus:outline-none focus:border-[#F76911]"
+                    className="w-full bg-[#131313] border border-neutral-800 rounded-2xl px-4 py-3 text-sm text-white placeholder-neutral-500 focus:outline-none focus:border-[#F76911]"
                   />
+                </div>
+
+                <div className="flex flex-col gap-1.5">
+                  <label className="text-xs font-bold text-neutral-300">Nombre de la familia</label>
+                  <input
+                    name="familyName"
+                    type="text"
+                    value={currentFamilyName}
+                    onChange={(e) => setCurrentFamilyName(e.target.value)}
+                    placeholder="Ej. Familia Vásquez Parada"
+                    required
+                    className="w-full bg-[#131313] border border-neutral-800 rounded-2xl px-4 py-3 text-sm text-white placeholder-neutral-500 focus:outline-none focus:border-[#F76911]"
+                  />
+                </div>
+
+                <div className="flex flex-col gap-1.5">
+                  <label className="text-xs font-bold text-neutral-300">Correo electrónico</label>
+                  <input
+                    name="email"
+                    type="email"
+                    value={accountEmail}
+                    onChange={(e) => setAccountEmail(e.target.value)}
+                    placeholder="tucorreo@ejemplo.com"
+                    required
+                    className="w-full bg-[#131313] border border-neutral-800 rounded-2xl px-4 py-3 text-sm text-white placeholder-neutral-500 focus:outline-none focus:border-[#F76911]"
+                  />
+                  <span className="text-[11px] text-neutral-500">
+                    Si cambias el correo, Supabase enviará un email de confirmación.
+                  </span>
                 </div>
 
                 <div className="flex gap-2 pt-2">
@@ -297,7 +337,7 @@ export default function AjustesView({ userName, userEmail, members }: AjustesVie
               </form>
             )}
 
-            {/* Caso B: Añadir o Editar Integrante */}
+            {/* CASO: AÑADIR O EDITAR INTEGRANTE */}
             {(sheet.type === 'add_member' || sheet.type === 'edit_member') && (
               <form
                 action={async (formData) => {
@@ -376,7 +416,7 @@ export default function AjustesView({ userName, userEmail, members }: AjustesVie
               </form>
             )}
 
-            {/* Eliminar integrante desde dentro del Bottom Sheet */}
+            {/* Eliminar integrante al editar */}
             {sheet.type === 'edit_member' && (
               <form
                 action={async (formData) => {

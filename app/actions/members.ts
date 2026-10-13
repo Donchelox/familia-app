@@ -5,14 +5,37 @@ import { redirect } from 'next/navigation'
 import { getContext } from '@/lib/family'
 
 export async function updateAccount(formData: FormData) {
-  const { supabase } = await getContext()
+  const { supabase, familyId } = await getContext()
   const fullName = (formData.get('fullName') as string)?.trim()
+  const familyName = (formData.get('familyName') as string)?.trim()
+  const email = (formData.get('email') as string)?.trim()
 
-  if (!fullName) return
+  // 1. Actualizar metadatos del usuario y correo si cambió
+  const authUpdatePayload: { email?: string; data: { full_name?: string; name?: string } } = {
+    data: {},
+  }
 
-  await supabase.auth.updateUser({
-    data: { full_name: fullName, name: fullName },
-  })
+  if (fullName) {
+    authUpdatePayload.data.full_name = fullName
+    authUpdatePayload.data.name = fullName
+  }
+
+  if (email) {
+    const { data: userRes } = await supabase.auth.getUser()
+    if (userRes.user?.email && userRes.user.email.toLowerCase() !== email.toLowerCase()) {
+      authUpdatePayload.email = email
+    }
+  }
+
+  await supabase.auth.updateUser(authUpdatePayload)
+
+  // 2. Actualizar el nombre de la familia en la tabla `families`
+  if (familyName && familyId) {
+    await supabase
+      .from('families')
+      .update({ name: familyName })
+      .eq('id', familyId)
+  }
 
   revalidatePath('/ajustes')
   revalidatePath('/')

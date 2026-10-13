@@ -15,17 +15,17 @@ export default async function AjustesPage() {
 
   const members = membersRes.data ?? []
   const user = userRes.data?.user
-  const userEmail = user?.email || 'Sin correo asociado'
+  const userEmail = user?.email || ''
   const userName =
     user?.user_metadata?.full_name ||
     user?.user_metadata?.name ||
-    familyName ||
     'Usuario'
 
   return (
     <AjustesView
       userName={userName}
       userEmail={userEmail}
+      familyName={familyName || 'Familia'}
       members={members}
     />
   )
