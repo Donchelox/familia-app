@@ -2,6 +2,7 @@
 import { getContext } from '@/lib/family'
 import { logActivity } from '@/lib/log'
 import { str, refresh } from '@/lib/util'
+import { recordActivity } from '@/lib/audit'
 
 export async function addTodo(fd: FormData) {
   const ctx = await getContext()
@@ -34,3 +35,36 @@ export async function clearTodos() {
   await logActivity(ctx, 'Tareas', 'historial vaciado')
   refresh()
 }
+// Al crear una tarea:
+await recordActivity(supabase, {
+  familyId,
+  actorName: assignedTo || userDisplayName,
+  entity: 'todo',
+  entityId: todoId,
+  action: 'create',
+  title: title,
+  scheduledAt: dueDate ? `Límite: ${dueDate}` : 'Sin fecha límite',
+  details: { assigned_to: assignedTo, due_date: dueDate },
+})
+
+// Al marcar hecha / pendiente:
+await recordActivity(supabase, {
+  familyId,
+  actorName: userDisplayName,
+  entity: 'todo',
+  entityId: todoId,
+  action: 'toggle',
+  title: `Estado cambiado: ${title}`,
+  scheduledAt: null,
+  details: { done: nextDone },
+})
+
+// Al eliminar una tarea:
+await recordActivity(supabase, {
+  familyId,
+  actorName: userDisplayName,
+  entity: 'todo',
+  entityId: todoId,
+  action: 'delete',
+  title: `Tarea eliminada: ${title}`,
+})

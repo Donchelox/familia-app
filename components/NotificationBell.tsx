@@ -6,21 +6,37 @@ import Link from 'next/link'
 export default function NotificationBell() {
   const [unreadCount, setUnreadCount] = useState<number>(0)
 
-  useEffect(() => {
-    function calculateUnreadPush() {
-      try {
-        const history = JSON.parse(localStorage.getItem('family_push_history') || '[]')
-        // Cuenta las que no han sido leídas
-        const unread = history.filter((n: any) => !n.read).length
+  function updateCount() {
+    try {
+      const raw = localStorage.getItem('family_push_history')
+      if (!raw) {
+        setUnreadCount(0)
+        return
+      }
+      const history = JSON.parse(raw)
+      if (Array.isArray(history)) {
+        // Cuenta únicamente los avisos que no han sido marcados como leídos
+        const unread = history.filter((item: any) => !item.read).length
         setUnreadCount(unread)
-      } catch {
+      } else {
         setUnreadCount(0)
       }
+    } catch {
+      setUnreadCount(0)
     }
+  }
 
-    calculateUnreadPush()
-    window.addEventListener('push_notifications_updated', calculateUnreadPush)
-    return () => window.removeEventListener('push_notifications_updated', calculateUnreadPush)
+  useEffect(() => {
+    updateCount()
+    window.addEventListener('push_notifications_updated', updateCount)
+    window.addEventListener('storage', updateCount)
+    window.addEventListener('focus', updateCount)
+
+    return () => {
+      window.removeEventListener('push_notifications_updated', updateCount)
+      window.removeEventListener('storage', updateCount)
+      window.removeEventListener('focus', updateCount)
+    }
   }, [])
 
   return (

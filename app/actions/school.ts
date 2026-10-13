@@ -2,6 +2,7 @@
 import { getContext } from '@/lib/family'
 import { logActivity } from '@/lib/log'
 import { str, refresh } from '@/lib/util'
+import { recordActivity } from '@/lib/audit'
 
 /* Pruebas y tareas (admin y editores) */
 export async function addTest(fd: FormData) {
@@ -78,3 +79,39 @@ export async function saveSlots(fd: FormData) {
   }
   refresh()
 }
+
+// Al crear o editar una prueba:
+await recordActivity(supabase, {
+  familyId,
+  actorName: userDisplayName,
+  entity: 'school_test',
+  entityId: testId,
+  action: isEditing ? 'update' : 'create',
+  title: `Evaluación de ${subject}: ${topic || 'Sin temario'}`,
+  scheduledAt: `Fecha programada: ${testDate}`,
+  details: { subject, topic, test_date: testDate },
+})
+
+// Al agregar o modificar un bloque de horario escolar:
+await recordActivity(supabase, {
+  familyId,
+  actorName: userDisplayName,
+  entity: 'school_schedule',
+  entityId: scheduleId,
+  action: 'create',
+  title: `Bloque de clase: ${subject}`,
+  scheduledAt: `${day} de ${timeStart} a ${timeEnd}`,
+  details: { day, subject, timeStart, timeEnd, teacher: teacherInitials },
+})
+
+// Al marcar o crear tareas escolares (homework):
+await recordActivity(supabase, {
+  familyId,
+  actorName: userDisplayName,
+  entity: 'school_homework',
+  entityId: hwId,
+  action: isDone ? 'toggle' : 'create',
+  title: `Tarea escolar: ${title}`,
+  scheduledAt: dueDate ? `Entrega: ${dueDate}` : null,
+  details: { done: isDone },
+})

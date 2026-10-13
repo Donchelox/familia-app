@@ -39,13 +39,13 @@ export default async function AjustesPage() {
 
   return (
     <AjustesView
+      familyId={familyId}
       userName={userName}
       userEmail={userEmail}
-      familyName={familyName || 'Familia'}
+      familyName={familyName}
       members={members}
       initialMedReminders={medRemindersEnabled}
       initialMorningSummary={morningSummaryEnabled}
-      appVersion="1.0.0"
     />
   )
 }

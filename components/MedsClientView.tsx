@@ -4,6 +4,8 @@ import { useState } from 'react'
 import { useRouter } from 'next/navigation'
 import Link from 'next/link'
 import { createClient } from '@/lib/supabase/client'
+import NotificationBell from '@/components/NotificationBell'
+import { recordActivity } from '@/lib/audit'
 
 export interface Medication {
   id: string
@@ -87,14 +89,12 @@ export default function MedsClientView({
     return d === 0 ? 7 : d
   })()
 
-  // Alternar selección de días
   function toggleDay(dayId: number) {
     setSelectedDays((prev) =>
       prev.includes(dayId) ? prev.filter((d) => d !== dayId) : [...prev, dayId].sort()
     )
   }
 
-  // Abrir modal en modo crear
   function openCreateModal() {
     setEditingId(null)
     setName('')
@@ -107,7 +107,6 @@ export default function MedsClientView({
     setIsModalOpen(true)
   }
 
-  // Abrir modal en modo editar
   function openEditModal(med: Medication) {
     setEditingId(med.id)
     setName(med.name)
@@ -128,7 +127,6 @@ export default function MedsClientView({
     setIsModalOpen(true)
   }
 
-  // Filtrar dosis aplicables al día de hoy según frecuencia
   const allDoses = meds
     .filter((med) => {
       const freq = med.frequency || 'daily'
@@ -168,7 +166,6 @@ export default function MedsClientView({
   const totalDoses = filteredDoses.length
   const completedDoses = filteredDoses.filter((d) => d.isTaken).length
 
-  // Lista unificada para chips de filtro horizontal
   const availableFilterPersons = Array.from(
     new Set([
       ...members.map((m) => m.name),
@@ -181,7 +178,9 @@ export default function MedsClientView({
     const key = `${medId}_${doseTime}`
     setLoadingAction(key)
 
+    const targetMed = meds.find((m) => m.id === medId)
     const updated = new Set(takenKeys)
+
     if (currentTaken) {
       updated.delete(key)
       setTakenKeys(updated)
@@ -198,9 +197,25 @@ export default function MedsClientView({
       await supabase.from('dose_logs').insert({
         family_id: familyId,
         medication_id: medId,
-        time,
+        time: doseTime,
         day: todayStr,
       })
+    }
+
+    // Registro de auditoría
+    try {
+      await recordActivity(supabase, {
+        familyId,
+        actorName: targetMed?.person || 'Familiar',
+        entity: 'dose',
+        entityId: medId,
+        action: 'toggle',
+        title: `Dosis ${currentTaken ? 'desmarcada' : 'tomada'}: ${targetMed?.name || 'Medicamento'}`,
+        scheduledAt: `Programada a las ${doseTime} hrs (Día: ${todayStr})`,
+        details: { doseTime, day: todayStr },
+      })
+    } catch (auditErr) {
+      console.error('Error registrando auditoría de dosis:', auditErr)
     }
 
     setLoadingAction(null)
@@ -225,17 +240,46 @@ export default function MedsClientView({
       person: person.trim() || defaultMemberName,
       times: [time || '08:00'],
       frequency: finalFrequency,
-      end_date: endDate ? endDate : null, // Si está vacío se guarda null para que sea permanente
+      end_date: endDate ? endDate : null,
     }
 
-    if (editingId) {
-      await supabase
-        .from('medications')
-        .update(payload)
-        .eq('id', editingId)
-        .eq('family_id', familyId)
-    } else {
-      await supabase.from('medications').insert(payload)
+    try {
+      let currentEntityId = editingId
+
+      if (editingId) {
+        await supabase
+          .from('medications')
+          .update(payload)
+          .eq('id', editingId)
+          .eq('family_id', familyId)
+      } else {
+        const { data: insertedMed } = await supabase
+          .from('medications')
+          .insert(payload)
+          .select()
+          .single()
+
+        currentEntityId = insertedMed?.id || 'new'
+      }
+
+      // Registro de auditoría
+      await recordActivity(supabase, {
+        familyId,
+        actorName: payload.person,
+        entity: 'medication',
+        entityId: currentEntityId || 'new',
+        action: editingId ? 'update' : 'create',
+        title: `Medicamento: ${payload.name} (${payload.dose || 'sin dosis'})`,
+        scheduledAt: `Horarios: ${payload.times.join(', ')} hrs`,
+        details: {
+          person: payload.person,
+          times: payload.times,
+          frequency: payload.frequency,
+          endDate: payload.end_date,
+        },
+      })
+    } catch (err) {
+      console.error('Error al guardar medicamento con log:', err)
     }
 
     setIsSaving(false)
@@ -243,7 +287,6 @@ export default function MedsClientView({
     router.refresh()
   }
 
-  // Eliminar recordatorio
   async function handleDeleteMed() {
     if (!editingId) return
     if (!confirm(`¿Deseas eliminar el recordatorio de "${name}"?`)) return
@@ -261,10 +304,8 @@ export default function MedsClientView({
   }
 
   return (
-    <div className="w-full min-h-screen bg-[#131313] text-white px-4 pt-4 pb-28 max-w-[440px] mx-auto select-none">
-
-      {/* HEADER DE LA SECCIÓN (IDÉNTICO A AJUSTES) */}
-      <header className="flex items-center justify-between py-2 mb-4">
+    <div className="w-full flex flex-col gap-6 select-none">
+      <header className="flex items-center justify-between py-1">
         <div className="flex items-center gap-3">
           <Link
             href="/"
@@ -282,33 +323,19 @@ export default function MedsClientView({
           </h1>
         </div>
 
-        <Link
-          href="/notificaciones"
-          className="relative w-10 h-10 rounded-full flex items-center justify-center text-white hover:bg-neutral-800/60 active:scale-95 transition-all cursor-pointer"
-        >
-          <svg className="w-6 h-6 stroke-current stroke-2 fill-none" viewBox="0 0 24 24">
-            <path
-              strokeLinecap="round"
-              strokeLinejoin="round"
-              d="M15 17h5l-1.405-1.405A2.032 2.032 0 0118 14.158V11a6.002 6.002 0 00-4-5.659V5a2 2 0 10-4 0v.341C7.67 6.165 6 8.388 6 11v3.159c0 .538-.214 1.055-.595 1.436L4 17h5m6 0v1a3 3 0 11-6 0v-1m6 0H9"
-            />
-          </svg>
-          <span className="absolute top-2 right-2 w-2 h-2 rounded-full bg-[#F76911] ring-2 ring-[#131313]" />
-        </Link>
+        <NotificationBell />
       </header>
 
-      {/* RESUMEN DE PROGRESO */}
-      <div className="flex items-center justify-between px-1 mb-4">
+      <div className="flex items-center justify-between px-1">
         <p className="text-xs text-neutral-400 font-medium m-0">
-          Control de dosis diarias
+          Control de dosis diarias para hoy
         </p>
         <span className="px-3 py-1 rounded-full bg-[#1a1a1a] border border-neutral-800 text-[11px] font-bold text-neutral-300">
           {completedDoses}/{totalDoses} tomadas
         </span>
       </div>
 
-      {/* FILTRO HORIZONTAL POR INTEGRANTES */}
-      <div className="flex items-center gap-2 overflow-x-auto pb-2 mb-4 scrollbar-none">
+      <div className="flex items-center gap-2 overflow-x-auto pb-1 scrollbar-none">
         <button
           type="button"
           onClick={() => setSelectedPerson('todos')}
@@ -337,16 +364,15 @@ export default function MedsClientView({
         ))}
       </div>
 
-      {/* LISTA DE DOSIS */}
       <main className="flex flex-col gap-3">
         {filteredDoses.length === 0 ? (
-          <div className="p-8 text-center bg-[#1a1a1a] rounded-[28px] border border-neutral-800/80 mt-2">
+          <div className="p-8 text-center bg-[#1a1a1a] rounded-[28px] border border-neutral-800/80">
             <div className="w-12 h-12 mx-auto mb-3 rounded-2xl bg-neutral-900 border border-neutral-800 flex items-center justify-center text-neutral-500">
               <svg className="w-6 h-6 stroke-current fill-none" viewBox="0 0 24 24">
                 <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19.428 15.428a2 2 0 00-1.022-.547l-2.387-.477a6 6 0 00-3.86.517l-.318.158a6 6 0 01-3.86.517L6.05 15.21a2 2 0 00-1.806.547M8 4h8l-1 1v5.172a2 2 0 00.586 1.414l5 5c1.26 1.26.367 3.414-1.415 3.414H4.828c-1.782 0-2.674-2.154-1.414-3.414l5-5A2 2 0 009 10.172V5L8 4z" />
               </svg>
             </div>
-            <p className="text-sm font-bold text-neutral-300">No hay dosis pendientes para hoy</p>
+            <p className="text-sm font-bold text-neutral-300 m-0">No hay dosis pendientes para hoy</p>
             <p className="text-xs text-neutral-500 mt-1">Presiona el botón + para programar un tratamiento.</p>
           </div>
         ) : (
@@ -359,7 +385,6 @@ export default function MedsClientView({
                   : 'bg-[#1a1a1a] border-neutral-800/80 shadow-md'
               }`}
             >
-              {/* ÁREA DE INFORMACIÓN */}
               <div
                 onClick={() => openEditModal(dose.med)}
                 className="flex items-center gap-3.5 min-w-0 flex-1 cursor-pointer"
@@ -392,7 +417,6 @@ export default function MedsClientView({
                 </div>
               </div>
 
-              {/* BOTÓN EDITAR VISIBLE + BOTÓN CHECK TOMADA */}
               <div className="flex items-center gap-2 shrink-0">
                 <button
                   type="button"
@@ -436,23 +460,20 @@ export default function MedsClientView({
         )}
       </main>
 
-      {/* BOTÓN FLOTANTE (FAB) */}
       <button
         type="button"
         onClick={openCreateModal}
         style={orangeGradient}
-        className="fixed bottom-24 right-5 w-14 h-14 rounded-full flex items-center justify-center text-white shadow-[0_8px_20px_rgba(247,105,17,0.4)] active:scale-90 transition-transform cursor-pointer z-30"
+        className="fixed bottom-24 right-5 sm:right-8 lg:right-12 w-14 h-14 rounded-full flex items-center justify-center text-white shadow-[0_8px_20px_rgba(247,105,17,0.4)] active:scale-90 transition-transform cursor-pointer z-30"
       >
         <svg className="w-7 h-7 stroke-current stroke-2 fill-none" viewBox="0 0 24 24">
           <path strokeLinecap="round" strokeLinejoin="round" d="M12 4v16m8-8H4" />
         </svg>
       </button>
 
-      {/* BOTTOM SHEET CREAR / EDITAR */}
       {isModalOpen && (
-        <div className="fixed inset-0 z-50 flex items-end justify-center bg-black/75 backdrop-blur-sm p-0 sm:p-4 animate-in fade-in duration-200">
-          <div className="w-full max-w-[420px] bg-[#1a1a1a] border border-neutral-800 rounded-t-[32px] sm:rounded-[32px] p-6 shadow-2xl flex flex-col gap-4 max-h-[90vh] overflow-y-auto">
-            
+        <div className="fixed inset-0 z-50 flex items-end sm:items-center justify-center bg-black/80 backdrop-blur-sm p-0 sm:p-4 animate-in fade-in duration-200">
+          <div className="w-full max-w-lg bg-[#1a1a1a] border border-neutral-800 rounded-t-[32px] sm:rounded-[32px] p-6 shadow-2xl flex flex-col gap-4 max-h-[90vh] overflow-y-auto">
             <div className="flex items-center justify-between border-b border-neutral-800 pb-3">
               <h2 className="text-base font-black text-white m-0">
                 {editingId ? 'Editar recordatorio' : 'Nuevo medicamento'}
@@ -467,8 +488,6 @@ export default function MedsClientView({
             </div>
 
             <form onSubmit={handleSaveMed} className="flex flex-col gap-3.5">
-              
-              {/* NOMBRE */}
               <div className="flex flex-col gap-1">
                 <label className="text-[11px] font-bold text-neutral-300">Medicamento</label>
                 <input
@@ -481,7 +500,6 @@ export default function MedsClientView({
                 />
               </div>
 
-              {/* DOSIS Y HORA */}
               <div className="grid grid-cols-2 gap-3">
                 <div className="flex flex-col gap-1">
                   <label className="text-[11px] font-bold text-neutral-300">Dosis / Presentación</label>
@@ -506,7 +524,6 @@ export default function MedsClientView({
                 </div>
               </div>
 
-              {/* INTEGRANTES */}
               <div className="flex flex-col gap-1">
                 <label className="text-[11px] font-bold text-neutral-300">¿Para quién es?</label>
                 <div className="relative">
@@ -533,7 +550,6 @@ export default function MedsClientView({
                 </div>
               </div>
 
-              {/* RECURRENCIA */}
               <div className="flex flex-col gap-1.5">
                 <label className="text-[11px] font-bold text-neutral-300">Frecuencia / Recurrencia</label>
                 <div className="relative">
@@ -555,7 +571,6 @@ export default function MedsClientView({
                   </div>
                 </div>
 
-                {/* SELECTOR DE DÍAS (SOLO SI SE ELIGE 'custom_days') */}
                 {frequency === 'custom_days' && (
                   <div className="mt-1 p-3 bg-[#131313] border border-neutral-800 rounded-2xl flex flex-col gap-2">
                     <span className="text-[11px] font-semibold text-neutral-400">
@@ -592,7 +607,6 @@ export default function MedsClientView({
                 )}
               </div>
 
-              {/* HASTA CUÁNDO (FECHA DE TÉRMINO) */}
               <div className="flex flex-col gap-1">
                 <div className="flex items-center justify-between">
                   <label className="text-[11px] font-bold text-neutral-300">¿Hasta cuándo tomar?</label>
@@ -619,7 +633,6 @@ export default function MedsClientView({
                 </p>
               </div>
 
-              {/* BOTONES DE ACCIÓN */}
               <div className="flex flex-col gap-2 pt-3">
                 <div className="flex items-center gap-2">
                   <button
@@ -651,12 +664,10 @@ export default function MedsClientView({
                   </button>
                 )}
               </div>
-
             </form>
           </div>
         </div>
       )}
-
     </div>
   )
 }

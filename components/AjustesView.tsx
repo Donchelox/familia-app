@@ -2,6 +2,7 @@
 
 import { useState, useTransition } from 'react'
 import Link from 'next/link'
+import LogPanel from '@/components/LogPanel'
 import {
   updateAccount,
   addFamilyMember,
@@ -19,6 +20,7 @@ export type FamilyMember = {
 }
 
 interface AjustesViewProps {
+  familyId: string
   userName: string
   userEmail: string
   familyName: string
@@ -35,6 +37,7 @@ type SheetMode =
   | { type: 'edit_member'; member: FamilyMember }
 
 export default function AjustesView({
+  familyId,
   userName,
   userEmail,
   familyName,
@@ -110,26 +113,26 @@ export default function AjustesView({
   const closeSheet = () => setSheet(null)
 
   return (
-    <div className="w-full flex flex-col gap-6 relative min-h-[calc(100vh-80px)] pb-16">
+    <div className="w-full flex flex-col gap-6 relative min-h-[calc(100vh-80px)] pb-16 select-none">
       {/* 1. HEADER */}
       <header className="flex items-center justify-between">
         <div className="flex items-center gap-3">
           <Link
             href="/"
             aria-label="Volver al inicio"
-            className="text-[#F76911] hover:opacity-80 transition-opacity p-1 no-underline flex items-center justify-center"
+            className="text-[#F76911] hover:opacity-80 transition-opacity p-1 no-underline flex items-center justify-center cursor-pointer"
           >
             <svg className="w-7 h-7 stroke-current stroke-[3] fill-none" viewBox="0 0 24 24">
               <path strokeLinecap="round" strokeLinejoin="round" d="M15 19l-7-7 7-7" />
             </svg>
           </Link>
-          <h1 className="text-2xl font-black tracking-tight text-white">Ajustes</h1>
+          <h1 className="text-2xl font-black tracking-tight text-white m-0">Ajustes</h1>
         </div>
 
         <Link
           href="/notificaciones"
           aria-label="Notificaciones"
-          className="relative p-2 text-white hover:opacity-80 transition-opacity no-underline"
+          className="relative p-2 text-white hover:opacity-80 transition-opacity no-underline cursor-pointer"
         >
           <svg className="w-6 h-6 stroke-white stroke-2 fill-none" viewBox="0 0 24 24">
             <path
@@ -148,7 +151,7 @@ export default function AjustesView({
           <svg className="w-5 h-5 text-[#F76911]" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
             <path strokeLinecap="round" strokeLinejoin="round" d="M16 7a4 4 0 11-8 0 4 4 0 018 0zM12 14a7 7 0 00-7 7h14a7 7 0 00-7-7z" />
           </svg>
-          <h2 className="text-base font-bold text-white tracking-tight">Tu Cuenta</h2>
+          <h2 className="text-base font-bold text-white tracking-tight m-0">Tu Cuenta</h2>
         </div>
 
         <div className="p-4 rounded-[20px] bg-[#1a1a1a] border border-neutral-800/80 flex items-center justify-between">
@@ -168,7 +171,7 @@ export default function AjustesView({
           <button
             type="button"
             onClick={openAccountEdit}
-            className="text-sm font-bold text-[#F76911] hover:text-[#F2A957] transition-colors p-1"
+            className="text-sm font-bold text-[#F76911] hover:text-[#F2A957] transition-colors p-1 cursor-pointer"
           >
             Editar
           </button>
@@ -181,7 +184,7 @@ export default function AjustesView({
           <svg className="w-5 h-5 text-[#F76911]" fill="currentColor" viewBox="0 0 24 24">
             <path d="M12 21.35l-1.45-1.32C5.4 15.36 2 12.28 2 8.5 2 5.42 4.42 3 7.5 3c1.74 0 3.41.81 4.5 2.09C13.09 3.81 14.76 3 16.5 3 19.58 3 22 5.42 22 8.5c0 3.78-3.4 6.86-8.55 11.54L12 21.35z" />
           </svg>
-          <h2 className="text-base font-bold text-white tracking-tight">Integrantes del hogar</h2>
+          <h2 className="text-base font-bold text-white tracking-tight m-0">Integrantes del hogar</h2>
         </div>
 
         <div className="flex flex-col gap-1">
@@ -210,7 +213,7 @@ export default function AjustesView({
                 <button
                   type="button"
                   onClick={() => openEditMember(member)}
-                  className="text-sm font-bold text-[#F76911] hover:text-[#F2A957] transition-colors p-1"
+                  className="text-sm font-bold text-[#F76911] hover:text-[#F2A957] transition-colors p-1 cursor-pointer"
                 >
                   Editar
                 </button>
@@ -237,14 +240,14 @@ export default function AjustesView({
             <path strokeLinecap="round" strokeLinejoin="round" d="M10.325 4.317c.426-1.756 2.924-1.756 3.35 0a1.724 1.724 0 002.573 1.066c1.543-.94 3.31.826 2.37 2.37a1.724 1.724 0 001.065 2.572c1.756.426 1.756 2.924 0 3.35a1.724 1.724 0 00-1.066 2.573c.94 1.543-.826 3.31-2.37 2.37a1.724 1.724 0 00-2.572 1.065c-.426 1.756-2.924 1.756-3.35 0a1.724 1.724 0 00-2.573-1.066c-1.543.94-3.31-.826-2.37-2.37a1.724 1.724 0 00-1.065-2.572c-1.756-.426-1.756-2.924 0-3.35a1.724 1.724 0 001.066-2.573c-.94-1.543.826-3.31 2.37-2.37.996.608 2.296.07 2.572-1.065z" />
             <path strokeLinecap="round" strokeLinejoin="round" d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" />
           </svg>
-          <h2 className="text-base font-bold text-white tracking-tight">Preferencias</h2>
+          <h2 className="text-base font-bold text-white tracking-tight m-0">Preferencias</h2>
         </div>
 
         <div className="p-4 rounded-[20px] bg-[#1a1a1a] border border-neutral-800/80 flex flex-col gap-4">
           <div className="flex items-center justify-between py-1 border-b border-neutral-800/60 pb-3">
             <div className="pr-4">
-              <p className="text-sm font-bold text-white leading-tight">Recordatorios de Medicinas</p>
-              <p className="text-xs text-neutral-400 mt-0.5">Avisos según dosis programadas</p>
+              <p className="text-sm font-bold text-white leading-tight m-0">Recordatorios de Medicinas</p>
+              <p className="text-xs text-neutral-400 mt-0.5 m-0">Avisos según dosis programadas</p>
             </div>
 
             <button
@@ -266,8 +269,8 @@ export default function AjustesView({
 
           <div className="flex items-center justify-between py-1">
             <div className="pr-4">
-              <p className="text-sm font-bold text-white leading-tight">Resumen Matutino</p>
-              <p className="text-xs text-neutral-400 mt-0.5">Tareas y eventos escolares a las 08:00</p>
+              <p className="text-sm font-bold text-white leading-tight m-0">Resumen Matutino</p>
+              <p className="text-xs text-neutral-400 mt-0.5 m-0">Tareas y eventos escolares a las 08:00</p>
             </div>
 
             <button
@@ -289,7 +292,12 @@ export default function AjustesView({
         </div>
       </section>
 
-      {/* 5. CERRAR SESIÓN */}
+      {/* 5. HISTORIAL DE CAMBIOS Y AUDITORÍA PARA LA IA */}
+      <section className="flex flex-col gap-2">
+        <LogPanel familyId={familyId} />
+      </section>
+
+      {/* 6. CERRAR SESIÓN */}
       <section className="pt-2">
         <form action={signOut}>
           <button
@@ -301,17 +309,17 @@ export default function AjustesView({
         </form>
       </section>
 
-      {/* 6. VERSIÓN DE LA APP */}
+      {/* 7. VERSIÓN DE LA APP */}
       <footer className="pt-4 pb-2 flex flex-col items-center justify-center gap-1 text-center">
-        <p className="text-xs font-semibold text-neutral-500 tracking-wide">
+        <p className="text-xs font-semibold text-neutral-500 tracking-wide m-0">
           Casa APP - Versión {appVersion}
         </p>
-        <p className="text-[10px] text-neutral-600 font-medium">
+        <p className="text-[10px] text-neutral-600 font-medium m-0">
           Diseñado para el día a día familiar
         </p>
       </footer>
 
-      {/* 7. BOTTOM SHEET UNIFICADO */}
+      {/* 8. BOTTOM SHEET UNIFICADO */}
       {sheet && (
         <div className="fixed inset-0 z-50 flex items-end justify-center">
           <div className="fixed inset-0 bg-black/75 backdrop-blur-sm transition-opacity" onClick={closeSheet} />
@@ -321,14 +329,14 @@ export default function AjustesView({
 
             <div className="flex items-center justify-between">
               <div>
-                <h3 className="text-base font-black text-white">
+                <h3 className="text-base font-black text-white m-0">
                   {sheet.type === 'edit_account'
                     ? 'Editar Cuenta y Familia'
                     : sheet.type === 'add_member'
                     ? 'Añadir integrante'
                     : 'Editar integrante'}
                 </h3>
-                <p className="text-xs text-neutral-400 mt-0.5">
+                <p className="text-xs text-neutral-400 mt-0.5 m-0">
                   {sheet.type === 'edit_account'
                     ? 'Actualiza tus datos de acceso y el nombre de tu hogar.'
                     : 'Configura el nombre y el rol en la familia.'}
@@ -465,7 +473,7 @@ export default function AjustesView({
                       name="type"
                       value={memberType}
                       onChange={(e) => setMemberType(e.target.value)}
-                      className="w-full bg-[#131313] border border-neutral-800 rounded-2xl px-3 py-3 text-sm text-white focus:outline-none focus:border-[#F76911]"
+                      className="w-full bg-[#131313] border border-neutral-800 rounded-2xl px-3 py-3 text-sm text-white focus:outline-none focus:border-[#F76911] cursor-pointer"
                     >
                       <option value="child">Hijo / Estudiante</option>
                       <option value="adult">Adulto / Tutor</option>

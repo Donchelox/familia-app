@@ -38,7 +38,7 @@ export default async function Inicio() {
       .eq('family_id', familyId),
     supabase
       .from('medications')
-      .select('id, name, person, times')
+      .select('id, name, person, times, frequency, end_date')
       .eq('family_id', familyId),
     supabase
       .from('dose_logs')
@@ -89,10 +89,29 @@ export default async function Inicio() {
   const superCount = superItems.length
   const feriaCount = feriaItems.length
 
-  // 3. MEDICINAS PENDIENTES DE HOY
+  // 3. MEDICINAS PENDIENTES DE HOY (Filtradas según frecuencia y fecha de fin)
+  const currentIsoDay = (() => {
+    const d = new Date().getDay()
+    return d === 0 ? 7 : d
+  })()
+
   const taken = new Set((logsRes.data ?? []).map((l) => `${l.medication_id}|${l.time}`))
   const pendingMeds = (medsRes.data ?? [])
-    .flatMap((m) =>
+    .filter((med: any) => {
+      // Si el tratamiento ya venció antes de hoy, no se muestra
+      if (med.end_date && med.end_date < today) return false
+
+      const freq = med.frequency || 'daily'
+      if (freq === 'daily' || freq === 'every_8h' || freq === 'every_12h' || freq === 'as_needed') return true
+      if (freq === 'weekdays') return currentIsoDay >= 1 && currentIsoDay <= 5
+      if (freq === 'weekends') return currentIsoDay === 6 || currentIsoDay === 7
+      if (freq.startsWith('days:')) {
+        const days = freq.replace('days:', '').split(',').map(Number)
+        return days.includes(currentIsoDay)
+      }
+      return true
+    })
+    .flatMap((m: any) =>
       (m.times || []).map((t: string) => ({
         id: m.id,
         name: m.name,
@@ -113,58 +132,80 @@ export default async function Inicio() {
   // 5. TAREAS GENERALES
   const generalTodosCount = todosRes.count ?? (todosRes.data?.length ?? 0)
 
-  // 6. PRÓXIMOS EVENTOS
+  // 6. RECORDATORIOS / NOTIFICACIONES
+  const notificationCount = pendingMeds.length
+
+  // 7. PRÓXIMOS EVENTOS (Ordenados por fecha y hora más cercana)
   type EventItem = {
     id: string
     category: 'Colegio' | 'Medicinas' | 'Tareas' | 'Compras'
     title: string
     description: string
     href: string
+    sortTimestamp: number
   }
 
-  const upcomingEvents: EventItem[] = []
+  const rawEvents: EventItem[] = []
 
-  allTests.slice(0, 2).forEach((test: any) => {
-    upcomingEvents.push({
-      id: `test-${test.id}`,
-      category: 'Colegio',
-      title: test.subject || 'Prueba',
-      // Mapeo con 'topic' de la base de datos
-      description: test.topic || test.topics || (test.test_date ? `Fecha: ${rel(test.test_date).toLowerCase()}` : 'Prueba pendiente'),
-      href: '/colegio',
-    })
-  })
-
-  pendingMeds.slice(0, 2).forEach((dose, idx) => {
-    upcomingEvents.push({
+  // A) Medicinas pendientes de hoy: ordenadas por su hora
+  pendingMeds.forEach((dose, idx) => {
+    const medTimeStr = `${today}T${dose.time}:00`
+    const medDate = new Date(medTimeStr)
+    rawEvents.push({
       id: `med-${dose.id}-${idx}`,
       category: 'Medicinas',
       title: `${dose.name} (${dose.time})`,
       description: `Para ${dose.person}`,
       href: '/meds',
+      sortTimestamp: isNaN(medDate.getTime()) ? Date.now() : medDate.getTime(),
     })
   })
 
-  ;(todosRes.data ?? []).slice(0, 2).forEach((todo) => {
-    upcomingEvents.push({
+  // B) Pruebas de colegio: ordenadas por fecha agendada
+  allTests.forEach((test: any) => {
+    const testDateStr = test.test_date ? `${test.test_date}T08:00:00` : `${today}T23:59:59`
+    const testDate = new Date(testDateStr)
+    rawEvents.push({
+      id: `test-${test.id}`,
+      category: 'Colegio',
+      title: test.subject || 'Prueba',
+      description: test.topics || (test.test_date ? `Fecha: ${rel(test.test_date).toLowerCase()}` : 'Prueba pendiente'),
+      href: '/colegio',
+      sortTimestamp: isNaN(testDate.getTime()) ? Date.now() + 86400000 : testDate.getTime(),
+    })
+  })
+
+  // C) Tareas del hogar
+  ;(todosRes.data ?? []).forEach((todo: any) => {
+    const todoDateStr = todo.due_date ? `${todo.due_date}T20:00:00` : `${today}T21:00:00`
+    const todoDate = new Date(todoDateStr)
+    rawEvents.push({
       id: `todo-${todo.id}`,
       category: 'Tareas',
       title: todo.title,
       description: 'Pendiente en casa',
       href: '/tareas',
+      sortTimestamp: isNaN(todoDate.getTime()) ? Date.now() + 43200000 : todoDate.getTime(),
     })
   })
 
-  shopItems.slice(0, 1).forEach((item: any) => {
+  // D) Compras pendientes
+  shopItems.forEach((item: any) => {
     const isFeriaItem = (item.list || item.location || '').toLowerCase() === 'feria'
-    upcomingEvents.push({
+    rawEvents.push({
       id: `shop-${item.id}`,
       category: 'Compras',
       title: item.name,
       description: isFeriaItem ? 'Lista de la feria' : 'Lista del súper',
       href: isFeriaItem ? '/feria' : '/super',
+      sortTimestamp: Date.now() + 86400000 * 2,
     })
   })
+
+  // Orden cronológico: el evento más cercano aparece primero
+  const upcomingEvents = rawEvents
+    .sort((a, b) => a.sortTimestamp - b.sortTimestamp)
+    .slice(0, 5)
 
   const cardGradientStyle = {
     background: 'linear-gradient(134.95deg, #F76911 47.75%, #F2A957 100%)',
@@ -172,7 +213,7 @@ export default async function Inicio() {
 
   return (
     <div className="w-full flex flex-col gap-6">
-      {/* HEADER: Avatar individual, Saludo y Campana sincronizada */}
+      {/* HEADER: Avatar individual, Saludo y Campana a /notificaciones */}
       <header className="flex items-center justify-between">
         <div className="flex items-center gap-3">
           <Link
@@ -188,7 +229,7 @@ export default async function Inicio() {
           </div>
         </div>
 
-        {/* Campana sincronizada */}
+        {/* Campana sincronizada con historial Push */}
         <NotificationBell />
       </header>
 
@@ -316,9 +357,6 @@ export default async function Inicio() {
             </svg>
             <h2 className="text-lg font-bold text-white tracking-tight">Próximos eventos</h2>
           </div>
-          <Link href="/colegio" className="text-sm font-semibold !text-[#F76911] hover:underline no-underline">
-            + Ver todos
-          </Link>
         </div>
 
         {/* Lista de Eventos */}
