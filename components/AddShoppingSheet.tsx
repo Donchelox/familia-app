@@ -1,6 +1,7 @@
 'use client'
 
-import { useState } from 'react'
+import { useState, useEffect } from 'react'
+import { useSearchParams, useRouter, usePathname } from 'next/navigation'
 import { addItems } from '@/app/actions/shopping'
 
 interface AddShoppingSheetProps {
@@ -8,15 +9,33 @@ interface AddShoppingSheetProps {
 }
 
 export default function AddShoppingSheet({ list }: AddShoppingSheetProps) {
+  const searchParams = useSearchParams()
+  const router = useRouter()
+  const pathname = usePathname()
+
   const [isOpen, setIsOpen] = useState(false)
   const [loading, setLoading] = useState(false)
   const [text, setText] = useState('')
+
+  // Abre el sheet automáticamente si la URL viene con ?action=new
+  useEffect(() => {
+    if (searchParams.get('action') === 'new') {
+      setIsOpen(true)
+    }
+  }, [searchParams])
 
   const isFeria = list === 'feria'
   const title = isFeria ? 'Añadir productos a la Feria' : 'Añadir productos al Súper'
   const placeholder = isFeria
     ? 'Ej: Tomates, Lechuga, Plátanos (uno por línea o separados por coma)'
     : 'Ej: Leche, Huevos, Pan, Café (uno por línea o separados por coma)'
+
+  function handleClose() {
+    setIsOpen(false)
+    if (searchParams.get('action')) {
+      router.replace(pathname, { scroll: false })
+    }
+  }
 
   async function handleSubmit(e: React.FormEvent<HTMLFormElement>) {
     e.preventDefault()
@@ -27,7 +46,11 @@ export default function AddShoppingSheet({ list }: AddShoppingSheetProps) {
       const formData = new FormData(e.currentTarget)
       await addItems(formData)
       setText('')
-      setIsOpen(false)
+      handleClose()
+      router.refresh()
+    } catch (err) {
+      console.error(err)
+      alert('Error al guardar productos. Revisa la consola.')
     } finally {
       setLoading(false)
     }
@@ -54,7 +77,7 @@ export default function AddShoppingSheet({ list }: AddShoppingSheetProps) {
           {/* Backdrop */}
           <div
             className="fixed inset-0 bg-black/70 backdrop-blur-sm transition-opacity"
-            onClick={() => !loading && setIsOpen(false)}
+            onClick={() => !loading && handleClose()}
           />
 
           {/* Contenedor del Sheet */}
@@ -66,7 +89,7 @@ export default function AddShoppingSheet({ list }: AddShoppingSheetProps) {
               </div>
               <button
                 type="button"
-                onClick={() => setIsOpen(false)}
+                onClick={handleClose}
                 disabled={loading}
                 className="w-8 h-8 rounded-full bg-neutral-900 border border-neutral-800 text-neutral-400 hover:text-white flex items-center justify-center cursor-pointer transition-colors"
               >
@@ -103,7 +126,7 @@ export default function AddShoppingSheet({ list }: AddShoppingSheetProps) {
               <div className="flex items-center justify-end gap-3 mt-2">
                 <button
                   type="button"
-                  onClick={() => setIsOpen(false)}
+                  onClick={handleClose}
                   disabled={loading}
                   className="px-4 py-2.5 rounded-xl bg-neutral-900 border border-neutral-800 text-xs font-bold text-neutral-300 hover:text-white transition-all cursor-pointer"
                 >
