@@ -137,20 +137,42 @@ export async function updateShoppingItem(
   revalidatePath('/')
 }
 
-// 3. MARCAR / DESMARCAR COMPRADO (TOGGLE)
-export async function toggleShoppingItem(id: string, currentDone: boolean) {
+// 3. MARCAR / DESMARCAR COMPRADO (Soporta FormData y llamada directa id, currentDone)
+export async function toggleShoppingItem(
+  arg1: string | FormData,
+  arg2?: boolean
+) {
   const { supabase, familyId } = await getContext()
-  const nextDone = !currentDone
 
-  const userRes = await supabase.auth.getUser()
-  const actorName = await getActorName(supabase, userRes.data?.user, familyId)
+  let id = ''
+  let explicitNextDone: boolean | undefined = undefined
 
+  if (arg1 instanceof FormData) {
+    id = (arg1.get('id') as string)?.trim()
+    const doneVal = arg1.get('done')
+    if (doneVal !== null && doneVal !== undefined) {
+      explicitNextDone = doneVal === 'true' || doneVal === '1'
+    }
+  } else {
+    id = arg1
+    if (typeof arg2 === 'boolean') {
+      explicitNextDone = !arg2
+    }
+  }
+
+  if (!id) return
+
+  // Obtenemos el ítem para conocer su estado actual si no viene explícito
   const { data: item } = await supabase
     .from('shopping_items')
-    .select('name, list')
+    .select('name, list, done')
     .eq('id', id)
     .eq('family_id', familyId)
     .single()
+
+  if (!item) return
+
+  const nextDone = explicitNextDone !== undefined ? explicitNextDone : !item.done
 
   const { error } = await supabase
     .from('shopping_items')
@@ -158,8 +180,11 @@ export async function toggleShoppingItem(id: string, currentDone: boolean) {
     .eq('id', id)
     .eq('family_id', familyId)
 
-  if (!error && item) {
+  if (!error) {
+    const userRes = await supabase.auth.getUser()
+    const actorName = await getActorName(supabase, userRes.data?.user, familyId)
     const listLabel = item.list === 'feria' ? 'Feria' : 'Supermercado'
+
     await recordActivity(supabase, {
       familyId,
       actorName,
@@ -177,9 +202,12 @@ export async function toggleShoppingItem(id: string, currentDone: boolean) {
   revalidatePath('/')
 }
 
-// 4. ELIMINAR UN ÍTEM ESPECÍFICO
-export async function deleteShoppingItem(id: string) {
+// 4. ELIMINAR UN ÍTEM ESPECÍFICO (Soporta id directo o FormData)
+export async function deleteShoppingItem(arg: string | FormData) {
   const { supabase, familyId } = await getContext()
+
+  const id = typeof arg === 'string' ? arg : ((arg.get('id') as string)?.trim() || '')
+  if (!id) return
 
   const userRes = await supabase.auth.getUser()
   const actorName = await getActorName(supabase, userRes.data?.user, familyId)
