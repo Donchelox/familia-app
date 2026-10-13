@@ -5,6 +5,15 @@ import { logActivity } from '@/lib/log'
 import { str, refresh } from '@/lib/util'
 import { recordActivity } from '@/lib/audit'
 
+function getActorName(ctx: any): string {
+  return (
+    ctx.memberName ||
+    ctx.user?.user_metadata?.full_name ||
+    ctx.user?.user_metadata?.name ||
+    (ctx.user?.email ? ctx.user.email.split('@')[0] : 'Familiar')
+  )
+}
+
 /* Pruebas y tareas (admin y editores) */
 export async function addTest(fd: FormData) {
   const ctx = await getContext()
@@ -27,7 +36,7 @@ export async function addTest(fd: FormData) {
 
   await recordActivity(ctx.supabase, {
     familyId: ctx.familyId,
-    actorName: ctx.userName || 'Usuario',
+    actorName: getActorName(ctx),
     entity: 'school_test',
     entityId: inserted?.id,
     action: 'create',
@@ -55,7 +64,7 @@ export async function deleteTest(fd: FormData) {
 
   await recordActivity(ctx.supabase, {
     familyId: ctx.familyId,
-    actorName: ctx.userName || 'Usuario',
+    actorName: getActorName(ctx),
     entity: 'school_test',
     entityId: id,
     action: 'delete',
@@ -87,7 +96,7 @@ export async function addHomework(fd: FormData) {
 
   await recordActivity(ctx.supabase, {
     familyId: ctx.familyId,
-    actorName: ctx.userName || 'Usuario',
+    actorName: getActorName(ctx),
     entity: 'school_homework',
     entityId: inserted?.id,
     action: 'create',
@@ -120,7 +129,7 @@ export async function toggleHomework(fd: FormData) {
 
   await recordActivity(ctx.supabase, {
     familyId: ctx.familyId,
-    actorName: ctx.userName || 'Usuario',
+    actorName: getActorName(ctx),
     entity: 'school_homework',
     entityId: id,
     action: 'toggle',
@@ -147,7 +156,7 @@ export async function deleteHomework(fd: FormData) {
 
   await recordActivity(ctx.supabase, {
     familyId: ctx.familyId,
-    actorName: ctx.userName || 'Usuario',
+    actorName: getActorName(ctx),
     entity: 'school_homework',
     entityId: id,
     action: 'delete',
@@ -189,7 +198,7 @@ export async function addBlock(fd: FormData) {
 
   await recordActivity(ctx.supabase, {
     familyId: ctx.familyId,
-    actorName: ctx.userName || 'Usuario',
+    actorName: getActorName(ctx),
     entity: 'school_schedule',
     entityId: inserted?.id,
     action: 'create',
