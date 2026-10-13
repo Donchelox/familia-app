@@ -24,7 +24,7 @@ async function getActorName(supabase: any, user: any, familyId: string): Promise
   )
 }
 
-// 1. AÑADIR ÍTEM A LA LISTA (Súper o Feria)
+// 1. AÑADIR ÍTEM A LA LISTA (Súper o Feria vía FormData)
 export async function addShoppingItem(formData: FormData) {
   const { supabase, familyId } = await getContext()
 
@@ -80,7 +80,6 @@ export async function toggleShoppingItem(id: string, currentDone: boolean) {
   const userRes = await supabase.auth.getUser()
   const actorName = await getActorName(supabase, userRes.data?.user, familyId)
 
-  // Consultar nombre del item para el registro
   const { data: item } = await supabase
     .from('shopping_items')
     .select('name, list')
@@ -194,3 +193,43 @@ export async function clearCompletedShopping(listType: 'super' | 'feria') {
   revalidatePath('/feria')
   revalidatePath('/')
 }
+
+// 5. AÑADIR MÚLTIPLES ÍTEMS (Requerido por AddShoppingSheet)
+export async function addItems(list: 'super' | 'feria', items: string[]) {
+  const { supabase, familyId } = await getContext()
+
+  const validItems = items.map((i) => i.trim()).filter(Boolean)
+  if (validItems.length === 0) return
+
+  const userRes = await supabase.auth.getUser()
+  const actorName = await getActorName(supabase, userRes.data?.user, familyId)
+
+  const rows = validItems.map((name) => ({
+    family_id: familyId,
+    name,
+    list: list.toLowerCase(),
+    done: false,
+  }))
+
+  const { error } = await supabase.from('shopping_items').insert(rows)
+
+  if (!error) {
+    const listLabel = list === 'feria' ? 'Feria' : 'Supermercado'
+    await recordActivity(supabase, {
+      familyId,
+      actorName,
+      entity: 'shopping',
+      action: 'create',
+      title: `Añadidos a ${listLabel}: ${validItems.join(', ')}`,
+      scheduledAt: null,
+      details: { list, count: validItems.length },
+    })
+  }
+
+  revalidatePath('/super')
+  revalidatePath('/feria')
+  revalidatePath('/')
+}
+
+// Alias de conveniencia
+export const addItem = addShoppingItem
