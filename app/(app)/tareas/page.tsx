@@ -1,47 +1,631 @@
-import { getContext } from '@/lib/family'
-import HistoryBox from '@/components/HistoryBox'
-import { addTodo, toggleTodo, deleteTodo, clearTodos } from '@/app/actions/todos'
+'use client'
 
-export default async function Tareas() {
-  const { supabase, familyId, role } = await getContext()
-  const canEdit = role !== 'viewer'
-  const { data } = await supabase.from('todos').select('id, title, done')
-    .eq('family_id', familyId).order('created_at', { ascending: false }).limit(300)
-  const open = (data ?? []).filter((t) => !t.done)
-  const done = (data ?? []).filter((t) => t.done)
+import { useState, useEffect } from 'react'
+import Link from 'next/link'
+import { useRouter } from 'next/navigation'
+import { createClient } from '@/lib/supabase/client'
+
+interface TodoItem {
+  id: string
+  family_id?: string
+  title: string
+  assigned_to?: string | null
+  due_date?: string | null
+  done: boolean
+  done_at?: string | null
+  created_at?: string
+}
+
+interface FamilyMember {
+  id: string
+  name: string
+}
+
+export default function TareasPage() {
+  const router = useRouter()
+  const supabase = createClient()
+
+  const [todos, setTodos] = useState<TodoItem[]>([])
+  const [members, setMembers] = useState<FamilyMember[]>([])
+  const [familyId, setFamilyId] = useState<string | null>(null)
+  const [loading, setLoading] = useState(true)
+
+  // Filtro
+  const [selectedFilter, setSelectedFilter] = useState<string>('Todas')
+
+  // Estado del Bottom Sheet
+  const [isSheetOpen, setIsSheetOpen] = useState(false)
+  const [editingTodo, setEditingTodo] = useState<TodoItem | null>(null)
+  const [title, setTitle] = useState('')
+  const [assignedTo, setAssignedTo] = useState('')
+  const [dueDateTime, setDueDateTime] = useState('') // Formato YYYY-MM-DDTHH:mm
+
+  const [saving, setSaving] = useState(false)
+  const [deleting, setDeleting] = useState(false)
+
+  const orangeGradient = {
+    background: 'linear-gradient(134.95deg, #F76911 47.75%, #F2A957 100%)',
+  }
+
+  // Formato legible para fecha y hora
+  function formatDateTime(dateStr?: string | null) {
+    if (!dateStr) return null
+    try {
+      const d = new Date(dateStr)
+      if (isNaN(d.getTime())) return dateStr
+
+      const datePart = d.toLocaleDateString('es-CL', {
+        day: 'numeric',
+        month: 'short',
+      })
+      const timePart = d.toLocaleTimeString('es-CL', {
+        hour: '2-digit',
+        minute: '2-digit',
+        hour12: false,
+      })
+      return `${datePart}, ${timePart} hrs`
+    } catch {
+      return dateStr
+    }
+  }
+
+  // Convertir string de BD a datetime-local (YYYY-MM-DDTHH:mm)
+  function toDateTimeLocalValue(dateStr?: string | null) {
+    if (!dateStr) return ''
+    try {
+      if (dateStr.length === 16 && dateStr.includes('T')) return dateStr
+      const d = new Date(dateStr)
+      if (isNaN(d.getTime())) return ''
+
+      const year = d.getFullYear()
+      const month = String(d.getMonth() + 1).padStart(2, '0')
+      const day = String(d.getDate()).padStart(2, '0')
+      const hours = String(d.getHours()).padStart(2, '0')
+      const minutes = String(d.getMinutes()).padStart(2, '0')
+      return `${year}-${month}-${day}T${hours}:${minutes}`
+    } catch {
+      return ''
+    }
+  }
+
+  async function loadData() {
+    setLoading(true)
+
+    // 1. Obtener la sesión del usuario conectado
+    const { data: userRes } = await supabase.auth.getUser()
+    const userId = userRes?.user?.id
+
+    let currentFamId = familyId
+    if (!currentFamId && userId) {
+      const { data: memberUser } = await supabase
+        .from('members')
+        .select('family_id')
+        .eq('user_id', userId)
+        .maybeSingle()
+
+      if (memberUser?.family_id) {
+        currentFamId = memberUser.family_id
+        setFamilyId(memberUser.family_id)
+      } else {
+        const { data: fmUser } = await supabase
+          .from('family_members')
+          .select('family_id')
+          .limit(1)
+          .maybeSingle()
+        if (fmUser?.family_id) {
+          currentFamId = fmUser.family_id
+          setFamilyId(fmUser.family_id)
+        }
+      }
+    }
+
+    // 2. Unificar integrantes: 'members' (tú y usuarios auth) + 'family_members' (demás integrantes)
+    const membersMap = new Map<string, FamilyMember>()
+
+    // A) Traer miembros auth de 'members' (incluyéndote a ti)
+    let mQuery = supabase.from('members').select('user_id, display_name, email')
+    if (currentFamId) mQuery = mQuery.eq('family_id', currentFamId)
+    const { data: mList } = await mQuery
+
+    if (mList) {
+      mList.forEach((m: any) => {
+        const name = m.display_name?.trim() || m.email?.split('@')[0] || 'Propietario'
+        if (name) {
+          membersMap.set(name.toLowerCase(), {
+            id: m.user_id || name,
+            name: name,
+          })
+        }
+      })
+    }
+
+    // B) Traer familiares de 'family_members'
+    let fmQuery = supabase.from('family_members').select('id, name')
+    if (currentFamId) fmQuery = fmQuery.eq('family_id', currentFamId)
+    const { data: fmList } = await fmQuery
+
+    if (fmList) {
+      fmList.forEach((fm: any) => {
+        const name = fm.name?.trim()
+        if (name && !membersMap.has(name.toLowerCase())) {
+          membersMap.set(name.toLowerCase(), {
+            id: fm.id,
+            name: name,
+          })
+        }
+      })
+    }
+
+    setMembers(Array.from(membersMap.values()))
+
+    // 3. Consultar tareas de 'todos'
+    let todosQuery = supabase
+      .from('todos')
+      .select('*')
+      .order('created_at', { ascending: false })
+
+    if (currentFamId) {
+      todosQuery = todosQuery.eq('family_id', currentFamId)
+    }
+
+    const { data: todosRes } = await todosQuery
+    setTodos(todosRes ?? [])
+    setLoading(false)
+  }
+
+  useEffect(() => {
+    loadData()
+  }, [])
+
+  // Check / Uncheck tarea
+  async function toggleDone(todo: TodoItem) {
+    const nextDone = !todo.done
+    const nextDoneAt = nextDone ? new Date().toISOString() : null
+
+    setTodos((prev) =>
+      prev.map((t) =>
+        t.id === todo.id ? { ...t, done: nextDone, done_at: nextDoneAt } : t
+      )
+    )
+
+    await supabase
+      .from('todos')
+      .update({ done: nextDone, done_at: nextDoneAt })
+      .eq('id', todo.id)
+
+    router.refresh()
+  }
+
+  // Apertura Bottom Sheet
+  function openCreate() {
+    setEditingTodo(null)
+    setTitle('')
+    setAssignedTo('')
+    setDueDateTime('')
+    setIsSheetOpen(true)
+  }
+
+  function openEdit(todo: TodoItem) {
+    setEditingTodo(todo)
+    setTitle(todo.title || '')
+    setAssignedTo(todo.assigned_to || '')
+    setDueDateTime(toDateTimeLocalValue(todo.due_date))
+    setIsSheetOpen(true)
+  }
+
+  // Guardar (Crear o Editar en 'todos')
+  async function handleSave(e: React.FormEvent) {
+    e.preventDefault()
+    if (!title.trim()) return
+    setSaving(true)
+
+    let targetFamilyId = familyId
+    if (!targetFamilyId) {
+      const { data: userRes } = await supabase.auth.getUser()
+      const userId = userRes?.user?.id
+      if (userId) {
+        const { data: member } = await supabase
+          .from('members')
+          .select('family_id')
+          .eq('user_id', userId)
+          .maybeSingle()
+        targetFamilyId = member?.family_id || null
+      }
+      if (!targetFamilyId) {
+        const { data: fm } = await supabase
+          .from('family_members')
+          .select('family_id')
+          .limit(1)
+          .maybeSingle()
+        targetFamilyId = fm?.family_id || null
+      }
+      if (targetFamilyId) setFamilyId(targetFamilyId)
+    }
+
+    const payload: any = {
+      title: title.trim(),
+      assigned_to: assignedTo.trim() || null,
+      due_date: dueDateTime ? new Date(dueDateTime).toISOString() : null,
+    }
+    if (targetFamilyId) payload.family_id = targetFamilyId
+
+    try {
+      if (editingTodo) {
+        const { error } = await supabase
+          .from('todos')
+          .update(payload)
+          .eq('id', editingTodo.id)
+        if (error) throw error
+      } else {
+        payload.done = false
+        const { error } = await supabase.from('todos').insert(payload)
+        if (error) throw error
+      }
+
+      setIsSheetOpen(false)
+      setTitle('')
+      setDueDateTime('')
+      setAssignedTo('')
+      await loadData()
+      router.refresh()
+    } catch (err: any) {
+      alert(`Error al guardar tarea: ${err?.message || 'Error en Supabase'}`)
+    } finally {
+      setSaving(false)
+    }
+  }
+
+  // Eliminar tarea
+  async function handleDelete() {
+    if (!editingTodo) return
+    if (!confirm('¿Eliminar esta tarea definitivamente?')) return
+    setDeleting(true)
+
+    try {
+      const { error } = await supabase
+        .from('todos')
+        .delete()
+        .eq('id', editingTodo.id)
+      if (error) throw error
+
+      setIsSheetOpen(false)
+      await loadData()
+      router.refresh()
+    } catch (err: any) {
+      alert(`Error al eliminar: ${err?.message || 'Error desconocido'}`)
+    } finally {
+      setDeleting(false)
+    }
+  }
+
+  const pendingTodos = todos.filter((t) => !t.done)
+  const completedTodos = todos.filter((t) => t.done)
+
+  const displayedPending = pendingTodos.filter((t) => {
+    if (selectedFilter === 'Todas') return true
+    return t.assigned_to === selectedFilter
+  })
 
   return (
-    <>
-      <div className="page-h"><h1>Tareas</h1><p className="muted">Pendientes de la casa</p></div>
-      <div className="panel">
-        {canEdit && (
-          <form action={addTodo} className="add">
-            <input name="title" placeholder="Nueva tarea" aria-label="Nueva tarea" required />
-            <button className="btn">Añadir</button>
-          </form>
-        )}
-        {open.length ? (
-          <ul className="items">
-            {open.map((t) => (
-              <li key={t.id}>
-                <form action={toggleTodo}>
-                  <input type="hidden" name="id" value={t.id} />
-                  <button className="check" aria-pressed="false" disabled={!canEdit} aria-label={`Marcar ${t.title}`} />
-                </form>
-                <span className="t">{t.title}</span>
-                {canEdit && (
-                  <form action={deleteTodo}>
-                    <input type="hidden" name="id" value={t.id} />
-                    <button className="btn danger">Eliminar</button>
-                  </form>
-                )}
-              </li>
-            ))}
-          </ul>
-        ) : <p className="muted">No hay tareas pendientes.</p>}
-        <HistoryBox title="Completadas" rows={done.map((t) => ({ id: t.id, label: t.title }))}
-          canEdit={canEdit} restore={toggleTodo} clear={clearTodos} />
+    <div className="w-full flex flex-col gap-6 select-none">
+      {/* HEADER ESTANDARIZADO */}
+      <header className="flex items-center justify-between py-1">
+        <div className="flex items-center gap-3">
+          <Link
+            href="/"
+            className="w-10 h-10 -ml-2 rounded-full flex items-center justify-center text-[#F76911] hover:bg-neutral-800/60 active:scale-95 transition-all cursor-pointer"
+          >
+            <svg className="w-7 h-7 stroke-current stroke-[2.5] fill-none" viewBox="0 0 24 24">
+              <path strokeLinecap="round" strokeLinejoin="round" d="M15 19l-7-7 7-7" />
+            </svg>
+          </Link>
+          <h1 className="text-2xl font-black tracking-tight text-white m-0">
+            Tareas del Hogar
+          </h1>
+        </div>
+
+        <Link
+          href="/notificaciones"
+          className="relative w-10 h-10 rounded-full flex items-center justify-center text-white hover:bg-neutral-800/60 active:scale-95 transition-all cursor-pointer"
+        >
+          <svg className="w-6 h-6 stroke-current stroke-2 fill-none" viewBox="0 0 24 24">
+            <path
+              strokeLinecap="round"
+              strokeLinejoin="round"
+              d="M15 17h5l-1.405-1.405A2.032 2.032 0 0118 14.158V11a6.002 6.002 0 00-4-5.659V5a2 2 0 10-4 0v.341C7.67 6.165 6 8.388 6 11v3.159c0 .538-.214 1.055-.595 1.436L4 17h5m6 0v1a3 3 0 11-6 0v-1m6 0H9"
+            />
+          </svg>
+          <span className="absolute top-2 right-2 w-2 h-2 rounded-full bg-[#F76911] ring-2 ring-[#131313]" />
+        </Link>
+      </header>
+
+      {/* BARRA DE ESTADO Y FILTRO POR INTEGRANTE */}
+      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 bg-[#1a1a1a] p-4 rounded-[28px] border border-neutral-800/80">
+        <div className="flex items-center gap-2">
+          <span className="text-xs text-neutral-400 font-medium">Por realizar:</span>
+          <span className="px-3 py-1 rounded-full bg-[#131313] border border-neutral-800 text-xs font-bold text-neutral-200">
+            {pendingTodos.length} pendientes
+          </span>
+        </div>
+
+        {/* CHIPS DE FILTRO */}
+        <div className="flex items-center gap-2 overflow-x-auto pb-1 sm:pb-0 scrollbar-none">
+          {['Todas', ...members.map((m) => m.name)].map((f) => (
+            <button
+              key={f}
+              type="button"
+              onClick={() => setSelectedFilter(f)}
+              className={`px-3.5 py-1.5 rounded-xl text-xs font-bold whitespace-nowrap transition-all cursor-pointer ${
+                selectedFilter === f
+                  ? 'bg-[#F76911] text-white shadow-md'
+                  : 'bg-[#131313] text-neutral-400 border border-neutral-800 hover:text-white'
+              }`}
+            >
+              {f}
+            </button>
+          ))}
+        </div>
       </div>
-    </>
+
+      {/* GRID RESPONSIVO: PENDIENTES Y COMPLETADAS */}
+      <div className="grid grid-cols-1 md:grid-cols-2 gap-6 items-start">
+        {/* COLUMNA PENDIENTES */}
+        <section className="flex flex-col gap-3">
+          <h2 className="text-sm font-bold text-neutral-300 px-1 m-0">
+            Pendientes ({displayedPending.length})
+          </h2>
+
+          <div className="flex flex-col gap-2.5">
+            {loading ? (
+              <div className="p-8 text-center text-xs text-neutral-500 bg-[#1a1a1a] rounded-[28px] border border-neutral-800/80">
+                Cargando tareas...
+              </div>
+            ) : displayedPending.length === 0 ? (
+              <div className="p-8 text-center bg-[#1a1a1a] rounded-[28px] border border-neutral-800/80">
+                <p className="text-sm font-bold text-neutral-300 m-0">No hay tareas pendientes</p>
+                <p className="text-xs text-neutral-500 mt-1">
+                  {selectedFilter === 'Todas' ? '¡Todo al día en la casa!' : 'No hay tareas asignadas para este filtro.'}
+                </p>
+              </div>
+            ) : (
+              displayedPending.map((t) => {
+                const formattedDate = formatDateTime(t.due_date)
+                return (
+                  <article
+                    key={t.id}
+                    className="p-4 rounded-[24px] bg-[#1a1a1a] border border-neutral-800/80 hover:border-neutral-700 shadow-md transition-all flex items-center justify-between gap-3"
+                  >
+                    <div onClick={() => openEdit(t)} className="min-w-0 flex-1 cursor-pointer">
+                      {t.assigned_to && (
+                        <span className="text-[11px] font-semibold text-[#F76911] flex items-center gap-1">
+                          👤 {t.assigned_to}
+                        </span>
+                      )}
+
+                      <h3 className="text-sm font-bold text-white mt-1 truncate m-0">
+                        {t.title}
+                      </h3>
+
+                      {formattedDate && (
+                        <p className="text-[11px] text-neutral-400 mt-1 flex items-center gap-1 font-medium">
+                          ⏰ Límite: {formattedDate}
+                        </p>
+                      )}
+                    </div>
+
+                    <div className="flex items-center gap-2 shrink-0">
+                      <button
+                        type="button"
+                        onClick={() => openEdit(t)}
+                        className="px-2.5 py-1.5 rounded-xl bg-neutral-800/60 hover:bg-neutral-800 border border-neutral-700/50 text-[#F76911] text-xs font-bold transition-all active:scale-95 cursor-pointer"
+                      >
+                        Editar
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => toggleDone(t)}
+                        className="w-10 h-10 rounded-2xl border border-neutral-700 hover:border-[#F76911] flex items-center justify-center cursor-pointer transition-all active:scale-95"
+                        title="Marcar como completada"
+                      />
+                    </div>
+                  </article>
+                )
+              })
+            )}
+          </div>
+        </section>
+
+        {/* COLUMNA COMPLETADAS */}
+        <section className="flex flex-col gap-3">
+          <h2 className="text-sm font-bold text-neutral-400 px-1 m-0">
+            Completadas ({completedTodos.length})
+          </h2>
+
+          <div className="flex flex-col gap-2.5">
+            {completedTodos.length === 0 ? (
+              <div className="p-8 text-center text-xs text-neutral-600 bg-[#151515] rounded-[28px] border border-neutral-800/40">
+                Aún no has completado tareas familiares.
+              </div>
+            ) : (
+              completedTodos.map((t) => (
+                <article
+                  key={t.id}
+                  className="p-4 rounded-[24px] bg-[#151515] border border-neutral-800/40 opacity-60 flex items-center justify-between gap-3"
+                >
+                  <div onClick={() => openEdit(t)} className="min-w-0 flex-1 cursor-pointer">
+                    <h3 className="text-sm font-bold text-neutral-400 line-through truncate m-0">
+                      {t.title}
+                    </h3>
+                    {t.assigned_to && (
+                      <p className="text-[11px] text-neutral-500 mt-0.5">
+                        Realizada por: {t.assigned_to}
+                      </p>
+                    )}
+                  </div>
+
+                  <div className="flex items-center gap-2 shrink-0">
+                    <button
+                      type="button"
+                      onClick={() => openEdit(t)}
+                      className="px-2.5 py-1.5 rounded-xl bg-neutral-800/40 hover:bg-neutral-800 border border-neutral-700/30 text-neutral-400 text-xs font-bold transition-all active:scale-95 cursor-pointer"
+                    >
+                      Editar
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => toggleDone(t)}
+                      style={orangeGradient}
+                      className="w-10 h-10 rounded-2xl flex items-center justify-center text-white shadow-md cursor-pointer transition-all active:scale-95"
+                      title="Marcar como pendiente"
+                    >
+                      <svg className="w-5 h-5 stroke-current stroke-2 fill-none" viewBox="0 0 24 24">
+                        <path strokeLinecap="round" strokeLinejoin="round" d="M5 13l4 4L19 7" />
+                      </svg>
+                    </button>
+                  </div>
+                </article>
+              ))
+            )}
+          </div>
+        </section>
+      </div>
+
+      {/* FLOATING ACTION BUTTON (FAB) */}
+      <button
+        type="button"
+        onClick={openCreate}
+        style={orangeGradient}
+        className="fixed bottom-24 right-5 sm:right-8 lg:right-12 w-14 h-14 rounded-full flex items-center justify-center text-white shadow-[0_8px_20px_rgba(247,105,17,0.4)] active:scale-90 transition-transform cursor-pointer z-30"
+        title="Añadir tarea"
+      >
+        <svg className="w-7 h-7 stroke-current stroke-2 fill-none" viewBox="0 0 24 24">
+          <path strokeLinecap="round" strokeLinejoin="round" d="M12 4v16m8-8H4" />
+        </svg>
+      </button>
+
+      {/* BOTTOM SHEET CREAR / EDITAR */}
+      {isSheetOpen && (
+        <div className="fixed inset-0 z-50 flex items-end sm:items-center justify-center bg-black/80 backdrop-blur-sm p-0 sm:p-4 animate-in fade-in duration-200">
+          <div className="w-full max-w-lg bg-[#1a1a1a] border border-neutral-800 rounded-t-[32px] sm:rounded-[32px] p-6 shadow-2xl flex flex-col gap-4 max-h-[90vh] overflow-y-auto">
+            <div className="flex items-center justify-between border-b border-neutral-800 pb-3">
+              <h2 className="text-base font-black text-white m-0">
+                {editingTodo ? 'Editar tarea del hogar' : 'Añadir nueva tarea'}
+              </h2>
+              <button
+                type="button"
+                onClick={() => setIsSheetOpen(false)}
+                className="w-8 h-8 rounded-full bg-neutral-800 text-neutral-400 hover:text-white flex items-center justify-center cursor-pointer text-sm font-bold"
+              >
+                ✕
+              </button>
+            </div>
+
+            <form onSubmit={handleSave} className="flex flex-col gap-3.5">
+              {/* TÍTULO / DESCRIPCIÓN */}
+              <div className="flex flex-col gap-1">
+                <label className="text-[11px] font-bold text-neutral-300">Descripción de la tarea</label>
+                <input
+                  type="text"
+                  required
+                  placeholder="Ej. Pagar cuenta de luz, Comprar alimento del conejo"
+                  value={title}
+                  onChange={(e) => setTitle(e.target.value)}
+                  className="w-full bg-[#131313] border border-neutral-800 rounded-2xl px-4 py-3 text-sm text-white focus:outline-none focus:border-[#F76911]"
+                />
+              </div>
+
+              {/* INTEGRANTE DE LA FAMILIA (SELECT) */}
+              <div className="flex flex-col gap-1">
+                <label className="text-[11px] font-bold text-neutral-300">Asignar a integrante</label>
+                <div className="relative">
+                  <select
+                    value={assignedTo}
+                    onChange={(e) => setAssignedTo(e.target.value)}
+                    className="w-full appearance-none bg-[#131313] border border-neutral-800 rounded-2xl px-4 py-3 text-sm text-white focus:outline-none focus:border-[#F76911] cursor-pointer"
+                  >
+                    <option value="" className="bg-[#1a1a1a] text-neutral-400">
+                      Sin asignar (Toda la familia)
+                    </option>
+                    {members.map((m) => (
+                      <option key={m.id} value={m.name} className="bg-[#1a1a1a] text-white">
+                        {m.name}
+                      </option>
+                    ))}
+                  </select>
+                  <div className="pointer-events-none absolute inset-y-0 right-4 flex items-center text-neutral-400">
+                    <svg className="w-4 h-4 stroke-current stroke-2 fill-none" viewBox="0 0 24 24">
+                      <path strokeLinecap="round" strokeLinejoin="round" d="M19 9l-7 7-7-7" />
+                    </svg>
+                  </div>
+                </div>
+              </div>
+
+              {/* FECHA Y HORA (CALENDARIO COMPLETO TIPO DATETIME-LOCAL) */}
+              <div className="flex flex-col gap-1">
+                <div className="flex items-center justify-between">
+                  <label className="text-[11px] font-bold text-neutral-300">
+                    Fecha y hora límite (opcional)
+                  </label>
+                  {dueDateTime && (
+                    <button
+                      type="button"
+                      onClick={() => setDueDateTime('')}
+                      className="text-[10px] text-[#F76911] font-bold hover:underline cursor-pointer"
+                    >
+                      Quitar fecha y hora
+                    </button>
+                  )}
+                </div>
+                <input
+                  type="datetime-local"
+                  value={dueDateTime}
+                  onChange={(e) => setDueDateTime(e.target.value)}
+                  className="w-full bg-[#131313] border border-neutral-800 rounded-2xl px-4 py-3 text-sm text-white focus:outline-none focus:border-[#F76911] cursor-pointer scheme-dark"
+                />
+                <p className="text-[10px] text-neutral-500 m-0">
+                  Define el día, mes, hora y minutos desde el selector interactivo.
+                </p>
+              </div>
+
+              {/* BOTONES */}
+              <div className="flex flex-col gap-2 pt-2">
+                <div className="flex items-center gap-2">
+                  <button
+                    type="button"
+                    onClick={() => setIsSheetOpen(false)}
+                    className="w-1/2 py-3.5 rounded-2xl bg-neutral-800 text-neutral-300 font-bold text-xs cursor-pointer hover:bg-neutral-700 transition-colors"
+                  >
+                    Cancelar
+                  </button>
+                  <button
+                    type="submit"
+                    disabled={saving}
+                    style={orangeGradient}
+                    className="w-1/2 py-3.5 rounded-2xl text-white font-bold text-xs shadow-md cursor-pointer disabled:opacity-50 flex items-center justify-center"
+                  >
+                    {saving
+                      ? 'Guardando...'
+                      : editingTodo
+                      ? 'Guardar cambios'
+                      : 'Añadir tarea'}
+                  </button>
+                </div>
+
+                {editingTodo && (
+                  <button
+                    type="button"
+                    disabled={deleting}
+                    onClick={handleDelete}
+                    className="w-full py-2.5 rounded-2xl bg-red-950/40 border border-red-900/60 text-red-400 hover:bg-red-900/40 font-bold text-xs cursor-pointer transition-colors mt-1"
+                  >
+                    {deleting ? 'Eliminando...' : 'Eliminar esta tarea'}
+                  </button>
+                )}
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
+    </div>
   )
 }

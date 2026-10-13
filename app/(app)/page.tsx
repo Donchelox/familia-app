@@ -1,6 +1,7 @@
 import Link from 'next/link'
 import { getContext } from '@/lib/family'
 import { todayStr, nowHHMM, rel } from '@/lib/dates'
+import NotificationBell from '@/components/NotificationBell'
 
 export default async function Inicio() {
   const { supabase, familyId } = await getContext()
@@ -112,10 +113,7 @@ export default async function Inicio() {
   // 5. TAREAS GENERALES
   const generalTodosCount = todosRes.count ?? (todosRes.data?.length ?? 0)
 
-  // 6. RECORDATORIOS / NOTIFICACIONES
-  const notificationCount = pendingMeds.length
-
-  // 7. PRÓXIMOS EVENTOS
+  // 6. PRÓXIMOS EVENTOS
   type EventItem = {
     id: string
     category: 'Colegio' | 'Medicinas' | 'Tareas' | 'Compras'
@@ -131,7 +129,8 @@ export default async function Inicio() {
       id: `test-${test.id}`,
       category: 'Colegio',
       title: test.subject || 'Prueba',
-      description: test.topics || (test.test_date ? `Fecha: ${rel(test.test_date).toLowerCase()}` : 'Prueba pendiente'),
+      // Mapeo con 'topic' de la base de datos
+      description: test.topic || test.topics || (test.test_date ? `Fecha: ${rel(test.test_date).toLowerCase()}` : 'Prueba pendiente'),
       href: '/colegio',
     })
   })
@@ -173,7 +172,7 @@ export default async function Inicio() {
 
   return (
     <div className="w-full flex flex-col gap-6">
-      {/* HEADER: Avatar individual, Saludo y Campana a /notificaciones */}
+      {/* HEADER: Avatar individual, Saludo y Campana sincronizada */}
       <header className="flex items-center justify-between">
         <div className="flex items-center gap-3">
           <Link
@@ -189,25 +188,8 @@ export default async function Inicio() {
           </div>
         </div>
 
-        {/* Campana al historial de notificaciones */}
-        <Link
-          href="/notificaciones"
-          aria-label="Ver historial de notificaciones"
-          className="relative p-2.5 rounded-full bg-[#1e1e1e] border border-neutral-800 text-white hover:text-white transition-colors no-underline"
-        >
-          <svg className="w-5 h-5 stroke-white stroke-2 fill-none" viewBox="0 0 24 24">
-            <path
-              strokeLinecap="round"
-              strokeLinejoin="round"
-              d="M15 17h5l-1.405-1.405A2.032 2.032 0 0118 14.158V11a6.002 6.002 0 00-4-5.659V5a2 2 0 10-4 0v.341C7.67 6.165 6 8.388 6 11v3.159c0 .538-.214 1.055-.595 1.436L4 17h5m6 0v1a3 3 0 11-6 0v-1m6 0H9"
-            />
-          </svg>
-          {notificationCount > 0 && (
-            <span className="absolute -top-1 -right-1 min-w-[18px] h-[18px] px-1 bg-[#F76911] text-white text-[10px] font-black rounded-full flex items-center justify-center ring-2 ring-[#131313]">
-              {notificationCount}
-            </span>
-          )}
-        </Link>
+        {/* Campana sincronizada */}
+        <NotificationBell />
       </header>
 
       {/* GRID DE ACCESOS DIRECTOS */}

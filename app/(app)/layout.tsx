@@ -1,20 +1,23 @@
-import { getContext, ROLE_LABEL } from '@/lib/family'
-import Nav from '@/components/Nav'
-import SplashScreen from '@/components/SplashScreen'
+import '@/app/globals.css'
+import Nav from '@/components/Nav' // Tu componente de navegación original intacto
+import PreventContextMenu from '@/components/PreventContextMenu'
 
-export default async function AppLayout({ children }: { children: React.ReactNode }) {
-  const ctx = await getContext()
-
+export default function AppLayout({
+  children,
+}: {
+  children: React.ReactNode
+}) {
   return (
-    <SplashScreen>
-      <div className="min-h-screen bg-[#131313] text-white flex flex-col items-center w-full">
-        {/* Contenedor central a 402px con 20px de padding lateral forzado para toda la app */}
-        <div className="w-full max-w-[402px] px-5 pt-6 pb-28 flex flex-col flex-1">
-          {children}
-        </div>
-        
-        <Nav family={ctx.familyName} role={ROLE_LABEL[ctx.role]} />
+    <div className="w-full min-h-screen bg-[#131313] text-white">
+      <PreventContextMenu />
+
+      {/* Contenedor responsivo sin restricciones rígidas */}
+      <div className="w-full max-w-5xl mx-auto px-4 sm:px-6 lg:px-8 py-4 sm:py-6 pb-28 sm:pb-24">
+        {children}
       </div>
-    </SplashScreen>
+
+      {/* Tu navegación original */}
+      <Nav />
+    </div>
   )
 }

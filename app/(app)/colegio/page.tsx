@@ -1,115 +1,971 @@
-import { getContext } from '@/lib/family'
-import { todayStr, weekday, rel, fmtDate, diffDays } from '@/lib/dates'
-import HistoryBox from '@/components/HistoryBox'
-import { addTest, deleteTest, addHomework, toggleHomework, deleteHomework, clearHomework } from '@/app/actions/school'
+'use client'
 
-const DN = ['Lunes', 'Martes', 'Miércoles', 'Jueves', 'Viernes']
+import { useState, useEffect } from 'react'
+import Link from 'next/link'
+import { useRouter } from 'next/navigation'
+import { createClient } from '@/lib/supabase/client'
 
-export default async function Colegio() {
-  const { supabase, familyId, role } = await getContext()
-  const ce = role !== 'viewer', today = todayStr(), wd = weekday()
-  const [b, s, t, h] = await Promise.all([
-    supabase.from('school_blocks').select('id, day, start_block, length, subject').eq('family_id', familyId).order('start_block'),
-    supabase.from('school_slots').select('block, starts_at').eq('family_id', familyId),
-    supabase.from('school_tests').select('id, subject, topic, test_date').eq('family_id', familyId).gte('test_date', today).order('test_date'),
-    supabase.from('school_homework').select('id, subject, task, due, done').eq('family_id', familyId).order('due'),
-  ])
-  const blocks = b.data ?? [], tests = t.data ?? [], hw = h.data ?? []
-  const slots: Record<number, string> = Object.fromEntries((s.data ?? []).map((x) => [x.block, String(x.starts_at).slice(0, 5)]))
-  const label = (x: any) => slots[x.start_block] ?? `${x.start_block}${x.length > 1 ? `–${x.start_block + x.length - 1}` : ''}`
-  const subjects = [...new Set(blocks.map((x) => x.subject))]
-  const open = hw.filter((x) => !x.done), done = hw.filter((x) => x.done)
-  const tag = (d: string) => (
-    <span className={`tag${diffDays(d) < 0 ? ' warn' : diffDays(d) <= 2 ? ' next' : ''}`}>
-      {diffDays(d) < 0 ? 'Atrasada · ' : ''}{rel(d)}
-    </span>
-  )
+interface SchoolScheduleBlock {
+  id: string
+  day: string
+  time_start: string
+  time_end: string
+  subject: string
+  teacher_initials?: string
+  order_index?: number
+  valid_until?: string
+  family_id?: string
+}
+
+interface SchoolTest {
+  id: string
+  subject: string
+  topic?: string
+  test_date: string
+  family_id?: string
+}
+
+interface SchoolHomework {
+  id: string
+  subject: string
+  task: string
+  due?: string | null
+  due_date?: string | null
+  done?: boolean
+  done_at?: string | null
+  family_id?: string
+}
+
+const SCHEDULE_DAYS = ['Lunes', 'Martes', 'Miércoles', 'Jueves', 'Viernes']
+
+const DEFAULT_DIEGO_SCHEDULE: Omit<SchoolScheduleBlock, 'id'>[] = [
+  // Lunes (08:00 a 15:25)
+  { day: 'Lunes', time_start: '08:00', time_end: '09:30', subject: 'LENGUAJE Y COMUNICACIÓN', teacher_initials: 'CN', order_index: 1 },
+  { day: 'Lunes', time_start: '09:45', time_end: '11:15', subject: 'MATEMÁTICA', teacher_initials: 'JJ', order_index: 2 },
+  { day: 'Lunes', time_start: '11:30', time_end: '12:15', subject: 'ARTES VISUALES', teacher_initials: 'NV', order_index: 3 },
+  { day: 'Lunes', time_start: '13:00', time_end: '13:45', subject: 'ARTES VISUALES', teacher_initials: 'NV', order_index: 4 },
+  { day: 'Lunes', time_start: '13:45', time_end: '14:30', subject: 'HISTORIA, GEOGRAFÍA Y C...', teacher_initials: 'CG', order_index: 5 },
+  { day: 'Lunes', time_start: '14:40', time_end: '15:25', subject: 'HISTORIA, GEOGRAFÍA Y C...', teacher_initials: 'CG', order_index: 6 },
+
+  // Martes (08:00 a 15:25)
+  { day: 'Martes', time_start: '08:00', time_end: '08:45', subject: 'TECNOLOGÍA', teacher_initials: 'JJ', order_index: 1 },
+  { day: 'Martes', time_start: '08:45', time_end: '09:30', subject: 'HISTORIA, GEOGRAFÍA Y C...', teacher_initials: 'CG', order_index: 2 },
+  { day: 'Martes', time_start: '09:45', time_end: '11:15', subject: 'LENGUAJE Y COMUNICACIÓN', teacher_initials: 'CN', order_index: 3 },
+  { day: 'Martes', time_start: '11:30', time_end: '12:15', subject: 'MATEMÁTICA', teacher_initials: 'JJ', order_index: 4 },
+  { day: 'Martes', time_start: '13:00', time_end: '13:45', subject: 'MATEMÁTICA', teacher_initials: 'JJ', order_index: 5 },
+  { day: 'Martes', time_start: '13:45', time_end: '14:30', subject: 'FORMACIÓN CIUDADANA', teacher_initials: 'BF', order_index: 6 },
+  { day: 'Martes', time_start: '14:40', time_end: '15:25', subject: 'ORIENTACIÓN', teacher_initials: 'BF', order_index: 7 },
+
+  // Miércoles (08:00 a 15:25)
+  { day: 'Miércoles', time_start: '08:00', time_end: '09:30', subject: 'TALLER DE INGLÉS', teacher_initials: 'BC', order_index: 1 },
+  { day: 'Miércoles', time_start: '09:45', time_end: '11:15', subject: 'RELIGIÓN', teacher_initials: 'DN', order_index: 2 },
+  { day: 'Miércoles', time_start: '11:30', time_end: '12:15', subject: 'LENGUAJE Y COMUNICACIÓN', teacher_initials: 'CN', order_index: 3 },
+  { day: 'Miércoles', time_start: '13:00', time_end: '13:45', subject: 'LENGUAJE Y COMUNICACIÓN', teacher_initials: 'CN', order_index: 4 },
+  { day: 'Miércoles', time_start: '13:45', time_end: '14:30', subject: 'MATEMÁTICA', teacher_initials: 'JJ', order_index: 5 },
+  { day: 'Miércoles', time_start: '14:40', time_end: '15:25', subject: 'CIENCIAS NATURALES', teacher_initials: 'AO', order_index: 6 },
+
+  // Jueves (08:00 a 15:25)
+  { day: 'Jueves', time_start: '08:00', time_end: '09:30', subject: 'EDUCACIÓN FÍSICA Y SALUD', teacher_initials: 'BF', order_index: 1 },
+  { day: 'Jueves', time_start: '09:45', time_end: '11:15', subject: 'LENGUAJE Y COMUNICACIÓN', teacher_initials: 'CN', order_index: 2 },
+  { day: 'Jueves', time_start: '11:30', time_end: '12:15', subject: 'MATEMÁTICA', teacher_initials: 'JJ', order_index: 3 },
+  { day: 'Jueves', time_start: '13:00', time_end: '13:45', subject: 'MATEMÁTICA', teacher_initials: 'JJ', order_index: 4 },
+  { day: 'Jueves', time_start: '13:45', time_end: '14:30', subject: 'CIENCIAS NATURALES', teacher_initials: 'AO', order_index: 5 },
+  { day: 'Jueves', time_start: '14:40', time_end: '15:25', subject: 'CIENCIAS NATURALES', teacher_initials: 'AO', order_index: 6 },
+
+  // Viernes (08:00 a 13:00)
+  { day: 'Viernes', time_start: '08:00', time_end: '08:45', subject: 'CÁLCULO MENTAL', teacher_initials: 'JJ', order_index: 1 },
+  { day: 'Viernes', time_start: '08:45', time_end: '09:30', subject: 'DOMINIO LECTOR', teacher_initials: 'CN', order_index: 2 },
+  { day: 'Viernes', time_start: '09:45', time_end: '11:15', subject: 'MÚSICA', teacher_initials: 'GR', order_index: 3 },
+  { day: 'Viernes', time_start: '11:30', time_end: '13:00', subject: 'EDUCACIÓN FÍSICA Y SALUD', teacher_initials: 'BF', order_index: 4 },
+]
+
+const COMMON_SUBJECTS = [
+  'Lenguaje y Comunicación',
+  'Matemática',
+  'Historia, Geografía y C...',
+  'Ciencias Naturales',
+  'Educación Física y Salud',
+  'Taller de Inglés',
+  'Artes Visuales',
+  'Música',
+  'Tecnología',
+  'Religión',
+  'Orientación',
+  'Formación Ciudadana',
+  'Cálculo Mental',
+  'Dominio Lector',
+  'Otro',
+]
+
+export default function ColegioPage() {
+  const router = useRouter()
+  const supabase = createClient()
+
+  const [tests, setTests] = useState<SchoolTest[]>([])
+  const [homework, setHomework] = useState<SchoolHomework[]>([])
+  const [schedule, setSchedule] = useState<SchoolScheduleBlock[]>([])
+  const [familyId, setFamilyId] = useState<string | null>(null)
+  const [loading, setLoading] = useState(true)
+
+  const [selectedDay, setSelectedDay] = useState<string>(() => {
+    const dayIdx = new Date().getDay()
+    if (dayIdx >= 1 && dayIdx <= 5) return SCHEDULE_DAYS[dayIdx - 1]
+    return 'Lunes'
+  })
+
+  // Bottom Sheet Estados
+  const [isSheetOpen, setIsSheetOpen] = useState(false)
+  const [modalType, setModalType] = useState<'test' | 'homework' | 'schedule'>('homework')
+  const [editingId, setEditingId] = useState<string | null>(null)
+
+  // Campos para Pruebas / Tareas
+  const [subject, setSubject] = useState('Lenguaje y Comunicación')
+  const [taskOrTopic, setTaskOrTopic] = useState('')
+  const [dateVal, setDateVal] = useState('')
+
+  // Campos para Bloque de Horario
+  const [schedDay, setSchedDay] = useState('Lunes')
+  const [timeStart, setTimeStart] = useState('08:00')
+  const [timeEnd, setTimeEnd] = useState('09:30')
+  const [teacherInitials, setTeacherInitials] = useState('')
+
+  const [saving, setSaving] = useState(false)
+  const [deleting, setDeleting] = useState(false)
+
+  const orangeGradient = {
+    background: 'linear-gradient(134.95deg, #F76911 47.75%, #F2A957 100%)',
+  }
+
+  // Carga de datos
+  async function loadData() {
+    setLoading(true)
+
+    const { data: memberData } = await supabase
+      .from('members')
+      .select('family_id')
+      .limit(1)
+      .maybeSingle()
+
+    const currentFamId = memberData?.family_id || null
+    if (currentFamId) setFamilyId(currentFamId)
+
+    let schedQuery = supabase
+      .from('school_schedule')
+      .select('*')
+      .order('time_start', { ascending: true })
+
+    let testsQuery = supabase
+      .from('school_tests')
+      .select('*')
+      .order('test_date', { ascending: true })
+
+    let hwQuery = supabase
+      .from('school_homework')
+      .select('*')
+      .order('created_at', { ascending: false })
+
+    if (currentFamId) {
+      schedQuery = schedQuery.eq('family_id', currentFamId)
+      testsQuery = testsQuery.eq('family_id', currentFamId)
+      hwQuery = hwQuery.eq('family_id', currentFamId)
+    }
+
+    const [schedRes, testsRes, hwRes] = await Promise.all([schedQuery, testsQuery, hwQuery])
+
+    if (!schedRes.data || schedRes.data.length === 0) {
+      const fallbackList: SchoolScheduleBlock[] = DEFAULT_DIEGO_SCHEDULE.map((item, idx) => ({
+        ...item,
+        id: `local-${idx}`,
+        valid_until: '2026-12-31',
+        family_id: currentFamId || undefined,
+      }))
+      setSchedule(fallbackList)
+
+      if (currentFamId) {
+        supabase
+          .from('school_schedule')
+          .insert(
+            DEFAULT_DIEGO_SCHEDULE.map((item) => ({
+              ...item,
+              family_id: currentFamId,
+              valid_until: '2026-12-31',
+            }))
+          )
+          .then(() => {})
+      }
+    } else {
+      setSchedule(schedRes.data)
+    }
+
+    setTests(testsRes.data ?? [])
+    setHomework(hwRes.data ?? [])
+    setLoading(false)
+  }
+
+  useEffect(() => {
+    loadData()
+  }, [])
+
+  // Check / Uncheck tarea escolar
+  async function toggleHw(hw: SchoolHomework) {
+    const nextDone = !hw.done
+    const nextDoneAt = nextDone ? new Date().toISOString() : null
+
+    setHomework((prev) =>
+      prev.map((item) =>
+        item.id === hw.id ? { ...item, done: nextDone, done_at: nextDoneAt } : item
+      )
+    )
+
+    await supabase
+      .from('school_homework')
+      .update({ done: nextDone, done_at: nextDoneAt })
+      .eq('id', hw.id)
+
+    router.refresh()
+  }
+
+  // Modos de apertura del modal
+  function openCreate() {
+    setEditingId(null)
+    setModalType('homework')
+    setSubject('Lenguaje y Comunicación')
+    setTaskOrTopic('')
+    setDateVal('')
+    setIsSheetOpen(true)
+  }
+
+  function openEditTest(test: SchoolTest) {
+    setEditingId(test.id)
+    setModalType('test')
+    setSubject(test.subject)
+    setTaskOrTopic(test.topic || '')
+    setDateVal(test.test_date || '')
+    setIsSheetOpen(true)
+  }
+
+  function openEditHw(hw: SchoolHomework) {
+    setEditingId(hw.id)
+    setModalType('homework')
+    setSubject(hw.subject)
+    setTaskOrTopic(hw.task)
+    setDateVal(hw.due || hw.due_date || '')
+    setIsSheetOpen(true)
+  }
+
+  function openEditSchedule(block: SchoolScheduleBlock) {
+    setEditingId(block.id)
+    setModalType('schedule')
+    setSchedDay(block.day)
+    setSubject(block.subject)
+    setTimeStart(block.time_start)
+    setTimeEnd(block.time_end)
+    setTeacherInitials(block.teacher_initials || '')
+    setIsSheetOpen(true)
+  }
+
+  function openCreateSchedule() {
+    setEditingId(null)
+    setModalType('schedule')
+    setSchedDay(selectedDay)
+    setSubject('Lenguaje y Comunicación')
+    setTimeStart('08:00')
+    setTimeEnd('08:45')
+    setTeacherInitials('')
+    setIsSheetOpen(true)
+  }
+
+  // Guardar (Crear o Editar)
+  async function handleSave(e: React.FormEvent) {
+    e.preventDefault()
+    setSaving(true)
+
+    let targetFamilyId = familyId
+    if (!targetFamilyId) {
+      const { data: member } = await supabase
+        .from('members')
+        .select('family_id')
+        .limit(1)
+        .maybeSingle()
+      targetFamilyId = member?.family_id || null
+      if (targetFamilyId) setFamilyId(targetFamilyId)
+    }
+
+    // A) HORARIO DE CLASES
+    if (modalType === 'schedule') {
+      const payload: any = {
+        day: schedDay,
+        subject,
+        time_start: timeStart,
+        time_end: timeEnd,
+        teacher_initials: teacherInitials.trim().toUpperCase() || null,
+        valid_until: '2026-12-31',
+      }
+      if (targetFamilyId) payload.family_id = targetFamilyId
+
+      if (editingId && !editingId.startsWith('local-')) {
+        const { error } = await supabase
+          .from('school_schedule')
+          .update(payload)
+          .eq('id', editingId)
+        if (error) {
+          alert(`Error al actualizar horario: ${error.message}`)
+          setSaving(false)
+          return
+        }
+      } else {
+        const { error } = await supabase.from('school_schedule').insert(payload)
+        if (error) {
+          alert(`Error al guardar bloque de horario: ${error.message}`)
+          setSaving(false)
+          return
+        }
+      }
+    } 
+    // B) PRUEBA ESCOLAR (usa 'topic')
+    else if (modalType === 'test') {
+      if (!taskOrTopic.trim()) {
+        setSaving(false)
+        return
+      }
+      const payload: any = {
+        subject,
+        topic: taskOrTopic.trim(),
+        test_date: dateVal || new Date().toISOString().split('T')[0],
+      }
+      if (targetFamilyId) payload.family_id = targetFamilyId
+
+      if (editingId) {
+        const { error } = await supabase
+          .from('school_tests')
+          .update(payload)
+          .eq('id', editingId)
+        if (error) {
+          alert(`Error al actualizar prueba: ${error.message}`)
+          setSaving(false)
+          return
+        }
+      } else {
+        const { error } = await supabase.from('school_tests').insert(payload)
+        if (error) {
+          alert(`Error al insertar prueba: ${error.message}`)
+          setSaving(false)
+          return
+        }
+      }
+    } 
+    // C) TAREA ESCOLAR (usa 'task')
+    else {
+      if (!taskOrTopic.trim()) {
+        setSaving(false)
+        return
+      }
+      const payload: any = {
+        subject,
+        task: taskOrTopic.trim(),
+        due: dateVal || null,
+        due_date: dateVal || null,
+      }
+      if (targetFamilyId) payload.family_id = targetFamilyId
+
+      if (editingId) {
+        const { error } = await supabase
+          .from('school_homework')
+          .update(payload)
+          .eq('id', editingId)
+        if (error) {
+          alert(`Error al actualizar tarea: ${error.message}`)
+          setSaving(false)
+          return
+        }
+      } else {
+        payload.done = false
+        const { error } = await supabase.from('school_homework').insert(payload)
+        if (error) {
+          alert(`Error al insertar tarea: ${error.message}`)
+          setSaving(false)
+          return
+        }
+      }
+    }
+
+    setSaving(false)
+    setIsSheetOpen(false)
+    setTaskOrTopic('')
+    setDateVal('')
+    await loadData()
+    router.refresh()
+  }
+
+  // Eliminar
+  async function handleDelete() {
+    if (!editingId) return
+    const msg =
+      modalType === 'schedule'
+        ? '¿Eliminar este bloque de clases?'
+        : modalType === 'test'
+        ? '¿Eliminar esta evaluación?'
+        : '¿Eliminar esta tarea escolar?'
+    if (!confirm(msg)) return
+    setDeleting(true)
+
+    if (modalType === 'schedule') {
+      if (!editingId.startsWith('local-')) {
+        await supabase.from('school_schedule').delete().eq('id', editingId)
+      } else {
+        setSchedule((prev) => prev.filter((b) => b.id !== editingId))
+      }
+    } else if (modalType === 'test') {
+      await supabase.from('school_tests').delete().eq('id', editingId)
+    } else {
+      await supabase.from('school_homework').delete().eq('id', editingId)
+    }
+
+    setDeleting(false)
+    setIsSheetOpen(false)
+    await loadData()
+    router.refresh()
+  }
+
+  const currentDayBlocks = schedule
+    .filter((b) => b.day === selectedDay)
+    .sort((a, b) => a.time_start.localeCompare(b.time_start))
+
+  const pendingHomework = homework.filter((h) => !h.done)
+  const completedHomework = homework.filter((h) => h.done)
 
   return (
-    <>
-      <div className="page-h"><h1>Colegio</h1><p className="muted">Horario, pruebas y tareas</p></div>
-      <datalist id="subj">{subjects.map((x) => <option key={x} value={x} />)}</datalist>
+    <div className="w-full flex flex-col gap-6 select-none">
+      {/* HEADER ESTANDARIZADO */}
+      <header className="flex items-center justify-between py-1">
+        <div className="flex items-center gap-3">
+          <Link
+            href="/"
+            className="w-10 h-10 -ml-2 rounded-full flex items-center justify-center text-[#F76911] hover:bg-neutral-800/60 active:scale-95 transition-all cursor-pointer"
+          >
+            <svg className="w-7 h-7 stroke-current stroke-[2.5] fill-none" viewBox="0 0 24 24">
+              <path strokeLinecap="round" strokeLinejoin="round" d="M15 19l-7-7 7-7" />
+            </svg>
+          </Link>
+          <h1 className="text-2xl font-black tracking-tight text-white m-0">Colegio</h1>
+        </div>
 
-      <section className="panel">
-        <h2>Horario de clases</h2>
-        <div className="days">
-          {DN.map((n, i) => (
-            <div key={n} className={`day${wd === i + 1 ? ' today' : ''}`}>
-              <h3>{n}{wd === i + 1 && <span className="tag next">Hoy</span>}</h3>
-              {blocks.filter((x) => x.day === i + 1).map((x) => (
-                <div className="cls" key={x.id}><span className="time">{label(x)}</span><span className="t">{x.subject}</span></div>
-              ))}
-              {!blocks.some((x) => x.day === i + 1) && <p className="muted">Sin clases</p>}
-            </div>
+        <Link
+          href="/notificaciones"
+          className="relative w-10 h-10 rounded-full flex items-center justify-center text-white hover:bg-neutral-800/60 active:scale-95 transition-all cursor-pointer"
+        >
+          <svg className="w-6 h-6 stroke-current stroke-2 fill-none" viewBox="0 0 24 24">
+            <path
+              strokeLinecap="round"
+              strokeLinejoin="round"
+              d="M15 17h5l-1.405-1.405A2.032 2.032 0 0118 14.158V11a6.002 6.002 0 00-4-5.659V5a2 2 0 10-4 0v.341C7.67 6.165 6 8.388 6 11v3.159c0 .538-.214 1.055-.595 1.436L4 17h5m6 0v1a3 3 0 11-6 0v-1m6 0H9"
+            />
+          </svg>
+          <span className="absolute top-2 right-2 w-2 h-2 rounded-full bg-[#F76911] ring-2 ring-[#131313]" />
+        </Link>
+      </header>
+
+      {/* SECCIÓN 1: HORARIO DE CLASES DE DIEGO */}
+      <section className="flex flex-col gap-3">
+        <div className="flex items-center justify-between px-1">
+          <div className="flex items-center gap-2">
+            <span className="text-[#F76911]">
+              <svg className="w-5 h-5 stroke-current stroke-2 fill-none" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z" />
+              </svg>
+            </span>
+            <h2 className="text-base font-bold text-white m-0">Horario de Diego</h2>
+          </div>
+          <div className="flex items-center gap-2">
+            <span className="text-[11px] text-[#F76911] font-bold bg-[#F76911]/10 px-2 py-0.5 rounded-md border border-[#F76911]/20">
+              Vigente hasta 31 Dic
+            </span>
+            <button
+              type="button"
+              onClick={openCreateSchedule}
+              className="text-xs font-bold text-neutral-400 hover:text-white px-2 py-1 rounded-lg bg-neutral-900 border border-neutral-800 cursor-pointer"
+            >
+              + Bloque
+            </button>
+          </div>
+        </div>
+
+        {/* SELECTOR DE DÍAS */}
+        <div className="flex items-center gap-2 overflow-x-auto pb-1 scrollbar-none">
+          {SCHEDULE_DAYS.map((day) => (
+            <button
+              key={day}
+              type="button"
+              onClick={() => setSelectedDay(day)}
+              className={`px-4 py-2 rounded-2xl text-xs font-bold whitespace-nowrap transition-all cursor-pointer ${
+                selectedDay === day
+                  ? 'bg-[#F76911] text-white shadow-md'
+                  : 'bg-[#1a1a1a] text-neutral-400 border border-neutral-800/80 hover:text-white'
+              }`}
+            >
+              {day}
+            </button>
           ))}
         </div>
-        <p className="muted" style={{ marginTop: 10, fontSize: '.9rem' }}>
-          {Object.keys(slots).length ? '' : 'Los números indican el bloque de la jornada. '}El horario se modifica en Ajustes (administradores).
-        </p>
+
+        {/* LISTADO DE BLOQUES DEL DÍA SELECCIONADO */}
+        <div className="p-4 rounded-[28px] bg-[#1a1a1a] border border-neutral-800/80 shadow-lg flex flex-col divide-y divide-neutral-800/80">
+          {currentDayBlocks.length === 0 ? (
+            <div className="py-6 text-center text-xs text-neutral-500">
+              No hay clases registradas para este día.
+            </div>
+          ) : (
+            currentDayBlocks.map((block, idx) => (
+              <div
+                key={block.id || idx}
+                onClick={() => openEditSchedule(block)}
+                className="py-3 first:pt-0 last:pb-0 flex items-center justify-between gap-3 cursor-pointer group hover:opacity-90 transition-opacity"
+              >
+                <div className="flex items-center gap-3.5 min-w-0">
+                  <div className="w-10 h-10 rounded-2xl bg-neutral-900 border border-neutral-800 flex items-center justify-center font-bold text-xs text-[#F76911] shrink-0">
+                    {idx + 1}°
+                  </div>
+                  <div className="min-w-0">
+                    <h3 className="text-sm font-bold text-white truncate m-0 group-hover:text-[#F2A957] transition-colors">
+                      {block.subject}
+                    </h3>
+                    <p className="text-xs text-neutral-400 mt-0.5">
+                      {block.time_start} - {block.time_end}
+                    </p>
+                  </div>
+                </div>
+
+                <div className="flex items-center gap-2 shrink-0">
+                  {block.teacher_initials && (
+                    <span className="w-7 h-7 rounded-full bg-neutral-800 border border-neutral-700/80 text-[10px] font-black text-neutral-300 flex items-center justify-center">
+                      {block.teacher_initials}
+                    </span>
+                  )}
+                  <span className="text-[11px] font-bold text-[#F76911] opacity-0 group-hover:opacity-100 transition-opacity">
+                    Editar
+                  </span>
+                </div>
+              </div>
+            ))
+          )}
+        </div>
       </section>
 
-      <section className="panel">
-        <h2>Próximas pruebas</h2>
-        {tests.length ? (
-          <ul className="items">
-            {tests.map((x) => (
-              <li key={x.id}>
-                <span className="time" style={{ minWidth: '6em' }}>{fmtDate(x.test_date)}</span>
-                <span className="t"><strong>{x.subject}</strong>{x.topic && <span className="muted"> · {x.topic}</span>}</span>
-                <span className={`tag${diffDays(x.test_date) <= 2 ? ' warn' : ''}`}>{rel(x.test_date)}</span>
-                {ce && <form action={deleteTest}><input type="hidden" name="id" value={x.id} /><button className="btn danger">Eliminar</button></form>}
-              </li>
-            ))}
-          </ul>
-        ) : <p className="muted">No hay pruebas próximas.</p>}
-        {ce && (
-          <details className="hist">
-            <summary>Añadir prueba</summary>
-            <form action={addTest} className="stack">
-              <div className="grid2">
-                <div><label htmlFor="t-s">Asignatura</label><input id="t-s" name="subject" list="subj" required /></div>
-                <div><label htmlFor="t-d">Fecha</label><input id="t-d" name="date" type="date" min={today} required /></div>
-              </div>
-              <div><label htmlFor="t-t">Materia a evaluar (opcional)</label><input id="t-t" name="topic" /></div>
-              <div><button className="btn">Añadir prueba</button></div>
-            </form>
-          </details>
-        )}
-      </section>
+      {/* SECCIÓN 2: GRID EVALUACIONES Y TAREAS */}
+      <div className="grid grid-cols-1 md:grid-cols-2 gap-6 items-start">
+        {/* COLUMNA PRUEBAS */}
+        <section className="flex flex-col gap-3">
+          <div className="flex items-center justify-between px-1">
+            <div className="flex items-center gap-2">
+              <span className="text-[#F76911]">
+                <svg className="w-5 h-5 stroke-current stroke-2 fill-none" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
+                </svg>
+              </span>
+              <h2 className="text-base font-bold text-white m-0">Siguientes pruebas</h2>
+            </div>
+            <span className="text-xs text-neutral-400 font-bold">{tests.length}</span>
+          </div>
 
-      <section className="panel">
-        <h2>Tareas y trabajos</h2>
-        {open.length ? (
-          <ul className="items">
-            {open.map((x) => (
-              <li key={x.id}>
-                <form action={toggleHomework}>
-                  <input type="hidden" name="id" value={x.id} />
-                  <button className="check" aria-pressed="false" disabled={!ce} aria-label={`Marcar como hecha: ${x.task}`} />
-                </form>
-                <span className="t"><strong>{x.subject}</strong> <span className="muted">· {x.task}</span></span>
-                {tag(x.due)}
-                {ce && <form action={deleteHomework}><input type="hidden" name="id" value={x.id} /><button className="btn danger">Eliminar</button></form>}
-              </li>
-            ))}
-          </ul>
-        ) : <p className="muted">No hay tareas del colegio.</p>}
-        <HistoryBox title="Hechas" rows={done.map((x) => ({ id: x.id, label: `${x.subject} · ${x.task}` }))}
-          canEdit={ce} restore={toggleHomework} clear={clearHomework} />
-        {ce && (
-          <details className="hist">
-            <summary>Añadir tarea</summary>
-            <form action={addHomework} className="stack">
-              <div className="grid2">
-                <div><label htmlFor="h-s">Asignatura</label><input id="h-s" name="subject" list="subj" required /></div>
-                <div><label htmlFor="h-d">Para el día</label><input id="h-d" name="due" type="date" required /></div>
+          <div className="flex flex-col gap-2.5">
+            {loading ? (
+              <div className="p-8 text-center text-xs text-neutral-500 bg-[#1a1a1a] rounded-[28px] border border-neutral-800/80">
+                Cargando pruebas...
               </div>
-              <div><label htmlFor="h-t">Qué hay que hacer</label><input id="h-t" name="task" required /></div>
-              <div><button className="btn">Añadir tarea</button></div>
+            ) : tests.length === 0 ? (
+              <div className="p-8 text-center bg-[#1a1a1a] rounded-[28px] border border-neutral-800/80">
+                <p className="text-sm font-bold text-neutral-300 m-0">No hay pruebas agendadas</p>
+                <p className="text-xs text-neutral-500 mt-1">Usa el botón + para registrar una evaluación.</p>
+              </div>
+            ) : (
+              tests.map((test) => (
+                <article
+                  key={test.id}
+                  className="p-4 rounded-[24px] bg-[#1a1a1a] border border-neutral-800/80 shadow-md flex items-center justify-between gap-3 hover:border-neutral-700 transition-all"
+                >
+                  <div onClick={() => openEditTest(test)} className="min-w-0 flex-1 cursor-pointer">
+                    <div className="flex items-center gap-2">
+                      <span className="px-2 py-0.5 rounded-lg bg-neutral-900 border border-neutral-800 text-[10px] font-bold text-[#F76911]">
+                        {test.subject}
+                      </span>
+                      <span className="text-xs font-bold text-white">{test.test_date}</span>
+                    </div>
+                    <p className="text-xs text-neutral-300 mt-1.5 font-medium leading-relaxed">
+                      {test.topic || 'Sin temario detallado'}
+                    </p>
+                  </div>
+
+                  <button
+                    type="button"
+                    onClick={() => openEditTest(test)}
+                    className="px-2.5 py-1.5 rounded-xl bg-neutral-800/60 hover:bg-neutral-800 border border-neutral-700/50 text-[#F76911] text-xs font-bold transition-all active:scale-95 cursor-pointer shrink-0"
+                  >
+                    Editar
+                  </button>
+                </article>
+              ))
+            )}
+          </div>
+        </section>
+
+        {/* COLUMNA TAREAS (PENDIENTES + COMPLETADAS) */}
+        <section className="flex flex-col gap-6">
+          {/* TAREAS PENDIENTES */}
+          <div className="flex flex-col gap-3">
+            <div className="flex items-center justify-between px-1">
+              <div className="flex items-center gap-2">
+                <span className="text-[#F76911]">
+                  <svg className="w-5 h-5 stroke-current stroke-2 fill-none" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z" />
+                  </svg>
+                </span>
+                <h2 className="text-base font-bold text-white m-0">Tareas escolares</h2>
+              </div>
+              <span className="text-xs text-neutral-400 font-bold">{pendingHomework.length} pendientes</span>
+            </div>
+
+            <div className="flex flex-col gap-2.5">
+              {loading ? (
+                <div className="p-8 text-center text-xs text-neutral-500 bg-[#1a1a1a] rounded-[28px] border border-neutral-800/80">
+                  Cargando tareas escolares...
+                </div>
+              ) : pendingHomework.length === 0 ? (
+                <div className="p-8 text-center bg-[#1a1a1a] rounded-[28px] border border-neutral-800/80">
+                  <p className="text-sm font-bold text-neutral-300 m-0">No hay tareas pendientes</p>
+                  <p className="text-xs text-neutral-500 mt-1">¡Al día con las actividades escolares!</p>
+                </div>
+              ) : (
+                pendingHomework.map((hw) => {
+                  const displayDate = hw.due || hw.due_date
+                  return (
+                    <article
+                      key={hw.id}
+                      className="p-4 rounded-[24px] bg-[#1a1a1a] border border-neutral-800/80 shadow-md hover:border-neutral-700 transition-all flex items-center justify-between gap-3"
+                    >
+                      <div onClick={() => openEditHw(hw)} className="min-w-0 flex-1 cursor-pointer">
+                        <span className="text-[10px] font-bold text-[#F76911]">{hw.subject}</span>
+                        <h3 className="text-sm font-bold text-white m-0 truncate">{hw.task}</h3>
+                        {displayDate && (
+                          <p className="text-[11px] text-neutral-400 mt-0.5">Entrega: {displayDate}</p>
+                        )}
+                      </div>
+
+                      <div className="flex items-center gap-2 shrink-0">
+                        <button
+                          type="button"
+                          onClick={() => openEditHw(hw)}
+                          className="px-2.5 py-1.5 rounded-xl bg-neutral-800/60 hover:bg-neutral-800 border border-neutral-700/50 text-[#F76911] text-xs font-bold transition-all active:scale-95 cursor-pointer"
+                        >
+                          Editar
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => toggleHw(hw)}
+                          className="w-10 h-10 rounded-2xl border border-neutral-700 hover:border-[#F76911] flex items-center justify-center cursor-pointer transition-all active:scale-95"
+                          title="Marcar como completada"
+                        />
+                      </div>
+                    </article>
+                  )
+                })
+              )}
+            </div>
+          </div>
+
+          {/* TAREAS COMPLETADAS */}
+          <div className="flex flex-col gap-3">
+            <h2 className="text-sm font-bold text-neutral-400 px-1 m-0">
+              Tareas completadas ({completedHomework.length})
+            </h2>
+
+            <div className="flex flex-col gap-2.5">
+              {completedHomework.length === 0 ? (
+                <div className="p-6 text-center text-xs text-neutral-600 bg-[#151515] rounded-[24px] border border-neutral-800/40">
+                  Aún no has completado tareas.
+                </div>
+              ) : (
+                completedHomework.map((hw) => {
+                  const displayDate = hw.due || hw.due_date
+                  return (
+                    <article
+                      key={hw.id}
+                      className="p-4 rounded-[24px] bg-[#151515] border border-neutral-800/40 opacity-60 flex items-center justify-between gap-3"
+                    >
+                      <div onClick={() => openEditHw(hw)} className="min-w-0 flex-1 cursor-pointer">
+                        <span className="text-[10px] font-bold text-neutral-500">{hw.subject}</span>
+                        <h3 className="text-sm font-bold text-neutral-400 line-through m-0 truncate">{hw.task}</h3>
+                        {displayDate && (
+                          <p className="text-[11px] text-neutral-600 mt-0.5">Entrega: {displayDate}</p>
+                        )}
+                      </div>
+
+                      <div className="flex items-center gap-2 shrink-0">
+                        <button
+                          type="button"
+                          onClick={() => openEditHw(hw)}
+                          className="px-2.5 py-1.5 rounded-xl bg-neutral-800/40 hover:bg-neutral-800 border border-neutral-700/30 text-neutral-400 text-xs font-bold transition-all active:scale-95 cursor-pointer"
+                        >
+                          Editar
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => toggleHw(hw)}
+                          style={orangeGradient}
+                          className="w-10 h-10 rounded-2xl flex items-center justify-center text-white shadow-md cursor-pointer transition-all active:scale-95"
+                          title="Marcar como pendiente"
+                        >
+                          <svg className="w-5 h-5 stroke-current stroke-2 fill-none" viewBox="0 0 24 24">
+                            <path strokeLinecap="round" strokeLinejoin="round" d="M5 13l4 4L19 7" />
+                          </svg>
+                        </button>
+                      </div>
+                    </article>
+                  )
+                })
+              )}
+            </div>
+          </div>
+        </section>
+      </div>
+
+      {/* BOTÓN FLOTANTE (FAB) */}
+      <button
+        type="button"
+        onClick={openCreate}
+        style={orangeGradient}
+        className="fixed bottom-24 right-5 sm:right-8 lg:right-12 w-14 h-14 rounded-full flex items-center justify-center text-white shadow-[0_8px_20px_rgba(247,105,17,0.4)] active:scale-90 transition-transform cursor-pointer z-30"
+        title="Añadir prueba o tarea"
+      >
+        <svg className="w-7 h-7 stroke-current stroke-2 fill-none" viewBox="0 0 24 24">
+          <path strokeLinecap="round" strokeLinejoin="round" d="M12 4v16m8-8H4" />
+        </svg>
+      </button>
+
+      {/* BOTTOM SHEET CREAR / EDITAR */}
+      {isSheetOpen && (
+        <div className="fixed inset-0 z-50 flex items-end sm:items-center justify-center bg-black/80 backdrop-blur-sm p-0 sm:p-4 animate-in fade-in duration-200">
+          <div className="w-full max-w-lg bg-[#1a1a1a] border border-neutral-800 rounded-t-[32px] sm:rounded-[32px] p-6 shadow-2xl flex flex-col gap-4 max-h-[90vh] overflow-y-auto">
+            <div className="flex items-center justify-between border-b border-neutral-800 pb-3">
+              <h2 className="text-base font-black text-white m-0">
+                {editingId
+                  ? modalType === 'schedule'
+                    ? 'Editar bloque de clases'
+                    : modalType === 'test'
+                    ? 'Editar prueba'
+                    : 'Editar tarea escolar'
+                  : modalType === 'schedule'
+                  ? 'Nuevo bloque de clases'
+                  : 'Añadir al colegio'}
+              </h2>
+              <button
+                type="button"
+                onClick={() => setIsSheetOpen(false)}
+                className="w-8 h-8 rounded-full bg-neutral-800 text-neutral-400 hover:text-white flex items-center justify-center cursor-pointer text-sm font-bold"
+              >
+                ✕
+              </button>
+            </div>
+
+            {/* SELECTOR SEGMENTADO DEL TIPO */}
+            {!editingId && modalType !== 'schedule' && (
+              <div className="flex p-1 bg-[#131313] border border-neutral-800 rounded-2xl">
+                <button
+                  type="button"
+                  onClick={() => setModalType('test')}
+                  className={`flex-1 py-2 text-center text-xs font-bold rounded-xl transition-all cursor-pointer ${
+                    modalType === 'test' ? 'bg-[#F76911] text-white shadow-md' : 'text-neutral-400 hover:text-white'
+                  }`}
+                >
+                  Nueva Prueba
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setModalType('homework')}
+                  className={`flex-1 py-2 text-center text-xs font-bold rounded-xl transition-all cursor-pointer ${
+                    modalType === 'homework' ? 'bg-[#F76911] text-white shadow-md' : 'text-neutral-400 hover:text-white'
+                  }`}
+                >
+                  Nueva Tarea
+                </button>
+              </div>
+            )}
+
+            <form onSubmit={handleSave} className="flex flex-col gap-3.5">
+              {/* BLOQUE DE HORARIO */}
+              {modalType === 'schedule' ? (
+                <>
+                  <div className="flex flex-col gap-1">
+                    <label className="text-[11px] font-bold text-neutral-300">Día de la semana</label>
+                    <select
+                      value={schedDay}
+                      onChange={(e) => setSchedDay(e.target.value)}
+                      className="w-full bg-[#131313] border border-neutral-800 rounded-2xl px-4 py-3 text-sm text-white focus:outline-none focus:border-[#F76911] cursor-pointer"
+                    >
+                      {SCHEDULE_DAYS.map((d) => (
+                        <option key={d} value={d} className="bg-[#1a1a1a]">{d}</option>
+                      ))}
+                    </select>
+                  </div>
+
+                  <div className="flex flex-col gap-1">
+                    <label className="text-[11px] font-bold text-neutral-300">Asignatura</label>
+                    <input
+                      type="text"
+                      required
+                      placeholder="Ej. MATEMÁTICA, LENGUAJE"
+                      value={subject}
+                      onChange={(e) => setSubject(e.target.value)}
+                      className="w-full bg-[#131313] border border-neutral-800 rounded-2xl px-4 py-3 text-sm text-white focus:outline-none focus:border-[#F76911]"
+                    />
+                  </div>
+
+                  <div className="grid grid-cols-2 gap-3">
+                    <div className="flex flex-col gap-1">
+                      <label className="text-[11px] font-bold text-neutral-300">Hora inicio</label>
+                      <input
+                        type="time"
+                        required
+                        value={timeStart}
+                        onChange={(e) => setTimeStart(e.target.value)}
+                        className="w-full bg-[#131313] border border-neutral-800 rounded-2xl px-4 py-3 text-sm text-white focus:outline-none focus:border-[#F76911]"
+                      />
+                    </div>
+                    <div className="flex flex-col gap-1">
+                      <label className="text-[11px] font-bold text-neutral-300">Hora término</label>
+                      <input
+                        type="time"
+                        required
+                        value={timeEnd}
+                        onChange={(e) => setTimeEnd(e.target.value)}
+                        className="w-full bg-[#131313] border border-neutral-800 rounded-2xl px-4 py-3 text-sm text-white focus:outline-none focus:border-[#F76911]"
+                      />
+                    </div>
+                  </div>
+
+                  <div className="flex flex-col gap-1">
+                    <label className="text-[11px] font-bold text-neutral-300">Iniciales del profesor (ej. JJ, CN, BF)</label>
+                    <input
+                      type="text"
+                      maxLength={4}
+                      placeholder="Ej. CN"
+                      value={teacherInitials}
+                      onChange={(e) => setTeacherInitials(e.target.value.toUpperCase())}
+                      className="w-full bg-[#131313] border border-neutral-800 rounded-2xl px-4 py-3 text-sm text-white focus:outline-none focus:border-[#F76911]"
+                    />
+                  </div>
+                </>
+              ) : (
+                /* PRUEBAS O TAREAS */
+                <>
+                  <div className="flex flex-col gap-1">
+                    <label className="text-[11px] font-bold text-neutral-300">Asignatura</label>
+                    <div className="relative">
+                      <select
+                        value={subject}
+                        onChange={(e) => setSubject(e.target.value)}
+                        className="w-full appearance-none bg-[#131313] border border-neutral-800 rounded-2xl px-4 py-3 text-sm text-white focus:outline-none focus:border-[#F76911] cursor-pointer"
+                      >
+                        {COMMON_SUBJECTS.map((sub) => (
+                          <option key={sub} value={sub} className="bg-[#1a1a1a] text-white">
+                            {sub}
+                          </option>
+                        ))}
+                      </select>
+                      <div className="pointer-events-none absolute inset-y-0 right-4 flex items-center text-neutral-400">
+                        <svg className="w-4 h-4 stroke-current stroke-2 fill-none" viewBox="0 0 24 24">
+                          <path strokeLinecap="round" strokeLinejoin="round" d="M19 9l-7 7-7-7" />
+                        </svg>
+                      </div>
+                    </div>
+                  </div>
+
+                  <div className="flex flex-col gap-1">
+                    <label className="text-[11px] font-bold text-neutral-300">
+                      {modalType === 'test' ? 'Temas o contenidos evaluados' : 'Título o descripción de la tarea'}
+                    </label>
+                    <input
+                      type="text"
+                      required
+                      placeholder={
+                        modalType === 'test'
+                          ? 'Ej. Fracciones, Comprensión lectora cap. 1-4'
+                          : 'Ej. Resolver guía página 42, traer cartulina'
+                      }
+                      value={taskOrTopic}
+                      onChange={(e) => setTaskOrTopic(e.target.value)}
+                      className="w-full bg-[#131313] border border-neutral-800 rounded-2xl px-4 py-3 text-sm text-white focus:outline-none focus:border-[#F76911]"
+                    />
+                  </div>
+
+                  <div className="flex flex-col gap-1">
+                    <div className="flex items-center justify-between">
+                      <label className="text-[11px] font-bold text-neutral-300">
+                        {modalType === 'test' ? 'Fecha de la prueba' : 'Fecha de entrega'}
+                      </label>
+                      {modalType === 'homework' && dateVal && (
+                        <button
+                          type="button"
+                          onClick={() => setDateVal('')}
+                          className="text-[10px] text-[#F76911] font-bold hover:underline cursor-pointer"
+                        >
+                          Sin fecha límite
+                        </button>
+                      )}
+                    </div>
+                    <input
+                      type="date"
+                      required={modalType === 'test'}
+                      value={dateVal}
+                      onChange={(e) => setDateVal(e.target.value)}
+                      className="w-full bg-[#131313] border border-neutral-800 rounded-2xl px-4 py-3 text-sm text-white focus:outline-none focus:border-[#F76911]"
+                    />
+                  </div>
+                </>
+              )}
+
+              {/* BOTONES DE ACCIÓN */}
+              <div className="flex flex-col gap-2 pt-2">
+                <div className="flex items-center gap-2">
+                  <button
+                    type="button"
+                    onClick={() => setIsSheetOpen(false)}
+                    className="w-1/2 py-3.5 rounded-2xl bg-neutral-800 text-neutral-300 font-bold text-xs cursor-pointer hover:bg-neutral-700 transition-colors"
+                  >
+                    Cancelar
+                  </button>
+                  <button
+                    type="submit"
+                    disabled={saving}
+                    style={orangeGradient}
+                    className="w-1/2 py-3.5 rounded-2xl text-white font-bold text-xs shadow-md cursor-pointer disabled:opacity-50 flex items-center justify-center"
+                  >
+                    {saving
+                      ? 'Guardando...'
+                      : editingId
+                      ? 'Guardar cambios'
+                      : modalType === 'schedule'
+                      ? 'Añadir bloque'
+                      : modalType === 'test'
+                      ? 'Añadir prueba'
+                      : 'Añadir tarea'}
+                  </button>
+                </div>
+
+                {editingId && (
+                  <button
+                    type="button"
+                    disabled={deleting}
+                    onClick={handleDelete}
+                    className="w-full py-2.5 rounded-2xl bg-red-950/40 border border-red-900/60 text-red-400 hover:bg-red-900/40 font-bold text-xs cursor-pointer transition-colors mt-1"
+                  >
+                    {deleting ? 'Eliminando...' : 'Eliminar registro'}
+                  </button>
+                )}
+              </div>
             </form>
-          </details>
-        )}
-      </section>
-    </>
+          </div>
+        </div>
+      )}
+    </div>
   )
 }
