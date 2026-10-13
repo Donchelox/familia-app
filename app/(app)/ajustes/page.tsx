@@ -1,5 +1,6 @@
 import { getContext } from '@/lib/family'
 import AjustesView from '@/components/AjustesView'
+import packageJson from '@/package.json'
 
 export default async function AjustesPage() {
   const { supabase, familyId, familyName } = await getContext()
@@ -48,3 +49,14 @@ export default async function AjustesPage() {
     />
   )
 }
+
+// Y en el return del componente:
+<AjustesView
+  userName={userName}
+  userEmail={userEmail}
+  familyName={familyName || 'Familia'}
+  members={members}
+  initialMedReminders={medRemindersEnabled}
+  initialMorningSummary={morningSummaryEnabled}
+  appVersion={packageJson.version}
+/>

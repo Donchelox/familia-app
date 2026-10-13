@@ -25,6 +25,7 @@ interface AjustesViewProps {
   members: FamilyMember[]
   initialMedReminders?: boolean
   initialMorningSummary?: boolean
+  appVersion?: string
 }
 
 type SheetMode =
@@ -40,6 +41,7 @@ export default function AjustesView({
   members,
   initialMedReminders = true,
   initialMorningSummary = true,
+  appVersion = '1.2.0',
 }: AjustesViewProps) {
   const [sheet, setSheet] = useState<SheetMode>(null)
   const [isPending, startTransition] = useTransition()
@@ -62,7 +64,6 @@ export default function AjustesView({
     background: 'linear-gradient(134.95deg, #F76911 47.75%, #F2A957 100%)',
   }
 
-  // Manejador del toggle de medicamentos
   const handleToggleMedReminders = () => {
     const nextVal = !medReminders
     setMedReminders(nextVal)
@@ -74,7 +75,6 @@ export default function AjustesView({
     })
   }
 
-  // Manejador del toggle de resumen diario
   const handleToggleMorningSummary = () => {
     const nextVal = !morningSummary
     setMorningSummary(nextVal)
@@ -110,7 +110,7 @@ export default function AjustesView({
   const closeSheet = () => setSheet(null)
 
   return (
-    <div className="w-full flex flex-col gap-6 relative min-h-[calc(100vh-80px)] pb-28">
+    <div className="w-full flex flex-col gap-6 relative min-h-[calc(100vh-80px)] pb-16">
       {/* 1. HEADER */}
       <header className="flex items-center justify-between">
         <div className="flex items-center gap-3">
@@ -230,7 +230,7 @@ export default function AjustesView({
         </button>
       </section>
 
-      {/* 4. SECCIÓN: PREFERENCIAS CON TOGGLES INTERACTIVOS */}
+      {/* 4. SECCIÓN: PREFERENCIAS CON TOGGLES */}
       <section className="flex flex-col gap-3">
         <div className="flex items-center gap-2">
           <svg className="w-5 h-5 text-[#F76911]" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
@@ -241,7 +241,6 @@ export default function AjustesView({
         </div>
 
         <div className="p-4 rounded-[20px] bg-[#1a1a1a] border border-neutral-800/80 flex flex-col gap-4">
-          {/* Toggle 1: Recordatorios de Medicinas */}
           <div className="flex items-center justify-between py-1 border-b border-neutral-800/60 pb-3">
             <div className="pr-4">
               <p className="text-sm font-bold text-white leading-tight">Recordatorios de Medicinas</p>
@@ -265,7 +264,6 @@ export default function AjustesView({
             </button>
           </div>
 
-          {/* Toggle 2: Resumen Diario Matutino */}
           <div className="flex items-center justify-between py-1">
             <div className="pr-4">
               <p className="text-sm font-bold text-white leading-tight">Resumen Matutino</p>
@@ -303,7 +301,17 @@ export default function AjustesView({
         </form>
       </section>
 
-      {/* 6. BOTTOM SHEET UNIFICADO */}
+      {/* 6. VERSIÓN DE LA APP */}
+      <footer className="pt-4 pb-2 flex flex-col items-center justify-center gap-1 text-center">
+        <p className="text-xs font-semibold text-neutral-500 tracking-wide">
+          Casa APP - Versión {appVersion}
+        </p>
+        <p className="text-[10px] text-neutral-600 font-medium">
+          Diseñado para el día a día familiar
+        </p>
+      </footer>
+
+      {/* 7. BOTTOM SHEET UNIFICADO */}
       {sheet && (
         <div className="fixed inset-0 z-50 flex items-end justify-center">
           <div className="fixed inset-0 bg-black/75 backdrop-blur-sm transition-opacity" onClick={closeSheet} />
@@ -336,7 +344,7 @@ export default function AjustesView({
               </button>
             </div>
 
-            {/* Caso 1: Editar Cuenta */}
+            {/* Formulario Editar Cuenta */}
             {sheet.type === 'edit_account' && (
               <form
                 action={async (formData) => {
@@ -406,7 +414,7 @@ export default function AjustesView({
               </form>
             )}
 
-            {/* Caso 2: Añadir / Editar Integrante */}
+            {/* Formulario Añadir o Editar Integrante */}
             {(sheet.type === 'add_member' || sheet.type === 'edit_member') && (
               <form
                 action={async (formData) => {
