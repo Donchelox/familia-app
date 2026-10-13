@@ -1,4 +1,5 @@
 'use server'
+
 import { getContext } from '@/lib/family'
 import { logActivity } from '@/lib/log'
 import { str, refresh } from '@/lib/util'
@@ -8,44 +9,155 @@ import { recordActivity } from '@/lib/audit'
 export async function addTest(fd: FormData) {
   const ctx = await getContext()
   const subject = str(fd, 'subject')
-  await ctx.supabase.from('school_tests').insert({
-    family_id: ctx.familyId, subject, topic: str(fd, 'topic') || null, test_date: str(fd, 'date'),
-  })
+  const topic = str(fd, 'topic') || null
+  const testDate = str(fd, 'date')
+
+  const { data: inserted } = await ctx.supabase
+    .from('school_tests')
+    .insert({
+      family_id: ctx.familyId,
+      subject,
+      topic,
+      test_date: testDate,
+    })
+    .select('id')
+    .maybeSingle()
+
   await logActivity(ctx, 'Colegio', 'prueba añadida', subject)
+
+  await recordActivity(ctx.supabase, {
+    familyId: ctx.familyId,
+    actorName: ctx.userName || 'Usuario',
+    entity: 'school_test',
+    entityId: inserted?.id,
+    action: 'create',
+    title: `Evaluación de ${subject}: ${topic || 'Sin temario'}`,
+    scheduledAt: `Fecha programada: ${testDate}`,
+    details: { subject, topic, test_date: testDate },
+  })
+
   refresh()
 }
+
 export async function deleteTest(fd: FormData) {
   const ctx = await getContext()
-  const { data: t } = await ctx.supabase.from('school_tests').select('subject').eq('id', str(fd, 'id')).maybeSingle()
+  const id = str(fd, 'id')
+  const { data: t } = await ctx.supabase
+    .from('school_tests')
+    .select('subject')
+    .eq('id', id)
+    .maybeSingle()
+
   if (!t) return
-  await ctx.supabase.from('school_tests').delete().eq('id', str(fd, 'id'))
+
+  await ctx.supabase.from('school_tests').delete().eq('id', id)
   await logActivity(ctx, 'Colegio', 'prueba eliminada', t.subject)
+
+  await recordActivity(ctx.supabase, {
+    familyId: ctx.familyId,
+    actorName: ctx.userName || 'Usuario',
+    entity: 'school_test',
+    entityId: id,
+    action: 'delete',
+    title: `Prueba eliminada: ${t.subject}`,
+    details: { subject: t.subject },
+  })
+
   refresh()
 }
+
 export async function addHomework(fd: FormData) {
   const ctx = await getContext()
-  const subject = str(fd, 'subject'), task = str(fd, 'task')
-  await ctx.supabase.from('school_homework').insert({ family_id: ctx.familyId, subject, task, due: str(fd, 'due') })
+  const subject = str(fd, 'subject')
+  const task = str(fd, 'task')
+  const due = str(fd, 'due')
+
+  const { data: inserted } = await ctx.supabase
+    .from('school_homework')
+    .insert({
+      family_id: ctx.familyId,
+      subject,
+      task,
+      due,
+    })
+    .select('id')
+    .maybeSingle()
+
   await logActivity(ctx, 'Colegio', 'tarea añadida', `${subject} · ${task}`)
+
+  await recordActivity(ctx.supabase, {
+    familyId: ctx.familyId,
+    actorName: ctx.userName || 'Usuario',
+    entity: 'school_homework',
+    entityId: inserted?.id,
+    action: 'create',
+    title: `Tarea escolar: ${subject} · ${task}`,
+    scheduledAt: due ? `Entrega: ${due}` : null,
+    details: { subject, task, due },
+  })
+
   refresh()
 }
+
 export async function toggleHomework(fd: FormData) {
   const ctx = await getContext()
-  const { data: h } = await ctx.supabase.from('school_homework').select('subject, task, done').eq('id', str(fd, 'id')).maybeSingle()
+  const id = str(fd, 'id')
+  const { data: h } = await ctx.supabase
+    .from('school_homework')
+    .select('subject, task, done')
+    .eq('id', id)
+    .maybeSingle()
+
   if (!h) return
-  await ctx.supabase.from('school_homework')
-    .update({ done: !h.done, done_at: h.done ? null : new Date().toISOString() }).eq('id', str(fd, 'id'))
-  await logActivity(ctx, 'Colegio', h.done ? 'tarea restaurada' : 'tarea hecha', `${h.subject} · ${h.task}`)
+
+  const nextDone = !h.done
+  await ctx.supabase
+    .from('school_homework')
+    .update({ done: nextDone, done_at: nextDone ? new Date().toISOString() : null })
+    .eq('id', id)
+
+  await logActivity(ctx, 'Colegio', nextDone ? 'tarea hecha' : 'tarea restaurada', `${h.subject} · ${h.task}`)
+
+  await recordActivity(ctx.supabase, {
+    familyId: ctx.familyId,
+    actorName: ctx.userName || 'Usuario',
+    entity: 'school_homework',
+    entityId: id,
+    action: 'toggle',
+    title: `Tarea escolar: ${h.subject} · ${h.task}`,
+    details: { done: nextDone },
+  })
+
   refresh()
 }
+
 export async function deleteHomework(fd: FormData) {
   const ctx = await getContext()
-  const { data: h } = await ctx.supabase.from('school_homework').select('subject, task').eq('id', str(fd, 'id')).maybeSingle()
+  const id = str(fd, 'id')
+  const { data: h } = await ctx.supabase
+    .from('school_homework')
+    .select('subject, task')
+    .eq('id', id)
+    .maybeSingle()
+
   if (!h) return
-  await ctx.supabase.from('school_homework').delete().eq('id', str(fd, 'id'))
+
+  await ctx.supabase.from('school_homework').delete().eq('id', id)
   await logActivity(ctx, 'Colegio', 'tarea eliminada', `${h.subject} · ${h.task}`)
+
+  await recordActivity(ctx.supabase, {
+    familyId: ctx.familyId,
+    actorName: ctx.userName || 'Usuario',
+    entity: 'school_homework',
+    entityId: id,
+    action: 'delete',
+    title: `Tarea eliminada: ${h.subject} · ${h.task}`,
+    details: { subject: h.subject, task: h.task },
+  })
+
   refresh()
 }
+
 export async function clearHomework() {
   const ctx = await getContext()
   await ctx.supabase.from('school_homework').delete().eq('family_id', ctx.familyId).eq('done', true)
@@ -57,18 +169,46 @@ export async function clearHomework() {
 export async function addBlock(fd: FormData) {
   const ctx = await getContext()
   if (ctx.role !== 'admin') return
-  await ctx.supabase.from('school_blocks').insert({
-    family_id: ctx.familyId, day: Number(str(fd, 'day')), start_block: Number(str(fd, 'start')),
-    length: Number(str(fd, 'length')) === 2 ? 2 : 1, subject: str(fd, 'subject'),
+
+  const day = Number(str(fd, 'day'))
+  const startBlock = Number(str(fd, 'start'))
+  const length = Number(str(fd, 'length')) === 2 ? 2 : 1
+  const subject = str(fd, 'subject')
+
+  const { data: inserted } = await ctx.supabase
+    .from('school_blocks')
+    .insert({
+      family_id: ctx.familyId,
+      day,
+      start_block: startBlock,
+      length,
+      subject,
+    })
+    .select('id')
+    .maybeSingle()
+
+  await recordActivity(ctx.supabase, {
+    familyId: ctx.familyId,
+    actorName: ctx.userName || 'Usuario',
+    entity: 'school_schedule',
+    entityId: inserted?.id,
+    action: 'create',
+    title: `Bloque de clase: ${subject}`,
+    scheduledAt: `Día ${day}, bloque ${startBlock}`,
+    details: { day, startBlock, length, subject },
   })
+
   refresh()
 }
+
 export async function deleteBlock(fd: FormData) {
   const ctx = await getContext()
   if (ctx.role !== 'admin') return
-  await ctx.supabase.from('school_blocks').delete().eq('family_id', ctx.familyId).eq('id', str(fd, 'id'))
+  const id = str(fd, 'id')
+  await ctx.supabase.from('school_blocks').delete().eq('family_id', ctx.familyId).eq('id', id)
   refresh()
 }
+
 export async function saveSlots(fd: FormData) {
   const ctx = await getContext()
   if (ctx.role !== 'admin') return
@@ -79,39 +219,3 @@ export async function saveSlots(fd: FormData) {
   }
   refresh()
 }
-
-// Al crear o editar una prueba:
-await recordActivity(supabase, {
-  familyId,
-  actorName: userDisplayName,
-  entity: 'school_test',
-  entityId: testId,
-  action: isEditing ? 'update' : 'create',
-  title: `Evaluación de ${subject}: ${topic || 'Sin temario'}`,
-  scheduledAt: `Fecha programada: ${testDate}`,
-  details: { subject, topic, test_date: testDate },
-})
-
-// Al agregar o modificar un bloque de horario escolar:
-await recordActivity(supabase, {
-  familyId,
-  actorName: userDisplayName,
-  entity: 'school_schedule',
-  entityId: scheduleId,
-  action: 'create',
-  title: `Bloque de clase: ${subject}`,
-  scheduledAt: `${day} de ${timeStart} a ${timeEnd}`,
-  details: { day, subject, timeStart, timeEnd, teacher: teacherInitials },
-})
-
-// Al marcar o crear tareas escolares (homework):
-await recordActivity(supabase, {
-  familyId,
-  actorName: userDisplayName,
-  entity: 'school_homework',
-  entityId: hwId,
-  action: isDone ? 'toggle' : 'create',
-  title: `Tarea escolar: ${title}`,
-  scheduledAt: dueDate ? `Entrega: ${dueDate}` : null,
-  details: { done: isDone },
-})
