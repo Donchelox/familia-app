@@ -1,0 +1,107 @@
+--- a/app/api/cron/medications/route.ts
++++ b/app/api/cron/medications/route.ts
+@@ -14,6 +14,22 @@
+   return got.length === want.length && timingSafeEqual(got, want)
+ }
+ 
++function getTargetSlots(currentHHMM: string) {
++  const [h, m] = currentHHMM.split(':').map(Number)
++  const currentTotalMinutes = h * 60 + m
++  const slots: { time: string; elapsed: number }[] = []
++
++  // Desde 0 hasta 120 minutos atrás (2 horas), cada 5 minutos
++  for (let elapsed = 0; elapsed <= 120; elapsed += 5) {
++    const targetMinutes = currentTotalMinutes - elapsed
++    if (targetMinutes < 0) continue
++    const th = Math.floor(targetMinutes / 60)
++    const tm = targetMinutes % 60
++    const timeStr = `${String(th).padStart(2, '0')}:${String(tm).padStart(2, '0')}`
++    slots.push({ time: timeStr, elapsed })
++  }
++  return slots
++}
++
+ export async function GET(req: Request) {
+   if (!authorized(req)) {
+     return NextResponse.json({ error: 'No autorizado' }, { status: 401 })
+@@ -27,13 +43,15 @@
+   webpush.setVapidDetails(VAPID_SUBJECT, NEXT_PUBLIC_VAPID_PUBLIC_KEY, VAPID_PRIVATE_KEY)
+ 
+   const hm = nowHHMM() // hora de Chile, HH:MM
+   const day = todayStr()
++  const targetSlots = getTargetSlots(hm)
++  const targetTimes = targetSlots.map((s) => s.time)
+ 
+-  // 1. Medicamentos con una toma a esta hora
++  // 1. Medicamentos con una toma en la ventana de las últimas 2 horas (cada 5 min)
+   const { data: meds, error: medsErr } = await supabase
+     .from('medications')
+-    .select('id, name, dose, person, family_id')
+-    .contains('times', [hm])
++    .select('id, name, dose, person, family_id, times')
++    .overlaps('times', targetTimes)
+   if (medsErr) {
+     console.error('cron meds:', medsErr)
+     return NextResponse.json({ error: 'Error consultando medicamentos' }, { status: 500 })
+@@ -45,32 +63,53 @@
+   const { data: fams } = await supabase.from('families').select('id, reminder_push').in('id', famIds)
+   const pushOn = new Set((fams ?? []).filter((f) => f.reminder_push).map((f) => f.id))
+ 
+-  // 3. Omitir dosis ya marcadas como tomadas hoy a esta hora
++  // 3. Omitir dosis ya marcadas como tomadas hoy en cualquiera de los horarios de la ventana
+   const { data: logs } = await supabase
+     .from('dose_logs')
+-    .select('medication_id')
++    .select('medication_id, time')
+     .eq('day', day)
+-    .eq('time', hm)
++    .in('time', targetTimes)
+     .in('medication_id', meds.map((m) => m.id))
+-  const taken = new Set((logs ?? []).map((l) => l.medication_id))
++  const taken = new Set((logs ?? []).map((l) => `${l.medication_id}_${l.time}`))
+ 
+-  const due = meds.filter((m) => pushOn.has(m.family_id) && !taken.has(m.id))
++  type DueNotification = {
++    med: (typeof meds)[0]
++    scheduledTime: string
++    elapsed: number
++  }
++  const due: DueNotification[] = []
++
++  for (const med of meds) {
++    if (!pushOn.has(med.family_id)) continue
++    const medTimes: string[] = Array.isArray(med.times) ? med.times : []
++    for (const slot of targetSlots) {
++      if (medTimes.includes(slot.time) && !taken.has(`${med.id}_${slot.time}`)) {
++        due.push({ med, scheduledTime: slot.time, elapsed: slot.elapsed })
++      }
++    }
++  }
++
+   if (!due.length) return NextResponse.json({ ok: true, hm, sent: 0 })
+ 
+   // 4. Suscripciones de esas familias
+   const { data: subs } = await supabase
+     .from('push_subscriptions')
+     .select('id, family_id, endpoint, p256dh, auth')
+-    .in('family_id', [...new Set(due.map((m) => m.family_id))])
++    .in('family_id', [...new Set(due.map((d) => d.med.family_id))])
+ 
+   let sent = 0
+   const jobs: Promise<void>[] = []
+-  for (const med of due) {
++  for (const { med, scheduledTime, elapsed } of due) {
++    const isRetry = elapsed > 0
+     const payload = JSON.stringify({
+-      title: `💊 ${med.name}`,
+-      body: `${med.person ? med.person + ' · ' : ''}${med.dose || 'Dosis habitual'}. Es momento de tomarlo.`,
++      title: isRetry ? `⏰ Recordatorio (+${elapsed} min): 💊 ${med.name}` : `💊 ${med.name}`,
++      body: isRetry
++        ? `${med.person ? med.person + ' · ' : ''}${med.dose || 'Dosis habitual'}. Pendiente desde las ${scheduledTime}.`
++        : `${med.person ? med.person + ' · ' : ''}${med.dose || 'Dosis habitual'}. Es momento de tomarlo.`,
+       url: '/meds',
+-      tag: `med-${med.id}-${hm}`,
++      tag: `med-${med.id}-${scheduledTime}-${elapsed}`,
+     })
+     for (const sub of (subs ?? []).filter((s) => s.family_id === med.family_id)) {
+       jobs.push(

@@ -72,6 +72,7 @@ export async function GET(req: Request) {
       title: `💊 ${med.name}`,
       body: `${med.person ? med.person + ' · ' : ''}${med.dose || 'Dosis habitual'}. Es momento de tomarlo.`,
       url: '/meds',
+      tag: `med-${med.id}-${hm}`,
     })
     for (const sub of (subs ?? []).filter((s) => s.family_id === med.family_id)) {
       jobs.push(

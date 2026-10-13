@@ -2,16 +2,15 @@
 
 import { useState, useEffect } from 'react'
 import Link from 'next/link'
-
-interface PushNotificationItem {
-  id: string
-  title: string
-  body?: string
-  url?: string | null
-  received_at?: string
-  read?: boolean
-  tag?: string
-}
+import PushSubscriptionManager from '@/components/PushSubscriptionManager'
+import {
+  type PushNotificationItem,
+  getHistory,
+  markAllRead,
+  deleteOne,
+  clearAll,
+  onHistoryChange,
+} from '@/lib/pushHistory'
 
 export default function NotificacionesPage() {
   const [notifications, setNotifications] = useState<PushNotificationItem[]>([])
@@ -46,25 +45,12 @@ export default function NotificacionesPage() {
     return '🔔'
   }
 
-  function loadAndMarkRead() {
+  async function loadAndMarkRead() {
     try {
-      const raw = localStorage.getItem('family_push_history')
-      if (raw) {
-        const parsed: PushNotificationItem[] = JSON.parse(raw)
-        parsed.sort((a, b) => {
-          const dateA = a.received_at ? new Date(a.received_at).getTime() : 0
-          const dateB = b.received_at ? new Date(b.received_at).getTime() : 0
-          return dateB - dateA
-        })
-        setNotifications(parsed)
-
-        // Marcar todas como leídas para actualizar la campana
-        const marked = parsed.map((item) => ({ ...item, read: true }))
-        localStorage.setItem('family_push_history', JSON.stringify(marked))
-        window.dispatchEvent(new Event('push_notifications_updated'))
-      } else {
-        setNotifications([])
-      }
+      const items = await getHistory()
+      setNotifications(items)
+      // Al abrir la página se marcan como leídas (la campana lo refleja al volver al inicio)
+      if (items.some((i) => !i.read)) await markAllRead()
     } catch {
       setNotifications([])
     } finally {
@@ -74,22 +60,20 @@ export default function NotificacionesPage() {
 
   useEffect(() => {
     loadAndMarkRead()
+    // Si llega un push con la página abierta, se actualiza la lista sola
+    return onHistoryChange(loadAndMarkRead)
   }, [])
 
-  function handleDeleteOne(id: string) {
-    const updated = notifications.filter((n) => n.id !== id)
-    setNotifications(updated)
-    localStorage.setItem('family_push_history', JSON.stringify(updated))
-    window.dispatchEvent(new Event('push_notifications_updated'))
+  async function handleDeleteOne(id: string) {
+    setNotifications((prev) => prev.filter((n) => n.id !== id))
+    await deleteOne(id).catch(console.error)
   }
 
-  function handleClearAll() {
+  async function handleClearAll() {
     if (notifications.length === 0) return
     if (!confirm('¿Deseas vaciar el historial de notificaciones?')) return
-
     setNotifications([])
-    localStorage.removeItem('family_push_history')
-    window.dispatchEvent(new Event('push_notifications_updated'))
+    await clearAll().catch(console.error)
   }
 
   if (!mounted) {
@@ -136,6 +120,9 @@ export default function NotificacionesPage() {
             </button>
           )}
         </header>
+
+        {/* ACTIVAR / ESTADO DE LAS NOTIFICACIONES PUSH EN ESTE DISPOSITIVO */}
+        <PushSubscriptionManager />
 
         {/* LISTADO O ESTADO VACÍO */}
         {notifications.length === 0 ? (

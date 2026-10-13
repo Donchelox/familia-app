@@ -2,40 +2,23 @@
 
 import { useState, useEffect } from 'react'
 import Link from 'next/link'
+import { countUnread, onHistoryChange } from '@/lib/pushHistory'
 
 export default function NotificationBell() {
   const [unreadCount, setUnreadCount] = useState<number>(0)
 
-  function updateCount() {
-    try {
-      const raw = localStorage.getItem('family_push_history')
-      if (!raw) {
-        setUnreadCount(0)
-        return
-      }
-      const history = JSON.parse(raw)
-      if (Array.isArray(history)) {
-        // Cuenta únicamente los avisos que no han sido marcados como leídos
-        const unread = history.filter((item: any) => !item.read).length
-        setUnreadCount(unread)
-      } else {
-        setUnreadCount(0)
-      }
-    } catch {
-      setUnreadCount(0)
-    }
-  }
-
   useEffect(() => {
-    updateCount()
-    window.addEventListener('push_notifications_updated', updateCount)
-    window.addEventListener('storage', updateCount)
-    window.addEventListener('focus', updateCount)
-
+    let active = true
+    const update = () => {
+      countUnread()
+        .then((n) => active && setUnreadCount(n))
+        .catch(() => active && setUnreadCount(0))
+    }
+    update()
+    const off = onHistoryChange(update)
     return () => {
-      window.removeEventListener('push_notifications_updated', updateCount)
-      window.removeEventListener('storage', updateCount)
-      window.removeEventListener('focus', updateCount)
+      active = false
+      off()
     }
   }, [])
 
