@@ -194,35 +194,54 @@ export async function clearCompletedShopping(listType: 'super' | 'feria') {
   revalidatePath('/')
 }
 
-// 5. AÑADIR MÚLTIPLES ÍTEMS (Requerido por AddShoppingSheet)
-export async function addItems(list: 'super' | 'feria', items: string[]) {
+// 5. AÑADIR MÚLTIPLES ÍTEMS (Compatible con llamada directa o con FormData)
+export async function addItems(
+  arg1: 'super' | 'feria' | FormData,
+  arg2?: string[]
+) {
   const { supabase, familyId } = await getContext()
-
-  const validItems = items.map((i) => i.trim()).filter(Boolean)
-  if (validItems.length === 0) return
-
   const userRes = await supabase.auth.getUser()
   const actorName = await getActorName(supabase, userRes.data?.user, familyId)
 
-  const rows = validItems.map((name) => ({
+  let listType: 'super' | 'feria' = 'super'
+  let rawNames: string[] = []
+
+  if (arg1 instanceof FormData) {
+    const listVal = (arg1.get('list') as string)?.trim().toLowerCase()
+    listType = listVal === 'feria' ? 'feria' : 'super'
+
+    const itemsField =
+      (arg1.get('items') as string) || (arg1.get('name') as string) || ''
+    rawNames = itemsField
+      .split(/[\n,]+/)
+      .map((s) => s.trim())
+      .filter(Boolean)
+  } else {
+    listType = arg1
+    rawNames = (arg2 || []).map((s) => s.trim()).filter(Boolean)
+  }
+
+  if (rawNames.length === 0) return
+
+  const rows = rawNames.map((name) => ({
     family_id: familyId,
     name,
-    list: list.toLowerCase(),
+    list: listType,
     done: false,
   }))
 
   const { error } = await supabase.from('shopping_items').insert(rows)
 
   if (!error) {
-    const listLabel = list === 'feria' ? 'Feria' : 'Supermercado'
+    const listLabel = listType === 'feria' ? 'Feria' : 'Supermercado'
     await recordActivity(supabase, {
       familyId,
       actorName,
       entity: 'shopping',
       action: 'create',
-      title: `Añadidos a ${listLabel}: ${validItems.join(', ')}`,
+      title: `Añadidos a ${listLabel}: ${rawNames.join(', ')}`,
       scheduledAt: null,
-      details: { list, count: validItems.length },
+      details: { list: listType, count: rawNames.length },
     })
   }
 
@@ -231,5 +250,5 @@ export async function addItems(list: 'super' | 'feria', items: string[]) {
   revalidatePath('/')
 }
 
-// Alias de conveniencia
+// Alias de compatibilidad
 export const addItem = addShoppingItem
