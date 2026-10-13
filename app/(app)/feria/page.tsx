@@ -5,6 +5,7 @@ import Link from 'next/link'
 import { useRouter } from 'next/navigation'
 import { createClient } from '@/lib/supabase/client'
 import { addShoppingItem } from '@/app/actions/shopping'
+import { useActionParam } from '@/lib/useActionParam'
 
 interface FeriaItem {
   id: string
@@ -55,6 +56,9 @@ export default function FeriaPage() {
   useEffect(() => {
     loadItems()
   }, [])
+
+  // Abre el sheet si viene del botón + (?action=new)
+  useActionParam({ new: openCreate })
 
   async function toggleDone(item: FeriaItem) {
     const nextDone = !item.done

@@ -4,6 +4,7 @@ import { useState, useEffect } from 'react'
 import Link from 'next/link'
 import { useRouter } from 'next/navigation'
 import { createClient } from '@/lib/supabase/client'
+import { useActionParam } from '@/lib/useActionParam'
 
 interface SchoolScheduleBlock {
   id: string
@@ -206,6 +207,9 @@ export default function ColegioPage() {
     loadData()
   }, [])
 
+  // Abre el sheet si viene del botón + (?action=new-homework | new-test)
+  useActionParam({ 'new-homework': openCreate, 'new-test': openCreateTest })
+
   // Check / Uncheck tarea escolar
   async function toggleHw(hw: SchoolHomework) {
     const nextDone = !hw.done
@@ -229,6 +233,15 @@ export default function ColegioPage() {
   function openCreate() {
     setEditingId(null)
     setModalType('homework')
+    setSubject('Lenguaje y Comunicación')
+    setTaskOrTopic('')
+    setDateVal('')
+    setIsSheetOpen(true)
+  }
+
+  function openCreateTest() {
+    setEditingId(null)
+    setModalType('test')
     setSubject('Lenguaje y Comunicación')
     setTaskOrTopic('')
     setDateVal('')

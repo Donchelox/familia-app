@@ -5,6 +5,7 @@ import Link from 'next/link'
 import { useRouter } from 'next/navigation'
 import { createClient } from '@/lib/supabase/client'
 import { addShoppingItem } from '@/app/actions/shopping'
+import { useActionParam } from '@/lib/useActionParam'
 
 interface ShoppingItem {
   id: string
@@ -65,6 +66,9 @@ export default function SuperPage() {
   useEffect(() => {
     loadItems()
   }, [])
+
+  // Abre el sheet si viene del botón + (?action=new)
+  useActionParam({ new: openCreate })
 
   async function toggleDone(item: ShoppingItem) {
     const nextDone = !item.done

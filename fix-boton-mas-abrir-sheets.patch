@@ -1,0 +1,151 @@
+diff --git a/app/(app)/colegio/page.tsx b/app/(app)/colegio/page.tsx
+index eff34a8..80d4ae9 100644
+--- a/app/(app)/colegio/page.tsx
++++ b/app/(app)/colegio/page.tsx
+@@ -4,6 +4,7 @@ import { useState, useEffect } from 'react'
+ import Link from 'next/link'
+ import { useRouter } from 'next/navigation'
+ import { createClient } from '@/lib/supabase/client'
++import { useActionParam } from '@/lib/useActionParam'
+ 
+ interface SchoolScheduleBlock {
+   id: string
+@@ -206,6 +207,9 @@ export default function ColegioPage() {
+     loadData()
+   }, [])
+ 
++  // Abre el sheet si viene del botón + (?action=new-homework | new-test)
++  useActionParam({ 'new-homework': openCreate, 'new-test': openCreateTest })
++
+   // Check / Uncheck tarea escolar
+   async function toggleHw(hw: SchoolHomework) {
+     const nextDone = !hw.done
+@@ -235,6 +239,15 @@ export default function ColegioPage() {
+     setIsSheetOpen(true)
+   }
+ 
++  function openCreateTest() {
++    setEditingId(null)
++    setModalType('test')
++    setSubject('Lenguaje y Comunicación')
++    setTaskOrTopic('')
++    setDateVal('')
++    setIsSheetOpen(true)
++  }
++
+   function openEditTest(test: SchoolTest) {
+     setEditingId(test.id)
+     setModalType('test')
+diff --git a/app/(app)/feria/page.tsx b/app/(app)/feria/page.tsx
+index 6a4752e..eedb8de 100644
+--- a/app/(app)/feria/page.tsx
++++ b/app/(app)/feria/page.tsx
+@@ -5,6 +5,7 @@ import Link from 'next/link'
+ import { useRouter } from 'next/navigation'
+ import { createClient } from '@/lib/supabase/client'
+ import { addShoppingItem } from '@/app/actions/shopping'
++import { useActionParam } from '@/lib/useActionParam'
+ 
+ interface FeriaItem {
+   id: string
+@@ -56,6 +57,9 @@ export default function FeriaPage() {
+     loadItems()
+   }, [])
+ 
++  // Abre el sheet si viene del botón + (?action=new)
++  useActionParam({ new: openCreate })
++
+   async function toggleDone(item: FeriaItem) {
+     const nextDone = !item.done
+     setItems((prev) =>
+diff --git a/app/(app)/super/page.tsx b/app/(app)/super/page.tsx
+index 4df6a82..f758557 100644
+--- a/app/(app)/super/page.tsx
++++ b/app/(app)/super/page.tsx
+@@ -5,6 +5,7 @@ import Link from 'next/link'
+ import { useRouter } from 'next/navigation'
+ import { createClient } from '@/lib/supabase/client'
+ import { addShoppingItem } from '@/app/actions/shopping'
++import { useActionParam } from '@/lib/useActionParam'
+ 
+ interface ShoppingItem {
+   id: string
+@@ -66,6 +67,9 @@ export default function SuperPage() {
+     loadItems()
+   }, [])
+ 
++  // Abre el sheet si viene del botón + (?action=new)
++  useActionParam({ new: openCreate })
++
+   async function toggleDone(item: ShoppingItem) {
+     const nextDone = !item.done
+     setItems((prev) =>
+diff --git a/app/(app)/tareas/page.tsx b/app/(app)/tareas/page.tsx
+index 1111d86..c0dd445 100644
+--- a/app/(app)/tareas/page.tsx
++++ b/app/(app)/tareas/page.tsx
+@@ -4,6 +4,7 @@ import { useState, useEffect } from 'react'
+ import Link from 'next/link'
+ import { useRouter } from 'next/navigation'
+ import { createClient } from '@/lib/supabase/client'
++import { useActionParam } from '@/lib/useActionParam'
+ 
+ interface TodoItem {
+   id: string
+@@ -177,6 +178,9 @@ export default function TareasPage() {
+     loadData()
+   }, [])
+ 
++  // Abre el sheet si viene del botón + (?action=new)
++  useActionParam({ new: openCreate })
++
+   // Check / Uncheck tarea
+   async function toggleDone(todo: TodoItem) {
+     const nextDone = !todo.done
+diff --git a/components/MedsClientView.tsx b/components/MedsClientView.tsx
+index 47c7669..2ecc71f 100644
+--- a/components/MedsClientView.tsx
++++ b/components/MedsClientView.tsx
+@@ -6,6 +6,7 @@ import Link from 'next/link'
+ import { createClient } from '@/lib/supabase/client'
+ import NotificationBell from '@/components/NotificationBell'
+ import { recordActivity } from '@/lib/audit'
++import { useActionParam } from '@/lib/useActionParam'
+ 
+ export interface Medication {
+   id: string
+@@ -107,6 +108,9 @@ export default function MedsClientView({
+     setIsModalOpen(true)
+   }
+ 
++  // Abre el modal si viene del botón + (?action=new)
++  useActionParam({ new: openCreateModal })
++
+   function openEditModal(med: Medication) {
+     setEditingId(med.id)
+     setName(med.name)
+diff --git a/lib/useActionParam.ts b/lib/useActionParam.ts
+new file mode 100644
+index 0000000..ee3ada0
+--- /dev/null
++++ b/lib/useActionParam.ts
+@@ -0,0 +1,19 @@
++import { useEffect } from 'react'
++
++/**
++ * Lee ?action=<nombre> al montar la página, ejecuta el handler correspondiente
++ * (p. ej. abrir el bottom sheet de "nuevo") y limpia el parámetro de la URL.
++ * Usa window.location en vez de useSearchParams para no exigir <Suspense> en el build.
++ */
++export function useActionParam(handlers: Record<string, () => void>) {
++  useEffect(() => {
++    const params = new URLSearchParams(window.location.search)
++    const action = params.get('action')
++    if (!action) return
++    handlers[action]?.()
++    params.delete('action')
++    const qs = params.toString()
++    window.history.replaceState(null, '', window.location.pathname + (qs ? `?${qs}` : ''))
++    // eslint-disable-next-line react-hooks/exhaustive-deps
++  }, [])
++}

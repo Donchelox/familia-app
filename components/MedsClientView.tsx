@@ -6,6 +6,7 @@ import Link from 'next/link'
 import { createClient } from '@/lib/supabase/client'
 import NotificationBell from '@/components/NotificationBell'
 import { recordActivity } from '@/lib/audit'
+import { useActionParam } from '@/lib/useActionParam'
 
 export interface Medication {
   id: string
@@ -106,6 +107,9 @@ export default function MedsClientView({
     setEndDate('')
     setIsModalOpen(true)
   }
+
+  // Abre el modal si viene del botón + (?action=new)
+  useActionParam({ new: openCreateModal })
 
   function openEditModal(med: Medication) {
     setEditingId(med.id)

@@ -4,6 +4,7 @@ import { useState, useEffect } from 'react'
 import Link from 'next/link'
 import { useRouter } from 'next/navigation'
 import { createClient } from '@/lib/supabase/client'
+import { useActionParam } from '@/lib/useActionParam'
 
 interface TodoItem {
   id: string
@@ -176,6 +177,9 @@ export default function TareasPage() {
   useEffect(() => {
     loadData()
   }, [])
+
+  // Abre el sheet si viene del botón + (?action=new)
+  useActionParam({ new: openCreate })
 
   // Check / Uncheck tarea
   async function toggleDone(todo: TodoItem) {
