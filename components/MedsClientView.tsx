@@ -204,6 +204,13 @@ export default function MedsClientView({
         time: doseTime,
         day: todayStr,
       })
+      // Ya está tomada: quita de la bandeja el aviso pendiente de esta dosis (mismo tag que usa el cron)
+      if ('serviceWorker' in navigator) {
+        navigator.serviceWorker.ready
+          .then((reg) => reg.getNotifications({ tag: `med-${medId}-${todayStr}-${doseTime}` }))
+          .then((list) => list.forEach((n) => n.close()))
+          .catch(() => {})
+      }
     }
 
     // Registro de auditoría

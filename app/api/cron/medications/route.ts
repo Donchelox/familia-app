@@ -2,10 +2,15 @@ import { NextResponse } from 'next/server'
 import { timingSafeEqual } from 'crypto'
 import { createClient } from '@supabase/supabase-js'
 import webpush from 'web-push'
-import { nowHHMM, todayStr } from '@/lib/dates'
+import { nowHHMM, todayStr, weekday } from '@/lib/dates'
+import { planReminders, type MedRow, type ReminderRow } from '@/lib/medReminders'
 
 export const dynamic = 'force-dynamic'
 export const runtime = 'nodejs'
+
+// Debe ejecutarse CADA MINUTO (ver lib/medReminders.ts para la regla de repetición).
+// Cada aviso "reclama" su intervalo en la tabla dose_reminders antes de enviarse, así que si el
+// cron corre dos veces seguidas o se atrasa, no se duplican ni se acumulan avisos.
 
 function authorized(req: Request) {
   const secret = process.env.CRON_SECRET
@@ -30,77 +35,104 @@ export async function GET(req: Request) {
 
   const hm = nowHHMM() // hora de Chile, HH:MM
   const day = todayStr()
+  const nowMs = Date.now()
 
-  // Ventana de recordatorios: aviso a la hora exacta y luego cada RETRY_EVERY min
-  // hasta RETRY_WINDOW min mientras la dosis no esté marcada como tomada.
-  // (Asume que el cron se ejecuta cada minuto.)
-  const RETRY_EVERY = 5
-  const RETRY_WINDOW = 120
-  const [h, m] = hm.split(':').map(Number)
-  const nowMin = h * 60 + m
-  const slots: { time: string; elapsed: number }[] = []
-  for (let elapsed = 0; elapsed <= RETRY_WINDOW; elapsed += RETRY_EVERY) {
-    const t = nowMin - elapsed
-    if (t < 0) break // no cruzar medianoche: dose_logs es por día
-    slots.push({ time: `${String(Math.floor(t / 60)).padStart(2, '0')}:${String(t % 60).padStart(2, '0')}`, elapsed })
-  }
-  const slotTimes = slots.map((s) => s.time)
-
-  // 1. Medicamentos con alguna toma en la ventana
-  const { data: meds, error: medsErr } = await supabase
+  // 1. Medicamentos (se filtran por hora, frecuencia y fecha de término en planReminders)
+  const { data: medsData, error: medsErr } = await supabase
     .from('medications')
-    .select('id, name, dose, person, family_id, times')
-    .overlaps('times', slotTimes)
+    .select('id, name, dose, person, family_id, times, frequency, end_date')
   if (medsErr) {
     console.error('cron meds:', medsErr)
     return NextResponse.json({ error: 'Error consultando medicamentos' }, { status: 500 })
   }
-  if (!meds?.length) return NextResponse.json({ ok: true, hm, sent: 0 })
+  const meds = (medsData ?? []) as MedRow[]
+  if (!meds.length) return NextResponse.json({ ok: true, hm, due: 0, sent: 0 })
+  const medIds = meds.map((m) => m.id)
 
   // 2. Solo familias con push activado
   const famIds = [...new Set(meds.map((m) => m.family_id))]
   const { data: fams } = await supabase.from('families').select('id, reminder_push').in('id', famIds)
-  const pushOn = new Set((fams ?? []).filter((f) => f.reminder_push).map((f) => f.id))
+  const pushFamilies = new Set((fams ?? []).filter((f) => f.reminder_push).map((f) => f.id as string))
 
-  // 3. Omitir dosis ya marcadas como tomadas hoy (por medicamento + horario)
-  const { data: logs } = await supabase
-    .from('dose_logs')
-    .select('medication_id, time')
+  // 3. Dosis ya marcadas como tomadas hoy
+  const { data: logs } = await supabase.from('dose_logs').select('medication_id, time').eq('day', day).in('medication_id', medIds)
+  const taken = new Set((logs ?? []).map((l) => `${l.medication_id}|${String(l.time).slice(0, 5)}`))
+
+  // 4. Avisos ya enviados hoy (estado de la repetición)
+  const { data: recData, error: recErr } = await supabase
+    .from('dose_reminders')
+    .select('medication_id, time, first_sent_at, last_slot')
     .eq('day', day)
-    .in('time', slotTimes)
-    .in('medication_id', meds.map((m) => m.id))
-  const taken = new Set((logs ?? []).map((l) => `${l.medication_id}_${String(l.time).slice(0, 5)}`))
-
-  const due: { med: (typeof meds)[number]; scheduledTime: string; elapsed: number }[] = []
-  for (const med of meds) {
-    if (!pushOn.has(med.family_id)) continue
-    const medTimes: string[] = Array.isArray(med.times) ? med.times : []
-    for (const s of slots) {
-      if (medTimes.includes(s.time) && !taken.has(`${med.id}_${s.time}`)) {
-        due.push({ med, scheduledTime: s.time, elapsed: s.elapsed })
-      }
-    }
+    .in('medication_id', medIds)
+  if (recErr) {
+    console.error('cron dose_reminders:', recErr)
+    return NextResponse.json(
+      { error: 'Error leyendo dose_reminders. ¿Ejecutaste supabase/dose-reminders.sql?' },
+      { status: 500 }
+    )
   }
-  if (!due.length) return NextResponse.json({ ok: true, hm, sent: 0 })
+  const reminders = new Map<string, ReminderRow>(
+    ((recData ?? []) as ReminderRow[]).map((r) => [`${r.medication_id}|${r.time}`, r])
+  )
 
-  // 4. Suscripciones de esas familias
+  // Limpieza: se conservan solo los últimos días
+  const cutoff = new Date(day + 'T12:00:00Z')
+  cutoff.setUTCDate(cutoff.getUTCDate() - 2)
+  await supabase.from('dose_reminders').delete().lt('day', cutoff.toISOString().slice(0, 10))
+
+  // 5. Qué avisos tocan ahora
+  const plan = planReminders({ meds, day, isoWeekday: weekday(), nowMs, nowHM: hm, taken, reminders, pushFamilies })
+  if (!plan.length) return NextResponse.json({ ok: true, hm, due: 0, sent: 0 })
+
+  // 6. Reclamar cada aviso: solo la ejecución que lo reclama primero lo envía
+  const claimed: typeof plan = []
+  for (const p of plan) {
+    if (p.kind === 'first') {
+      const { data, error } = await supabase
+        .from('dose_reminders')
+        .upsert(
+          { medication_id: p.med.id, family_id: p.med.family_id, day, time: p.time, first_sent_at: new Date(nowMs).toISOString(), last_slot: 0 },
+          { onConflict: 'medication_id,day,time', ignoreDuplicates: true }
+        )
+        .select('medication_id')
+      if (error) { console.error('cron claim first:', error); continue }
+      if (!data?.length) continue // otra ejecución ya lo tomó
+    } else {
+      const { data, error } = await supabase
+        .from('dose_reminders')
+        .update({ last_slot: p.slot })
+        .eq('medication_id', p.med.id)
+        .eq('day', day)
+        .eq('time', p.time)
+        .lt('last_slot', p.slot)
+        .select('medication_id')
+      if (error) { console.error('cron claim repeat:', error); continue }
+      if (!data?.length) continue
+    }
+    claimed.push(p)
+  }
+  if (!claimed.length) return NextResponse.json({ ok: true, hm, due: plan.length, sent: 0 })
+
+  // 7. Suscripciones de esas familias
   const { data: subs } = await supabase
     .from('push_subscriptions')
     .select('id, family_id, endpoint, p256dh, auth')
-    .in('family_id', [...new Set(due.map((d) => d.med.family_id))])
+    .in('family_id', [...new Set(claimed.map((p) => p.med.family_id))])
 
   let sent = 0
   const jobs: Promise<void>[] = []
-  for (const { med, scheduledTime, elapsed } of due) {
+  for (const p of claimed) {
+    const { med } = p
     const who = `${med.person ? med.person + ' · ' : ''}${med.dose || 'Dosis habitual'}`
     const payload = JSON.stringify({
-      title: elapsed > 0 ? `⏰ ${med.name} (pendiente)` : `💊 ${med.name}`,
-      body: elapsed > 0
-        ? `${who}. Pendiente desde las ${scheduledTime} (hace ${elapsed} min).`
-        : `${who}. Es momento de tomarlo.`,
+      title: p.kind === 'repeat' ? `⏰ ${med.name} · sin confirmar` : `💊 ${med.name}`,
+      body:
+        p.kind === 'repeat'
+          ? `${who}. Pasaron ${p.minutesLate} min y aún no lo marcas como tomado.`
+          : `${who}. Es momento de tomarlo.`,
       url: '/meds',
-      // Mismo tag por dosis: cada reintento reemplaza al anterior (renotify en sw.js)
-      tag: `med-${med.id}-${day}-${scheduledTime}`,
+      // Mismo tag en toda la serie: en la bandeja queda un solo aviso por dosis que se vuelve a sonar
+      tag: `med-${med.id}-${day}-${p.time}`,
     })
     for (const sub of (subs ?? []).filter((s) => s.family_id === med.family_id)) {
       jobs.push(
@@ -119,5 +151,5 @@ export async function GET(req: Request) {
   }
   await Promise.all(jobs)
 
-  return NextResponse.json({ ok: true, hm, sent })
+  return NextResponse.json({ ok: true, hm, due: plan.length, sent })
 }
