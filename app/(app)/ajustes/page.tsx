@@ -1,5 +1,5 @@
 import { getContext } from '@/lib/family'
-import AjustesView from '@/components/AjustesView'
+import AjustesHubView from '@/components/AjustesHubView'
 
 export default async function AjustesPage() {
   const { supabase, familyId, familyName, role } = await getContext()
@@ -7,18 +7,17 @@ export default async function AjustesPage() {
   const [membersRes, userRes, familyRes] = await Promise.all([
     supabase
       .from('family_members')
-      .select('*')
-      .eq('family_id', familyId)
-      .order('created_at', { ascending: true }),
+      .select('id')
+      .eq('family_id', familyId),
     supabase.auth.getUser(),
     supabase
       .from('families')
-      .select('med_reminders_enabled, morning_summary_enabled')
+      .select('reminder_push, reminder_email')
       .eq('id', familyId)
-      .single(),
+      .maybeSingle(),
   ])
 
-  const members = membersRes.data ?? []
+  const membersCount = (membersRes.data ?? []).length
   const user = userRes.data?.user
   const userEmail = user?.email || ''
   const userName =
@@ -26,27 +25,22 @@ export default async function AjustesPage() {
     user?.user_metadata?.name ||
     'Usuario'
 
-  // Preferencias iniciales (por defecto activas si no existen en BD)
+  // Preferencias iniciales (reminder_push en families)
   const medRemindersEnabled =
-    familyRes.data?.med_reminders_enabled ??
+    familyRes.data?.reminder_push ??
+    user?.user_metadata?.reminder_push ??
     user?.user_metadata?.med_reminders_enabled ??
     true
 
-  const morningSummaryEnabled =
-    familyRes.data?.morning_summary_enabled ??
-    user?.user_metadata?.morning_summary_enabled ??
-    true
-
   return (
-    <AjustesView
+    <AjustesHubView
       familyId={familyId}
       userName={userName}
       userEmail={userEmail}
       familyName={familyName}
-      members={members}
+      membersCount={membersCount}
       isAdmin={role === 'admin'}
-      initialMedReminders={medRemindersEnabled}
-      initialMorningSummary={morningSummaryEnabled}
+      medRemindersEnabled={medRemindersEnabled}
     />
   )
 }

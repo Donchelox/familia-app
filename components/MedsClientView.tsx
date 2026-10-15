@@ -309,6 +309,19 @@ export default function MedsClientView({
       .eq('id', editingId)
       .eq('family_id', familyId)
 
+    try {
+      await recordActivity(supabase, {
+        familyId,
+        actorName: person || 'Familiar',
+        entity: 'medication',
+        entityId: editingId,
+        action: 'delete',
+        title: `Medicamento eliminado: ${name}`,
+      })
+    } catch (e) {
+      console.error('Error logging med delete:', e)
+    }
+
     setIsDeleting(false)
     setIsModalOpen(false)
     router.refresh()

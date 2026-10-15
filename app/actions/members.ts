@@ -6,6 +6,7 @@ import { headers } from 'next/headers'
 import { createClient as createAdminClient } from '@supabase/supabase-js'
 import { getContext } from '@/lib/family'
 import { translateErrorMessage } from '@/lib/formatErrors'
+import { recordActivity } from '@/lib/audit'
 
 export type MemberActionResult = { ok: boolean; message?: string; error?: string }
 
@@ -102,7 +103,16 @@ export async function addFamilyMember(formData: FormData): Promise<MemberActionR
   })
   if (insErr) return { ok: false, error: 'No se pudo guardar el integrante.' }
 
+  await recordActivity(supabase, {
+    familyId,
+    actorName: 'Administrador',
+    entity: 'member',
+    action: 'create',
+    title: `Integrante añadido: ${name} (${role})`,
+  })
+
   revalidatePath('/ajustes')
+  revalidatePath('/ajustes/integrantes')
   revalidatePath('/')
 
   if (type === 'adult') {
@@ -144,7 +154,16 @@ export async function updateFamilyMember(formData: FormData): Promise<MemberActi
     .eq('family_id', familyId)
   if (updErr) return { ok: false, error: 'No se pudo actualizar el integrante.' }
 
+  await recordActivity(supabase, {
+    familyId,
+    actorName: 'Administrador',
+    entity: 'member',
+    action: 'update',
+    title: `Integrante editado: ${name} (${role})`,
+  })
+
   revalidatePath('/ajustes')
+  revalidatePath('/ajustes/integrantes')
   revalidatePath('/')
 
   if (invite) {
@@ -165,13 +184,29 @@ export async function deleteFamilyMember(formData: FormData) {
 
   if (!memberId) return
 
+  const { data: member } = await supabase
+    .from('family_members')
+    .select('name')
+    .eq('id', memberId)
+    .eq('family_id', familyId)
+    .maybeSingle()
+
   await supabase
     .from('family_members')
     .delete()
     .eq('id', memberId)
     .eq('family_id', familyId)
 
+  await recordActivity(supabase, {
+    familyId,
+    actorName: 'Administrador',
+    entity: 'member',
+    action: 'delete',
+    title: `Integrante eliminado: ${member?.name || 'Miembro del hogar'}`,
+  })
+
   revalidatePath('/ajustes')
+  revalidatePath('/ajustes/integrantes')
   revalidatePath('/')
 }
 
@@ -186,23 +221,39 @@ export async function updatePreferences(formData: FormData) {
   const medReminders = formData.get('medReminders') === 'true'
   const morningSummary = formData.get('morningSummary') === 'true'
 
-  // Guarda en la tabla families (o user metadata como fallback)
-  await supabase
+  // Guarda en la tabla families (las columnas existentes son reminder_push y reminder_email)
+  const { error: famError } = await supabase
     .from('families')
     .update({
-      med_reminders_enabled: medReminders,
-      morning_summary_enabled: morningSummary,
+      reminder_push: medReminders,
+      reminder_email: morningSummary,
     })
     .eq('id', familyId)
+
+  if (famError) {
+    console.error('updatePreferences error en families:', famError)
+  }
 
   // Guardamos también en los metadatos del usuario para disponibilidad inmediata
   await supabase.auth.updateUser({
     data: {
+      reminder_push: medReminders,
+      reminder_email: morningSummary,
       med_reminders_enabled: medReminders,
       morning_summary_enabled: morningSummary,
     },
   })
 
+  await recordActivity(supabase, {
+    familyId,
+    actorName: 'Familiar',
+    entity: 'member',
+    action: 'update',
+    title: `Preferencias: Avisos de medicinas ${medReminders ? 'activados' : 'desactivados'}, Resumen matutino ${morningSummary ? 'activado' : 'desactivado'}`,
+  })
+
   revalidatePath('/ajustes')
+  revalidatePath('/ajustes/preferencias')
   revalidatePath('/')
+  return { ok: true }
 }

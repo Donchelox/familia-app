@@ -133,7 +133,7 @@ export async function toggleHomework(fd: FormData) {
     entity: 'school_homework',
     entityId: id,
     action: 'toggle',
-    title: `Tarea escolar: ${h.subject} · ${h.task}`,
+    title: `${nextDone ? 'Tarea escolar completada' : 'Tarea escolar restaurada'}: ${h.subject} · ${h.task}`,
     details: { done: nextDone },
   })
 
@@ -160,7 +160,7 @@ export async function deleteHomework(fd: FormData) {
     entity: 'school_homework',
     entityId: id,
     action: 'delete',
-    title: `Tarea eliminada: ${h.subject} · ${h.task}`,
+    title: `Tarea escolar eliminada: ${h.subject} · ${h.task}`,
     details: { subject: h.subject, task: h.task },
   })
 
@@ -171,6 +171,13 @@ export async function clearHomework() {
   const ctx = await getContext()
   await ctx.supabase.from('school_homework').delete().eq('family_id', ctx.familyId).eq('done', true)
   await logActivity(ctx, 'Colegio', 'historial vaciado')
+  await recordActivity(ctx.supabase, {
+    familyId: ctx.familyId,
+    actorName: getActorName(ctx),
+    entity: 'school_homework',
+    action: 'delete',
+    title: 'Vaciado de tareas escolares completadas',
+  })
   refresh()
 }
 

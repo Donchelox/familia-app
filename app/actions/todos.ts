@@ -66,7 +66,7 @@ export async function toggleTodo(fd: FormData) {
     entity: 'todo',
     entityId: id,
     action: 'toggle',
-    title: `Estado cambiado: ${t.title}`,
+    title: `${nextDone ? 'Tarea completada' : 'Tarea desmarcada'}: ${t.title}`,
     scheduledAt: null,
     details: { done: nextDone },
   })
@@ -104,5 +104,12 @@ export async function clearTodos() {
   const ctx = await getContext()
   await ctx.supabase.from('todos').delete().eq('family_id', ctx.familyId).eq('done', true)
   await logActivity(ctx, 'Tareas', 'historial vaciado')
+  await recordActivity(ctx.supabase, {
+    familyId: ctx.familyId,
+    actorName: getActorName(ctx),
+    entity: 'todo',
+    action: 'delete',
+    title: 'Vaciado de tareas completadas',
+  })
   refresh()
 }

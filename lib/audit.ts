@@ -14,21 +14,55 @@ export interface AuditPayload {
 
 export async function recordActivity(supabase: SupabaseClient, payload: AuditPayload) {
   try {
-    const detailObj = {
-      title: payload.title,
-      scheduled_at: payload.scheduledAt || null,
-      ...(payload.details || {}),
+    let moduleName = 'General'
+    if (payload.entity === 'medication' || payload.entity === 'dose') {
+      moduleName = 'Medicinas'
+    } else if (
+      payload.entity === 'school_test' ||
+      payload.entity === 'school_homework' ||
+      payload.entity === 'school_schedule'
+    ) {
+      moduleName = 'Colegio'
+    } else if (payload.entity === 'shopping') {
+      const isFeria = (payload.details?.list || '').toLowerCase() === 'feria' || payload.title.toLowerCase().includes('feria')
+      moduleName = isFeria ? 'Feria' : 'Supermercado'
+    } else if (payload.entity === 'todo') {
+      moduleName = 'Tareas'
+    } else if (payload.entity === 'member') {
+      moduleName = 'Familia'
     }
 
-    await supabase.from('change_logs').insert({
+    let actionName = payload.action as string
+    if (payload.action === 'create') actionName = 'añadido'
+    else if (payload.action === 'update') actionName = 'editado'
+    else if (payload.action === 'delete') actionName = 'eliminado'
+    else if (payload.action === 'toggle') {
+      if (payload.entity === 'dose') {
+        actionName = payload.details?.currentTaken ? 'dosis desmarcada' : 'dosis tomada'
+      } else if (payload.entity === 'shopping') {
+        actionName = payload.details?.done ? 'comprado' : 'marcado pendiente'
+      } else if (payload.entity === 'todo') {
+        actionName = payload.details?.done ? 'completada' : 'desmarcada'
+      } else if (payload.entity === 'school_homework') {
+        actionName = payload.details?.done ? 'tarea hecha' : 'tarea restaurada'
+      } else {
+        actionName = 'cambio de estado'
+      }
+    }
+
+    let itemDesc = payload.title
+    if (payload.scheduledAt && !payload.title.includes(payload.scheduledAt)) {
+      itemDesc = `${payload.title} · ${payload.scheduledAt}`
+    }
+
+    await supabase.from('activity_log').insert({
       family_id: payload.familyId,
-      actor_name: payload.actorName || 'Familiar',
-      entity: payload.entity,
-      entity_id: payload.entityId ? String(payload.entityId) : 'general',
-      action: payload.action,
-      details: detailObj,
+      user_name: payload.actorName || 'Familiar',
+      module: moduleName,
+      action: actionName,
+      item: itemDesc,
     })
   } catch (error) {
-    console.error('Error al registrar auditoría en change_logs:', error)
+    console.error('Error al registrar auditoría en activity_log:', error)
   }
 }
