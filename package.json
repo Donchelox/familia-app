@@ -12,7 +12,7 @@
     "version:major": "npm version major"
   },
   "dependencies": {
-    "@supabase/ssr": "^0.5.2",
+    "@supabase/ssr": "^0.12.7",
     "@supabase/supabase-js": "^2.47.0",
     "dexie": "^4.4.6",
     "dexie-react-hooks": "^4.4.0",
