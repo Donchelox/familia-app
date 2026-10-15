@@ -2,8 +2,9 @@
 
 import { getContext } from '@/lib/family'
 import { logActivity } from '@/lib/log'
-import { str, refresh } from '@/lib/util'
+import { refresh } from '@/lib/util'
 import { recordActivity } from '@/lib/audit'
+import { AddTodoSchema, TodoIdSchema } from '@/lib/validations/schemas'
 
 function getActorName(ctx: any): string {
   return (
@@ -16,8 +17,14 @@ function getActorName(ctx: any): string {
 
 export async function addTodo(fd: FormData) {
   const ctx = await getContext()
-  const title = str(fd, 'title')
-  if (!title) return
+  if (ctx.role === 'viewer') return
+
+  const parsed = AddTodoSchema.safeParse({
+    title: fd.get('title'),
+  })
+  if (!parsed.success) return
+
+  const { title } = parsed.data
 
   const { data: inserted } = await ctx.supabase
     .from('todos')
@@ -43,11 +50,17 @@ export async function addTodo(fd: FormData) {
 
 export async function toggleTodo(fd: FormData) {
   const ctx = await getContext()
-  const id = str(fd, 'id')
+  if (ctx.role === 'viewer') return
+
+  const parsed = TodoIdSchema.safeParse({ id: fd.get('id') })
+  if (!parsed.success) return
+  const { id } = parsed.data
+
   const { data: t } = await ctx.supabase
     .from('todos')
     .select('title, done')
     .eq('id', id)
+    .eq('family_id', ctx.familyId)
     .maybeSingle()
 
   if (!t) return
@@ -57,6 +70,7 @@ export async function toggleTodo(fd: FormData) {
     .from('todos')
     .update({ done: nextDone, done_at: nextDone ? new Date().toISOString() : null })
     .eq('id', id)
+    .eq('family_id', ctx.familyId)
 
   await logActivity(ctx, 'Tareas', t.done ? 'restaurada' : 'completada', t.title)
 
@@ -76,16 +90,27 @@ export async function toggleTodo(fd: FormData) {
 
 export async function deleteTodo(fd: FormData) {
   const ctx = await getContext()
-  const id = str(fd, 'id')
+  if (ctx.role === 'viewer') return
+
+  const parsed = TodoIdSchema.safeParse({ id: fd.get('id') })
+  if (!parsed.success) return
+  const { id } = parsed.data
+
   const { data: t } = await ctx.supabase
     .from('todos')
     .select('title')
     .eq('id', id)
+    .eq('family_id', ctx.familyId)
     .maybeSingle()
 
   if (!t) return
 
-  await ctx.supabase.from('todos').delete().eq('id', id)
+  await ctx.supabase
+    .from('todos')
+    .delete()
+    .eq('id', id)
+    .eq('family_id', ctx.familyId)
+
   await logActivity(ctx, 'Tareas', 'eliminada', t.title)
 
   await recordActivity(ctx.supabase, {
@@ -102,8 +127,16 @@ export async function deleteTodo(fd: FormData) {
 
 export async function clearTodos() {
   const ctx = await getContext()
-  await ctx.supabase.from('todos').delete().eq('family_id', ctx.familyId).eq('done', true)
+  if (ctx.role === 'viewer') return
+
+  await ctx.supabase
+    .from('todos')
+    .delete()
+    .eq('family_id', ctx.familyId)
+    .eq('done', true)
+
   await logActivity(ctx, 'Tareas', 'historial vaciado')
+
   await recordActivity(ctx.supabase, {
     familyId: ctx.familyId,
     actorName: getActorName(ctx),
@@ -111,5 +144,6 @@ export async function clearTodos() {
     action: 'delete',
     title: 'Vaciado de tareas completadas',
   })
+
   refresh()
 }

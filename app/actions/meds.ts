@@ -3,17 +3,12 @@
 import { revalidatePath } from 'next/cache'
 import { getContext } from '@/lib/family'
 import { todayStr } from '@/lib/dates'
-
-const TIME_RE = /^([01]\d|2[0-3]):[0-5]\d$/
-const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i
-
-const field = (fd: FormData, k: string, max = 200) =>
-  String(fd.get(k) ?? '').trim().slice(0, max)
-
-const timesOf = (fd: FormData) => {
-  const t = [...new Set(fd.getAll('times').map((v) => String(v).trim()).filter((v) => TIME_RE.test(v)))].sort()
-  return t.length ? t : ['08:00']
-}
+import {
+  MedicationSchema,
+  UpdateMedicationSchema,
+  ToggleDoseSchema,
+  UUID_SCHEMA,
+} from '@/lib/validations/schemas'
 
 const refreshMeds = () => {
   revalidatePath('/meds')
@@ -26,16 +21,27 @@ export async function addMedicationAction(formData: FormData) {
   const ctx = await getContext()
   if (ctx.role === 'viewer') return { ok: false, error: 'Sin permiso' }
 
-  const name = field(formData, 'name')
-  if (!name) return { ok: false, error: 'Falta el nombre' }
-  const dose = field(formData, 'dose')
-  const person = field(formData, 'person') || 'Toda la familia'
+  const timesRaw = formData.getAll('times').map((v) => String(v).trim()).filter(Boolean)
+  const times = timesRaw.length > 0 ? [...new Set(timesRaw)].sort() : ['08:00']
+
+  const parsed = MedicationSchema.safeParse({
+    name: formData.get('name'),
+    dose: formData.get('dose') || null,
+    person: formData.get('person') || 'Toda la familia',
+    times,
+  })
+
+  if (!parsed.success) {
+    return { ok: false, error: parsed.error.issues[0]?.message || 'Datos del medicamento inválidos' }
+  }
+
+  const { name, dose, person, times: validTimes } = parsed.data
 
   const { error } = await ctx.supabase.from('medications').insert({
     family_id: ctx.familyId,
     name,
     dose: dose || null,
-    times: timesOf(formData),
+    times: validTimes,
     person,
   })
   if (error) {
@@ -50,17 +56,29 @@ export async function updateMedicationAction(formData: FormData) {
   const ctx = await getContext()
   if (ctx.role === 'viewer') return { ok: false, error: 'Sin permiso' }
 
-  const id = field(formData, 'id')
-  const name = field(formData, 'name')
-  if (!UUID_RE.test(id) || !name) return { ok: false, error: 'Datos incompletos' }
-  const dose = field(formData, 'dose')
-  const person = field(formData, 'person') || 'Toda la familia'
+  const timesRaw = formData.getAll('times').map((v) => String(v).trim()).filter(Boolean)
+  const times = timesRaw.length > 0 ? [...new Set(timesRaw)].sort() : ['08:00']
+
+  const parsed = UpdateMedicationSchema.safeParse({
+    id: formData.get('id'),
+    name: formData.get('name'),
+    dose: formData.get('dose') || null,
+    person: formData.get('person') || 'Toda la familia',
+    times,
+  })
+
+  if (!parsed.success) {
+    return { ok: false, error: parsed.error.issues[0]?.message || 'Datos incompletos o inválidos' }
+  }
+
+  const { id, name, dose, person, times: validTimes } = parsed.data
 
   const { error } = await ctx.supabase
     .from('medications')
-    .update({ name, dose: dose || null, times: timesOf(formData), person })
+    .update({ name, dose: dose || null, times: validTimes, person })
     .eq('id', id)
     .eq('family_id', ctx.familyId)
+
   if (error) {
     console.error('updateMedicationAction:', error)
     return { ok: false, error: 'No se pudo actualizar el medicamento' }
@@ -73,14 +91,16 @@ export async function deleteMedicationAction(formData: FormData) {
   const ctx = await getContext()
   if (ctx.role === 'viewer') return { ok: false, error: 'Sin permiso' }
 
-  const id = field(formData, 'id')
-  if (!UUID_RE.test(id)) return { ok: false }
+  const parsed = UUID_SCHEMA.safeParse(formData.get('id'))
+  if (!parsed.success) return { ok: false }
+  const id = parsed.data
 
   const { error } = await ctx.supabase
     .from('medications')
     .delete()
     .eq('id', id)
     .eq('family_id', ctx.familyId)
+
   if (error) {
     console.error('deleteMedicationAction:', error)
     return { ok: false, error: 'No se pudo eliminar el medicamento' }
@@ -93,10 +113,14 @@ export async function toggleDoseAction(formData: FormData) {
   const ctx = await getContext()
   if (ctx.role === 'viewer') return { ok: false, error: 'Sin permiso' }
 
-  const medicationId = field(formData, 'medicationId')
-  const scheduledTime = field(formData, 'scheduledTime', 5)
-  const isTaken = formData.get('isTaken') === 'true'
-  if (!UUID_RE.test(medicationId) || !TIME_RE.test(scheduledTime)) return { ok: false }
+  const parsed = ToggleDoseSchema.safeParse({
+    medicationId: formData.get('medicationId'),
+    scheduledTime: String(formData.get('scheduledTime') ?? '').slice(0, 5),
+    isTaken: formData.get('isTaken') === 'true',
+  })
+
+  if (!parsed.success) return { ok: false }
+  const { medicationId, scheduledTime, isTaken } = parsed.data
 
   // La fecha la define el servidor (hora de Chile), no el cliente
   const day = todayStr()

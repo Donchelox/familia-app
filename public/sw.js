@@ -112,10 +112,24 @@ self.addEventListener('activate', (event) => {
   )
 })
 
-// Escuchar mensajes del cliente para precachear con sesión activa
+// Escuchar mensajes del cliente para precachear con sesión activa o purgar caché al cerrar sesión
 self.addEventListener('message', (event) => {
   if (event.data?.type === 'PRECACHE_CORE_ROUTES') {
     event.waitUntil(precacheRoutes(event.data.routes || APP_SHELL_URLS))
+  }
+  if (event.data?.type === 'CLEAR_USER_CACHE' || event.data?.type === 'LOGOUT') {
+    event.waitUntil(
+      caches.keys().then((keys) => {
+        return Promise.all(
+          keys.map((key) => {
+            if (key.includes('-dynamic') || key.includes('-shell')) {
+              console.log(`[SW] Purgando caché de usuario: ${key}`)
+              return caches.delete(key)
+            }
+          })
+        )
+      })
+    )
   }
 })
 
@@ -129,9 +143,10 @@ self.addEventListener('fetch', (event) => {
     return
   }
 
-  // Ignorar endpoints de API, métodos no GET y herramientas de dev HMR
+  // Ignorar endpoints de API, métodos no GET y herramientas de dev HMR (Bypass total para /api)
   if (
     request.method !== 'GET' ||
+    url.pathname === '/api' ||
     url.pathname.startsWith('/api/') ||
     url.pathname.startsWith('/_next/webpack-hmr') ||
     url.pathname.startsWith('/__nextjs')
@@ -150,7 +165,9 @@ self.addEventListener('fetch', (event) => {
     event.respondWith(
       fetch(request)
         .then((response) => {
-          if (response && response.status === 200 && !response.redirected) {
+          const cacheControl = response?.headers?.get('cache-control') || ''
+          const isNoStore = cacheControl.includes('no-store') || cacheControl.includes('private')
+          if (response && response.status === 200 && !response.redirected && !isNoStore) {
             const clone = response.clone()
             caches.open(APP_SHELL_CACHE).then((cache) => {
               cache.put(request, clone)
@@ -203,7 +220,9 @@ self.addEventListener('fetch', (event) => {
     event.respondWith(
       fetch(request)
         .then((response) => {
-          if (response && response.status === 200 && !response.redirected) {
+          const cacheControl = response?.headers?.get('cache-control') || ''
+          const isNoStore = cacheControl.includes('no-store') || cacheControl.includes('private')
+          if (response && response.status === 200 && !response.redirected && !isNoStore) {
             const clone = response.clone()
             caches.open(APP_SHELL_CACHE).then((cache) => {
               cache.put(request, clone)

@@ -174,6 +174,9 @@ export async function unsubscribeCurrentPush(): Promise<void> {
       }).catch((e) => console.warn('Push delete request error:', e))
       await sub.unsubscribe().catch((e) => console.warn('Push unsubscribe error:', e))
     }
+    if (navigator.serviceWorker.controller) {
+      navigator.serviceWorker.controller.postMessage({ type: 'CLEAR_USER_CACHE' })
+    }
   } catch (e) {
     console.warn('Error en unsubscribeCurrentPush:', e)
   }

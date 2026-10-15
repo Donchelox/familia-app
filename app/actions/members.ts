@@ -8,9 +8,15 @@ import { getContext } from '@/lib/family'
 import { translateErrorMessage } from '@/lib/formatErrors'
 import { recordActivity } from '@/lib/audit'
 
-export type MemberActionResult = { ok: boolean; message?: string; error?: string }
+import {
+  UpdateAccountSchema,
+  FamilyMemberSchema,
+  UpdateFamilyMemberSchema,
+  UpdatePreferencesSchema,
+  UUID_SCHEMA,
+} from '@/lib/validations/schemas'
 
-const emailOk = (s: string) => s.length <= 254 && /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(s)
+export type MemberActionResult = { ok: boolean; message?: string; error?: string }
 
 /** Envía el correo de invitación. Si la persona ya tiene cuenta, le manda un código de acceso. */
 async function sendInviteEmail(email: string): Promise<string | null> {
@@ -38,10 +44,16 @@ async function sendInviteEmail(email: string): Promise<string | null> {
 }
 
 export async function updateAccount(formData: FormData) {
-  const { supabase, familyId } = await getContext()
-  const fullName = (formData.get('fullName') as string)?.trim()
-  const familyName = (formData.get('familyName') as string)?.trim()
-  const email = (formData.get('email') as string)?.trim()
+  const { supabase, familyId, role: myRole } = await getContext()
+
+  const parsed = UpdateAccountSchema.safeParse({
+    fullName: formData.get('fullName') || undefined,
+    familyName: formData.get('familyName') || undefined,
+    email: formData.get('email') || undefined,
+  })
+  if (!parsed.success) return
+
+  const { fullName, familyName, email } = parsed.data
 
   // 1. Actualizar metadatos del usuario y correo si cambió
   const authUpdatePayload: { email?: string; data: { full_name?: string; name?: string } } = {
@@ -60,10 +72,12 @@ export async function updateAccount(formData: FormData) {
     }
   }
 
-  await supabase.auth.updateUser(authUpdatePayload)
+  if (Object.keys(authUpdatePayload.data).length > 0 || authUpdatePayload.email) {
+    await supabase.auth.updateUser(authUpdatePayload)
+  }
 
-  // 2. Actualizar el nombre de la familia en la tabla `families`
-  if (familyName && familyId) {
+  // 2. Solo el administrador puede actualizar el nombre de la familia en la tabla `families`
+  if (familyName && familyId && myRole === 'admin') {
     await supabase
       .from('families')
       .update({ name: familyName })
@@ -78,17 +92,20 @@ export async function addFamilyMember(formData: FormData): Promise<MemberActionR
   const { supabase, familyId, role: myRole } = await getContext()
   if (myRole !== 'admin') return { ok: false, error: 'Solo el administrador puede añadir integrantes.' }
 
-  const name = (formData.get('name') as string)?.trim()
-  const role = (formData.get('role') as string)?.trim() || 'hijo'
-  const type = (formData.get('type') as string)?.trim() || 'child'
-  const email = ((formData.get('email') as string) ?? '').trim().toLowerCase()
+  const parsed = FamilyMemberSchema.safeParse({
+    name: formData.get('name'),
+    role: formData.get('role') || 'hijo',
+    type: formData.get('type') || 'child',
+    email: formData.get('email') ?? '',
+  })
+  if (!parsed.success) return { ok: false, error: 'Datos del integrante inválidos.' }
 
-  if (!name) return { ok: false, error: 'Falta el nombre.' }
-  if (type === 'adult' && !emailOk(email)) return { ok: false, error: 'Ingresa un correo válido.' }
+  const { name, role, type, email } = parsed.data
+  if (type === 'adult' && !email) return { ok: false, error: 'Ingresa un correo válido.' }
 
   // Adulto: invitación con rol "editor" (no administra integrantes). claim_invites la convierte
   // en membresía cuando la persona entra con ese correo.
-  if (type === 'adult') {
+  if (type === 'adult' && email) {
     const { error: invErr } = await supabase
       .from('invites')
       .upsert({ family_id: familyId, email, role: 'editor' }, { onConflict: 'family_id,email' })
@@ -115,7 +132,7 @@ export async function addFamilyMember(formData: FormData): Promise<MemberActionR
   revalidatePath('/ajustes/integrantes')
   revalidatePath('/')
 
-  if (type === 'adult') {
+  if (type === 'adult' && email) {
     const mailErr = await sendInviteEmail(email)
     if (mailErr) {
       console.error('invite email:', mailErr)
@@ -129,18 +146,20 @@ export async function addFamilyMember(formData: FormData): Promise<MemberActionR
 export async function updateFamilyMember(formData: FormData): Promise<MemberActionResult> {
   const { supabase, familyId, role: myRole } = await getContext()
   if (myRole !== 'admin') return { ok: false, error: 'Solo el administrador puede editar integrantes.' }
-  const memberId = formData.get('memberId') as string
-  const name = (formData.get('name') as string)?.trim()
-  const role = (formData.get('role') as string)?.trim() || 'hijo'
-  const type = (formData.get('type') as string)?.trim() || 'child'
-  // Opcional al editar: si se ingresa, se invita a ese adulto como editor
-  const email = ((formData.get('email') as string) ?? '').trim().toLowerCase()
 
-  if (!memberId || !name) return { ok: false, error: 'Falta el nombre.' }
-  const invite = type === 'adult' && email !== ''
-  if (invite && !emailOk(email)) return { ok: false, error: 'Ingresa un correo válido.' }
+  const parsed = UpdateFamilyMemberSchema.safeParse({
+    memberId: formData.get('memberId'),
+    name: formData.get('name'),
+    role: formData.get('role') || 'hijo',
+    type: formData.get('type') || 'child',
+    email: formData.get('email') ?? '',
+  })
+  if (!parsed.success) return { ok: false, error: 'Datos del integrante inválidos.' }
 
-  if (invite) {
+  const { memberId, name, role, type, email } = parsed.data
+  const invite = type === 'adult' && Boolean(email)
+
+  if (invite && email) {
     const { error: invErr } = await supabase
       .from('invites')
       .upsert({ family_id: familyId, email, role: 'editor' }, { onConflict: 'family_id,email' })
@@ -166,7 +185,7 @@ export async function updateFamilyMember(formData: FormData): Promise<MemberActi
   revalidatePath('/ajustes/integrantes')
   revalidatePath('/')
 
-  if (invite) {
+  if (invite && email) {
     const mailErr = await sendInviteEmail(email)
     if (mailErr) {
       console.error('invite email:', mailErr)
@@ -180,9 +199,10 @@ export async function updateFamilyMember(formData: FormData): Promise<MemberActi
 export async function deleteFamilyMember(formData: FormData) {
   const { supabase, familyId, role: myRole } = await getContext()
   if (myRole !== 'admin') return
-  const memberId = formData.get('memberId') as string
 
-  if (!memberId) return
+  const parsed = UUID_SCHEMA.safeParse(formData.get('memberId'))
+  if (!parsed.success) return
+  const memberId = parsed.data
 
   const { data: member } = await supabase
     .from('family_members')
@@ -218,30 +238,38 @@ export async function signOut() {
 
 export async function updatePreferences(formData: FormData) {
   const { supabase, familyId, role: myRole } = await getContext()
-  const medReminders = formData.get('medReminders') === 'true'
-  const morningSummary = formData.get('morningSummary') === 'true'
-  const rawInterval = Number(formData.get('medReminderInterval'))
-  const medReminderInterval = [5, 10, 15, 30].includes(rawInterval) ? rawInterval : 5
-  const rawSummaryTime = (formData.get('morningSummaryTime') as string)?.trim()
-  const morningSummaryTime = /^([01]\d|2[0-3]):([0-5]\d)$/.test(rawSummaryTime) ? rawSummaryTime : '07:00'
-  const reminderPushDetail = formData.get('reminderPushDetail') === 'true'
 
-  // Nuevas notificaciones modulares: Colegio, Feria y Supermercado
-  const schoolReminders = formData.get('schoolReminders') !== 'false'
-  const rawSchoolTime = (formData.get('schoolReminderTime') as string)?.trim()
-  const schoolReminderTime = /^([01]\d|2[0-3]):([0-5]\d)$/.test(rawSchoolTime) ? rawSchoolTime : '07:30'
-
-  const feriaReminders = formData.get('feriaReminders') !== 'false'
   const rawFeriaDays = (formData.get('feriaDays') as string)?.trim()
-  const feriaDays = rawFeriaDays
-    ? rawFeriaDays.split(',').map((d) => d.trim()).filter(Boolean)
-    : ['Jueves', 'Domingo']
-  const rawFeriaTime = (formData.get('feriaTime') as string)?.trim()
-  const feriaTime = /^([01]\d|2[0-3]):([0-5]\d)$/.test(rawFeriaTime) ? rawFeriaTime : '07:00'
+  const parsed = UpdatePreferencesSchema.safeParse({
+    medReminders: formData.get('medReminders') === 'true',
+    reminderPushDetail: formData.get('reminderPushDetail') === 'true',
+    morningSummary: formData.get('morningSummary') === 'true',
+    medReminderInterval: formData.get('medReminderInterval'),
+    morningSummaryTime: formData.get('morningSummaryTime'),
+    schoolReminders: formData.get('schoolReminders') !== 'false',
+    schoolReminderTime: formData.get('schoolReminderTime'),
+    feriaReminders: formData.get('feriaReminders') !== 'false',
+    feriaDays: rawFeriaDays ? rawFeriaDays.split(',').map((d) => d.trim()).filter(Boolean) : ['Jueves', 'Domingo'],
+    feriaTime: formData.get('feriaTime'),
+    superReminders: formData.get('superReminders') !== 'false',
+    superTime: formData.get('superTime'),
+  })
+  if (!parsed.success) return { ok: false, error: 'Preferencias inválidas' }
 
-  const superReminders = formData.get('superReminders') !== 'false'
-  const rawSuperTime = (formData.get('superTime') as string)?.trim()
-  const superTime = /^([01]\d|2[0-3]):([0-5]\d)$/.test(rawSuperTime) ? rawSuperTime : '18:00'
+  const {
+    medReminders,
+    reminderPushDetail,
+    morningSummary,
+    medReminderInterval,
+    morningSummaryTime,
+    schoolReminders,
+    schoolReminderTime,
+    feriaReminders,
+    feriaDays,
+    feriaTime,
+    superReminders,
+    superTime,
+  } = parsed.data
 
   // Solo el administrador puede modificar la configuración compartida en la tabla families
   if (myRole === 'admin') {

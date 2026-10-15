@@ -4,6 +4,13 @@ import { getContext } from '@/lib/family'
 import { logActivity } from '@/lib/log'
 import { str, refresh } from '@/lib/util'
 import { recordActivity } from '@/lib/audit'
+import {
+  AddTestSchema,
+  AddHomeworkSchema,
+  AddSchoolBlockSchema,
+  UUID_SCHEMA,
+  TIME_SCHEMA,
+} from '@/lib/validations/schemas'
 
 function getActorName(ctx: any): string {
   return (
@@ -17,9 +24,16 @@ function getActorName(ctx: any): string {
 /* Pruebas y tareas (admin y editores) */
 export async function addTest(fd: FormData) {
   const ctx = await getContext()
-  const subject = str(fd, 'subject')
-  const topic = str(fd, 'topic') || null
-  const testDate = str(fd, 'date')
+  if (ctx.role === 'viewer') return
+
+  const parsed = AddTestSchema.safeParse({
+    subject: fd.get('subject'),
+    topic: fd.get('topic') || null,
+    date: fd.get('date'),
+  })
+  if (!parsed.success) return
+
+  const { subject, topic, date: testDate } = parsed.data
 
   const { data: inserted } = await ctx.supabase
     .from('school_tests')
@@ -50,16 +64,27 @@ export async function addTest(fd: FormData) {
 
 export async function deleteTest(fd: FormData) {
   const ctx = await getContext()
-  const id = str(fd, 'id')
+  if (ctx.role === 'viewer') return
+
+  const parsed = UUID_SCHEMA.safeParse(fd.get('id'))
+  if (!parsed.success) return
+  const id = parsed.data
+
   const { data: t } = await ctx.supabase
     .from('school_tests')
     .select('subject')
     .eq('id', id)
+    .eq('family_id', ctx.familyId)
     .maybeSingle()
 
   if (!t) return
 
-  await ctx.supabase.from('school_tests').delete().eq('id', id)
+  await ctx.supabase
+    .from('school_tests')
+    .delete()
+    .eq('id', id)
+    .eq('family_id', ctx.familyId)
+
   await logActivity(ctx, 'Colegio', 'prueba eliminada', t.subject)
 
   await recordActivity(ctx.supabase, {
@@ -77,9 +102,16 @@ export async function deleteTest(fd: FormData) {
 
 export async function addHomework(fd: FormData) {
   const ctx = await getContext()
-  const subject = str(fd, 'subject')
-  const task = str(fd, 'task')
-  const due = str(fd, 'due')
+  if (ctx.role === 'viewer') return
+
+  const parsed = AddHomeworkSchema.safeParse({
+    subject: fd.get('subject'),
+    task: fd.get('task'),
+    due: fd.get('due'),
+  })
+  if (!parsed.success) return
+
+  const { subject, task, due } = parsed.data
 
   const { data: inserted } = await ctx.supabase
     .from('school_homework')
@@ -110,11 +142,17 @@ export async function addHomework(fd: FormData) {
 
 export async function toggleHomework(fd: FormData) {
   const ctx = await getContext()
-  const id = str(fd, 'id')
+  if (ctx.role === 'viewer') return
+
+  const parsed = UUID_SCHEMA.safeParse(fd.get('id'))
+  if (!parsed.success) return
+  const id = parsed.data
+
   const { data: h } = await ctx.supabase
     .from('school_homework')
     .select('subject, task, done')
     .eq('id', id)
+    .eq('family_id', ctx.familyId)
     .maybeSingle()
 
   if (!h) return
@@ -124,6 +162,7 @@ export async function toggleHomework(fd: FormData) {
     .from('school_homework')
     .update({ done: nextDone, done_at: nextDone ? new Date().toISOString() : null })
     .eq('id', id)
+    .eq('family_id', ctx.familyId)
 
   await logActivity(ctx, 'Colegio', nextDone ? 'tarea hecha' : 'tarea restaurada', `${h.subject} · ${h.task}`)
 
@@ -142,16 +181,27 @@ export async function toggleHomework(fd: FormData) {
 
 export async function deleteHomework(fd: FormData) {
   const ctx = await getContext()
-  const id = str(fd, 'id')
+  if (ctx.role === 'viewer') return
+
+  const parsed = UUID_SCHEMA.safeParse(fd.get('id'))
+  if (!parsed.success) return
+  const id = parsed.data
+
   const { data: h } = await ctx.supabase
     .from('school_homework')
     .select('subject, task')
     .eq('id', id)
+    .eq('family_id', ctx.familyId)
     .maybeSingle()
 
   if (!h) return
 
-  await ctx.supabase.from('school_homework').delete().eq('id', id)
+  await ctx.supabase
+    .from('school_homework')
+    .delete()
+    .eq('id', id)
+    .eq('family_id', ctx.familyId)
+
   await logActivity(ctx, 'Colegio', 'tarea eliminada', `${h.subject} · ${h.task}`)
 
   await recordActivity(ctx.supabase, {
@@ -169,8 +219,16 @@ export async function deleteHomework(fd: FormData) {
 
 export async function clearHomework() {
   const ctx = await getContext()
-  await ctx.supabase.from('school_homework').delete().eq('family_id', ctx.familyId).eq('done', true)
+  if (ctx.role === 'viewer') return
+
+  await ctx.supabase
+    .from('school_homework')
+    .delete()
+    .eq('family_id', ctx.familyId)
+    .eq('done', true)
+
   await logActivity(ctx, 'Colegio', 'historial vaciado')
+
   await recordActivity(ctx.supabase, {
     familyId: ctx.familyId,
     actorName: getActorName(ctx),
@@ -178,6 +236,7 @@ export async function clearHomework() {
     action: 'delete',
     title: 'Vaciado de tareas escolares completadas',
   })
+
   refresh()
 }
 
@@ -186,10 +245,15 @@ export async function addBlock(fd: FormData) {
   const ctx = await getContext()
   if (ctx.role !== 'admin') return
 
-  const day = Number(str(fd, 'day'))
-  const startBlock = Number(str(fd, 'start'))
-  const length = Number(str(fd, 'length')) === 2 ? 2 : 1
-  const subject = str(fd, 'subject')
+  const parsed = AddSchoolBlockSchema.safeParse({
+    day: fd.get('day'),
+    start: fd.get('start'),
+    length: fd.get('length'),
+    subject: fd.get('subject'),
+  })
+  if (!parsed.success) return
+
+  const { day, start: startBlock, length, subject } = parsed.data
 
   const { data: inserted } = await ctx.supabase
     .from('school_blocks')
@@ -220,18 +284,32 @@ export async function addBlock(fd: FormData) {
 export async function deleteBlock(fd: FormData) {
   const ctx = await getContext()
   if (ctx.role !== 'admin') return
-  const id = str(fd, 'id')
-  await ctx.supabase.from('school_blocks').delete().eq('family_id', ctx.familyId).eq('id', id)
+
+  const parsed = UUID_SCHEMA.safeParse(fd.get('id'))
+  if (!parsed.success) return
+  const id = parsed.data
+
+  await ctx.supabase
+    .from('school_blocks')
+    .delete()
+    .eq('family_id', ctx.familyId)
+    .eq('id', id)
+
   refresh()
 }
 
 export async function saveSlots(fd: FormData) {
   const ctx = await getContext()
   if (ctx.role !== 'admin') return
+
   for (let b = 1; b <= 12; b++) {
-    const v = str(fd, `slot_${b}`)
-    if (v) await ctx.supabase.from('school_slots').upsert({ family_id: ctx.familyId, block: b, starts_at: v })
-    else await ctx.supabase.from('school_slots').delete().eq('family_id', ctx.familyId).eq('block', b)
+    const rawVal = str(fd, `slot_${b}`)
+    if (rawVal && TIME_SCHEMA.safeParse(rawVal).success) {
+      await ctx.supabase.from('school_slots').upsert({ family_id: ctx.familyId, block: b, starts_at: rawVal })
+    } else if (!rawVal) {
+      await ctx.supabase.from('school_slots').delete().eq('family_id', ctx.familyId).eq('block', b)
+    }
   }
+
   refresh()
 }

@@ -1,6 +1,7 @@
 import { redirect } from 'next/navigation'
 import { createClient } from '@/lib/supabase/server'
 import { createClient as createAdminClient } from '@supabase/supabase-js'
+import { CreateFamilySchema } from '@/lib/validations/schemas'
 
 export default async function Onboarding() {
   const supabase = await createClient()
@@ -104,10 +105,17 @@ export default async function Onboarding() {
   // Acción para crear una familia nueva (solo si no fue invitado o decide rechazar)
   async function create(fd: FormData) {
     'use server'
+    const parsed = CreateFamilySchema.safeParse({
+      family: fd.get('family'),
+      name: fd.get('name'),
+    })
+    if (!parsed.success) {
+      throw new Error('Datos inválidos para crear la familia.')
+    }
     const s = await createClient()
     const { error } = await s.rpc('create_family', {
-      fname: String(fd.get('family')).trim(),
-      dname: String(fd.get('name')).trim(),
+      fname: parsed.data.family,
+      dname: parsed.data.name,
     })
     if (error) throw new Error(error.message)
     redirect('/')
