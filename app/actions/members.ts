@@ -217,13 +217,14 @@ export async function signOut() {
 }
 
 export async function updatePreferences(formData: FormData) {
-  const { supabase, familyId } = await getContext()
+  const { supabase, familyId, role: myRole } = await getContext()
   const medReminders = formData.get('medReminders') === 'true'
   const morningSummary = formData.get('morningSummary') === 'true'
   const rawInterval = Number(formData.get('medReminderInterval'))
   const medReminderInterval = [5, 10, 15, 30].includes(rawInterval) ? rawInterval : 5
   const rawSummaryTime = (formData.get('morningSummaryTime') as string)?.trim()
   const morningSummaryTime = /^([01]\d|2[0-3]):([0-5]\d)$/.test(rawSummaryTime) ? rawSummaryTime : '07:00'
+  const reminderPushDetail = formData.get('reminderPushDetail') === 'true'
 
   // Nuevas notificaciones modulares: Colegio, Feria y Supermercado
   const schoolReminders = formData.get('schoolReminders') !== 'false'
@@ -242,17 +243,21 @@ export async function updatePreferences(formData: FormData) {
   const rawSuperTime = (formData.get('superTime') as string)?.trim()
   const superTime = /^([01]\d|2[0-3]):([0-5]\d)$/.test(rawSuperTime) ? rawSuperTime : '18:00'
 
-  // Guarda en la tabla families (las columnas existentes son reminder_push y reminder_email)
-  const { error: famError } = await supabase
-    .from('families')
-    .update({
-      reminder_push: medReminders,
-      reminder_email: morningSummary,
-    })
-    .eq('id', familyId)
+  // Solo el administrador puede modificar la configuración compartida en la tabla families
+  if (myRole === 'admin') {
+    const { error: famError } = await supabase
+      .from('families')
+      .update({
+        reminder_push: medReminders,
+        reminder_email: morningSummary,
+        med_reminder_interval: medReminderInterval,
+        reminder_push_detail: reminderPushDetail,
+      })
+      .eq('id', familyId)
 
-  if (famError) {
-    console.error('updatePreferences error en families:', famError)
+    if (famError) {
+      console.error('updatePreferences error en families:', famError.message)
+    }
   }
 
   // Guardamos también en los metadatos del usuario para disponibilidad inmediata y sincronización con el cron

@@ -2,13 +2,13 @@ import { getContext } from '@/lib/family'
 import PreferenciasView from '@/components/PreferenciasView'
 
 export default async function PreferenciasPage() {
-  const { supabase, familyId } = await getContext()
+  const { supabase, familyId, role } = await getContext()
 
   const [userRes, familyRes] = await Promise.all([
     supabase.auth.getUser(),
     supabase
       .from('families')
-      .select('reminder_push, reminder_email')
+      .select('reminder_push, reminder_email, med_reminder_interval, reminder_push_detail')
       .eq('id', familyId)
       .maybeSingle(),
   ])
@@ -28,8 +28,9 @@ export default async function PreferenciasPage() {
     user?.user_metadata?.morning_summary_enabled ??
     true
 
-  const rawInterval = Number(user?.user_metadata?.med_reminder_interval)
+  const rawInterval = familyRes.data?.med_reminder_interval ?? Number(user?.user_metadata?.med_reminder_interval)
   const medReminderInterval = [5, 10, 15, 30].includes(rawInterval) ? rawInterval : 5
+  const initialReminderPushDetail = Boolean(familyRes.data?.reminder_push_detail)
 
   const rawSummaryTime = (user?.user_metadata?.morning_summary_time as string)?.trim()
   const morningSummaryTime = /^([01]\d|2[0-3]):([0-5]\d)$/.test(rawSummaryTime) ? rawSummaryTime : '07:00'
@@ -53,7 +54,9 @@ export default async function PreferenciasPage() {
   return (
     <PreferenciasView
       familyId={familyId}
+      isAdmin={role === 'admin'}
       initialMedReminders={medRemindersEnabled}
+      initialReminderPushDetail={initialReminderPushDetail}
       initialMorningSummary={morningSummaryEnabled}
       initialMedReminderInterval={medReminderInterval}
       initialMorningSummaryTime={morningSummaryTime}

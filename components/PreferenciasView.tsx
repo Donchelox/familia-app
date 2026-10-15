@@ -8,7 +8,9 @@ import { updatePreferences } from '@/app/actions/members'
 
 interface PreferenciasViewProps {
   familyId: string
+  isAdmin?: boolean
   initialMedReminders?: boolean
+  initialReminderPushDetail?: boolean
   initialMorningSummary?: boolean
   initialMedReminderInterval?: number
   initialMorningSummaryTime?: string
@@ -35,7 +37,9 @@ const SUPER_TIME_PRESETS = ['10:00', '12:00', '17:00', '18:00', '19:00']
 const ALL_WEEKDAYS = ['Lunes', 'Martes', 'Miércoles', 'Jueves', 'Viernes', 'Sábado', 'Domingo']
 
 export default function PreferenciasView({
+  isAdmin = false,
   initialMedReminders = true,
+  initialReminderPushDetail = false,
   initialMorningSummary = true,
   initialMedReminderInterval = 5,
   initialMorningSummaryTime = '07:00',
@@ -48,6 +52,7 @@ export default function PreferenciasView({
   initialSuperTime = '18:00',
 }: PreferenciasViewProps) {
   const [medReminders, setMedReminders] = useState<boolean>(initialMedReminders)
+  const [pushDetail, setPushDetail] = useState<boolean>(initialReminderPushDetail)
   const [morningSummary, setMorningSummary] = useState<boolean>(initialMorningSummary)
   const [interval, setInterval] = useState<number>(initialMedReminderInterval)
   const [summaryTime, setSummaryTime] = useState<string>(initialMorningSummaryTime)
@@ -72,6 +77,7 @@ export default function PreferenciasView({
   const saveState = (
     overrides?: Partial<{
       medReminders: boolean
+      pushDetail: boolean
       morningSummary: boolean
       interval: number
       summaryTime: string
@@ -86,6 +92,7 @@ export default function PreferenciasView({
     msg?: string
   ) => {
     const nextMed = overrides?.medReminders ?? medReminders
+    const nextPushDetail = overrides?.pushDetail ?? pushDetail
     const nextSummary = overrides?.morningSummary ?? morningSummary
     const nextInterval = overrides?.interval ?? interval
     const nextSummaryTime = overrides?.summaryTime ?? summaryTime
@@ -103,6 +110,7 @@ export default function PreferenciasView({
     startTransition(async () => {
       const fd = new FormData()
       fd.append('medReminders', String(nextMed))
+      fd.append('reminderPushDetail', String(nextPushDetail))
       fd.append('morningSummary', String(nextSummary))
       fd.append('medReminderInterval', String(nextInterval))
       fd.append('morningSummaryTime', nextSummaryTime)
@@ -134,6 +142,15 @@ export default function PreferenciasView({
   const handleSelectInterval = (val: number) => {
     setInterval(val)
     saveState({ interval: val }, `Recurrencia actualizada a cada ${val} minutos`)
+  }
+
+  const handleTogglePushDetail = () => {
+    const next = !pushDetail
+    setPushDetail(next)
+    saveState(
+      { pushDetail: next },
+      next ? 'Detalle visible en pantalla bloqueada' : 'Detalle oculto por privacidad en pantalla bloqueada'
+    )
   }
 
   // Handlers Resumen Matutino
@@ -288,6 +305,32 @@ export default function PreferenciasView({
                   </button>
                 ))}
               </div>
+
+              {isAdmin && (
+                <div className="pt-3 mt-1 border-t border-neutral-800/80 flex items-center justify-between">
+                  <div className="flex flex-col pr-3">
+                    <span className="text-xs font-bold text-white">Detalle en pantalla bloqueada</span>
+                    <span className="text-[11px] text-neutral-400">
+                      Mostrar nombre y dosis en el push (por privacidad se muestra genérico)
+                    </span>
+                  </div>
+                  <button
+                    type="button"
+                    role="switch"
+                    aria-checked={pushDetail}
+                    onClick={handleTogglePushDetail}
+                    className={`relative inline-flex h-6 w-11 shrink-0 cursor-pointer rounded-full border-2 border-transparent transition-all duration-200 ease-in-out hover:scale-105 active:scale-90 focus:outline-none ${
+                      pushDetail ? 'bg-[#F76911]' : 'bg-neutral-800'
+                    }`}
+                  >
+                    <span
+                      className={`pointer-events-none inline-block h-5 w-5 transform rounded-full bg-white shadow-lg ring-0 transition duration-200 ease-in-out ${
+                        pushDetail ? 'translate-x-5' : 'translate-x-0'
+                      }`}
+                    />
+                  </button>
+                </div>
+              )}
             </div>
           )}
         </div>

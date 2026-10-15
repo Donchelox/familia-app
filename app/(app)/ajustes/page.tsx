@@ -13,7 +13,7 @@ export default async function AjustesPage() {
     supabase.auth.getUser(),
     supabase
       .from('families')
-      .select('reminder_push, reminder_email')
+      .select('reminder_push, reminder_email, med_reminder_interval')
       .eq('id', familyId)
       .maybeSingle(),
   ])
@@ -33,7 +33,7 @@ export default async function AjustesPage() {
     user?.user_metadata?.med_reminders_enabled ??
     true
 
-  const rawInterval = Number(user?.user_metadata?.med_reminder_interval)
+  const rawInterval = familyRes.data?.med_reminder_interval ?? Number(user?.user_metadata?.med_reminder_interval)
   const medReminderInterval = [5, 10, 15, 30].includes(rawInterval) ? rawInterval : 5
 
   return (

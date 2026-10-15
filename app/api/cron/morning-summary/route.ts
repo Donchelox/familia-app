@@ -10,7 +10,7 @@ export const runtime = 'nodejs'
 
 function authorized(req: Request) {
   const secret = process.env.CRON_SECRET
-  if (!secret) return true // Permite ejecución si no hay secreto configurado en local/dev
+  if (!secret) return false
   const authHeader = req.headers.get('authorization') ?? ''
   const got = Buffer.from(authHeader)
   const want = Buffer.from(`Bearer ${secret}`)
@@ -44,7 +44,9 @@ export async function GET(req: Request) {
     return NextResponse.json({ error: 'Faltan variables de entorno para push/supabase' }, { status: 500 })
   }
 
-  const supabase = createClient(NEXT_PUBLIC_SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY)
+  const supabase = createClient(NEXT_PUBLIC_SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY, {
+    auth: { persistSession: false, autoRefreshToken: false },
+  })
   webpush.setVapidDetails(VAPID_SUBJECT, NEXT_PUBLIC_VAPID_PUBLIC_KEY, VAPID_PRIVATE_KEY)
 
   const hm = nowHHMM() // Hora actual en Chile 'HH:MM'
@@ -142,21 +144,28 @@ export async function GET(req: Request) {
     const payload = JSON.stringify(buildMorningSummaryPushPayload(summary))
     const famSubs = (subs ?? []).filter((s) => s.family_id === famId)
 
+    const sendOptions = { TTL: 1200, urgency: 'high' as const, timeout: 10000 }
+
     for (const sub of famSubs) {
       jobs.push(
         webpush
           .sendNotification(
             { endpoint: sub.endpoint, keys: { p256dh: sub.p256dh, auth: sub.auth } },
-            payload
+            payload,
+            sendOptions
           )
           .then(() => {
             sent++
           })
           .catch(async (err: any) => {
-            if (err?.statusCode === 404 || err?.statusCode === 410) {
-              await supabase.from('push_subscriptions').delete().eq('id', sub.id)
+            const status = err?.statusCode
+            if (status === 404 || status === 410 || !status) {
+              console.error(`Suscripción push inválida en resumen matutino (status: ${status ?? 'sin status'}), eliminando suscripción ID:`, sub.id)
+              try {
+                await supabase.from('push_subscriptions').delete().eq('id', sub.id)
+              } catch {}
             } else {
-              console.error('Push error en resumen matutino:', err?.statusCode)
+              console.error('Push error en resumen matutino status:', status)
             }
           })
       )
