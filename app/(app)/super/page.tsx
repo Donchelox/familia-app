@@ -3,10 +3,12 @@
 import { useState, useEffect } from 'react'
 import Link from 'next/link'
 import NotificationBell from '@/components/NotificationBell'
+import SyncStatusBadge from '@/components/SyncStatusBadge'
 import { useRouter } from 'next/navigation'
 import { createClient } from '@/lib/supabase/client'
-import { addShoppingItem } from '@/app/actions/shopping'
 import { useActionParam } from '@/lib/useActionParam'
+import { offlineDB } from '@/lib/offline/db'
+import { useOfflineMutation } from '@/lib/offline/useOfflineMutation'
 
 interface ShoppingItem {
   id: string
@@ -31,9 +33,11 @@ const CATEGORIES = [
 export default function SuperPage() {
   const router = useRouter()
   const supabase = createClient()
+  const { mutate } = useOfflineMutation()
 
   const [items, setItems] = useState<ShoppingItem[]>([])
   const [loading, setLoading] = useState(true)
+  const [familyId, setFamilyId] = useState<string>('')
   const [selectedCategory, setSelectedCategory] = useState<string>('Todos')
 
   // Estado del Bottom Sheet
@@ -50,17 +54,57 @@ export default function SuperPage() {
 
   async function loadItems() {
     setLoading(true)
-    const { data } = await supabase
-      .from('shopping_items')
-      .select('*')
-      .order('created_at', { ascending: false })
 
-    const superOnly = (data ?? []).filter((item: any) => {
-      const listVal = (item.list || item.location || '').toLowerCase()
-      return listVal !== 'feria'
-    })
+    // 1. Cargar de inmediato desde Dexie (persistencia offline sin latencia de red)
+    try {
+      const localData = await offlineDB.shopping_lists.toArray()
+      const localSuper = localData.filter((i) => i.list !== 'feria')
+      if (localSuper.length > 0) {
+        setItems(localSuper)
+        if (localSuper[0].family_id) setFamilyId(localSuper[0].family_id)
+        setLoading(false)
+      }
+    } catch (e) {
+      console.warn('[Offline] Error leyendo compras locales:', e)
+    }
 
-    setItems(superOnly)
+    // 2. Si hay conexión, descargar de Supabase y sincronizar caché local Dexie
+    if (typeof navigator !== 'undefined' && navigator.onLine) {
+      try {
+        const { data } = await supabase
+          .from('shopping_items')
+          .select('*')
+          .order('created_at', { ascending: false })
+
+        if (data) {
+          const superOnly = data.filter((item: any) => {
+            const listVal = (item.list || item.location || '').toLowerCase()
+            return listVal !== 'feria'
+          })
+          setItems(superOnly)
+          if (data.length > 0 && data[0].family_id) {
+            setFamilyId(data[0].family_id)
+          }
+
+          // Actualizar base de datos local Dexie
+          await offlineDB.shopping_lists.bulkPut(
+            data.map((item: any) => ({
+              id: item.id,
+              family_id: item.family_id,
+              list: item.list || 'super',
+              name: item.name,
+              done: item.done || false,
+              done_at: item.done_at,
+              created_at: item.created_at,
+              _synced: true,
+            }))
+          )
+        }
+      } catch (err) {
+        console.warn('[Offline] Petición remota fallida, usando caché local:', err)
+      }
+    }
+
     setLoading(false)
   }
 
@@ -73,14 +117,27 @@ export default function SuperPage() {
 
   async function toggleDone(item: ShoppingItem) {
     const nextDone = !item.done
+
+    // Optimistic UI inmediato
     setItems((prev) =>
       prev.map((it) => (it.id === item.id ? { ...it, done: nextDone } : it))
     )
-    await supabase
-      .from('shopping_items')
-      .update({ done: nextDone })
-      .eq('id', item.id)
-    router.refresh()
+
+    // Mutación Offline-First
+    await mutate({
+      familyId: item.family_id || familyId,
+      entity: 'shopping_lists',
+      action: 'UPDATE',
+      entityId: item.id,
+      payload: {
+        id: item.id,
+        family_id: item.family_id || familyId,
+        name: item.name,
+        list: 'super',
+        done: nextDone,
+        done_at: nextDone ? new Date().toISOString() : null,
+      },
+    })
   }
 
   function openCreate() {
@@ -102,27 +159,64 @@ export default function SuperPage() {
     if (!name.trim()) return
     setSaving(true)
 
+    const trimmedName = name.trim()
+
     if (editingItem) {
-      await supabase
-        .from('shopping_items')
-        .update({ name: name.trim(), category })
-        .eq('id', editingItem.id)
+      // Actualización optimista local
+      setItems((prev) =>
+        prev.map((it) => (it.id === editingItem.id ? { ...it, name: trimmedName, category } : it))
+      )
+
+      await mutate({
+        familyId: editingItem.family_id || familyId,
+        entity: 'shopping_lists',
+        action: 'UPDATE',
+        entityId: editingItem.id,
+        payload: {
+          id: editingItem.id,
+          family_id: editingItem.family_id || familyId,
+          name: trimmedName,
+          list: 'super',
+          category,
+        },
+      })
     } else {
-      const fd = new FormData()
-      fd.set('name', name.trim())
-      fd.set('list', 'super')
-      fd.set('category', category)
-      const res = await addShoppingItem(fd)
-      if (!res?.ok) {
-        alert('No se pudo guardar: ' + (res?.error ?? 'error desconocido'))
-        setSaving(false)
-        return
+      const tempId =
+        typeof crypto !== 'undefined' && crypto.randomUUID
+          ? crypto.randomUUID()
+          : `item_${Date.now()}`
+
+      const newItem: ShoppingItem = {
+        id: tempId,
+        name: trimmedName,
+        category,
+        done: false,
+        family_id: familyId,
+        list: 'super',
       }
+
+      // Inserción optimista local
+      setItems((prev) => [newItem, ...prev])
+
+      await mutate({
+        familyId,
+        entity: 'shopping_lists',
+        action: 'INSERT',
+        entityId: tempId,
+        payload: {
+          id: tempId,
+          family_id: familyId,
+          name: trimmedName,
+          list: 'super',
+          category,
+          done: false,
+          created_at: new Date().toISOString(),
+        },
+      })
     }
 
     setSaving(false)
     setIsSheetOpen(false)
-    loadItems()
   }
 
   async function handleDelete() {
@@ -130,11 +224,18 @@ export default function SuperPage() {
     if (!confirm(`¿Eliminar "${editingItem.name}" de la lista?`)) return
     setDeleting(true)
 
-    await supabase.from('shopping_items').delete().eq('id', editingItem.id)
+    // Eliminación optimista local
+    setItems((prev) => prev.filter((it) => it.id !== editingItem.id))
+
+    await mutate({
+      familyId: editingItem.family_id || familyId,
+      entity: 'shopping_lists',
+      action: 'DELETE',
+      entityId: editingItem.id,
+    })
 
     setDeleting(false)
     setIsSheetOpen(false)
-    loadItems()
   }
 
   const pendingItems = items.filter((i) => !i.done)
@@ -148,7 +249,7 @@ export default function SuperPage() {
   return (
     <div className="w-full flex flex-col gap-5 select-none">
       
-      {/* HEADER ESTANDARIZADO */}
+      {/* HEADER ESTANDARIZADO CON MICRO-INDICADOR DE RED */}
       <header className="flex items-center justify-between py-1">
         <div className="flex items-center gap-3">
           <Link
@@ -164,7 +265,10 @@ export default function SuperPage() {
           </h1>
         </div>
 
-        <NotificationBell />
+        <div className="flex items-center gap-2">
+          <SyncStatusBadge />
+          <NotificationBell />
+        </div>
       </header>
 
       {/* TABS DE NAVEGACIÓN: SUPERMERCADO ACTIVO / FERIA LIBRE INACTIVO */}

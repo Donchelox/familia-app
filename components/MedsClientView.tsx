@@ -1,12 +1,15 @@
 'use client'
 
-import { useState } from 'react'
+import { useState, useEffect } from 'react'
 import { useRouter } from 'next/navigation'
 import Link from 'next/link'
 import { createClient } from '@/lib/supabase/client'
 import NotificationBell from '@/components/NotificationBell'
+import SyncStatusBadge from '@/components/SyncStatusBadge'
 import { recordActivity } from '@/lib/audit'
 import { useActionParam } from '@/lib/useActionParam'
+import { offlineDB } from '@/lib/offline/db'
+import { useOfflineMutation } from '@/lib/offline/useOfflineMutation'
 
 export interface Medication {
   id: string
@@ -54,18 +57,68 @@ const FREQUENCY_OPTIONS = [
 
 export default function MedsClientView({
   familyId,
-  meds,
+  meds: initialMeds,
   members,
   takenKeys: initialTakenKeys,
   todayStr,
 }: Props) {
   const router = useRouter()
   const supabase = createClient()
+  const { mutate } = useOfflineMutation()
 
+  const [meds, setMeds] = useState<Medication[]>(initialMeds)
   const [takenKeys, setTakenKeys] = useState<Set<string>>(new Set(initialTakenKeys))
   const [selectedPerson, setSelectedPerson] = useState<string>('todos')
   const [isModalOpen, setIsModalOpen] = useState(false)
   const [loadingAction, setLoadingAction] = useState<string | null>(null)
+
+  // Sincronizar inmediatamente con Dexie para disponibilidad offline
+  useEffect(() => {
+    async function loadLocalMeds() {
+      try {
+        const local = await offlineDB.medicines.where('family_id').equals(familyId).toArray()
+        if (local && local.length > 0) {
+          setMeds((prev) => {
+            const map = new Map<string, Medication>()
+            prev.forEach((m) => map.set(m.id, m))
+            local.forEach((m) =>
+              map.set(m.id, {
+                id: m.id,
+                name: m.name,
+                dose: m.dose,
+                times: m.times,
+                person: m.person,
+                frequency: m.frequency,
+                end_date: m.end_date,
+              })
+            )
+            return Array.from(map.values())
+          })
+        }
+
+        // Si tenemos datos iniciales de servidor y estamos online, respaldar en Dexie
+        if (initialMeds && initialMeds.length > 0 && typeof navigator !== 'undefined' && navigator.onLine) {
+          await offlineDB.medicines.bulkPut(
+            initialMeds.map((m) => ({
+              id: m.id,
+              family_id: familyId,
+              name: m.name,
+              person: m.person,
+              dose: m.dose,
+              times: m.times,
+              frequency: m.frequency,
+              end_date: m.end_date || undefined,
+              _synced: true,
+            }))
+          )
+        }
+      } catch (e) {
+        console.warn('[Offline] Error sincronizando medicinas con Dexie:', e)
+      }
+    }
+
+    loadLocalMeds()
+  }, [familyId, initialMeds])
 
   // Formulario Crear / Editar
   const defaultMemberName = members[0]?.name || 'Marcelo Vásquez'
@@ -182,55 +235,50 @@ export default function MedsClientView({
     const key = `${medId}_${doseTime}`
     setLoadingAction(key)
 
-    const targetMed = meds.find((m) => m.id === medId)
+    const nextTaken = !currentTaken
     const updated = new Set(takenKeys)
 
-    if (currentTaken) {
-      updated.delete(key)
-      setTakenKeys(updated)
-      await supabase
-        .from('dose_logs')
-        .delete()
-        .eq('family_id', familyId)
-        .eq('medication_id', medId)
-        .eq('time', doseTime)
-        .eq('day', todayStr)
-    } else {
+    // 1. Optimistic UI inmediato en React
+    if (nextTaken) {
       updated.add(key)
-      setTakenKeys(updated)
-      await supabase.from('dose_logs').insert({
-        family_id: familyId,
-        medication_id: medId,
-        time: doseTime,
-        day: todayStr,
-      })
-      // Ya está tomada: quita de la bandeja el aviso pendiente de esta dosis (mismo tag que usa el cron)
-      if ('serviceWorker' in navigator) {
-        navigator.serviceWorker.ready
-          .then((reg) => reg.getNotifications({ tag: `med-${medId}-${todayStr}-${doseTime}` }))
-          .then((list) => list.forEach((n) => n.close()))
-          .catch(() => {})
+    } else {
+      updated.delete(key)
+    }
+    setTakenKeys(updated)
+
+    // 2. Si ya está tomada: quita de la bandeja el aviso pendiente
+    if (nextTaken && 'serviceWorker' in navigator) {
+      navigator.serviceWorker.ready
+        .then((reg) => reg.getNotifications({ tag: `med-${medId}-${todayStr}-${doseTime}` }))
+        .then((list) => list.forEach((n) => n.close()))
+        .catch(() => {})
+    }
+
+    // 3. Sincronizar en remoto si estamos online
+    if (typeof navigator !== 'undefined' && navigator.onLine) {
+      try {
+        if (!nextTaken) {
+          await supabase
+            .from('dose_logs')
+            .delete()
+            .eq('family_id', familyId)
+            .eq('medication_id', medId)
+            .eq('time', doseTime)
+            .eq('day', todayStr)
+        } else {
+          await supabase.from('dose_logs').insert({
+            family_id: familyId,
+            medication_id: medId,
+            time: doseTime,
+            day: todayStr,
+          })
+        }
+      } catch (err) {
+        console.warn('[Offline] Error registrando dosis en servidor:', err)
       }
     }
 
-    // Registro de auditoría
-    try {
-      await recordActivity(supabase, {
-        familyId,
-        actorName: targetMed?.person || 'Familiar',
-        entity: 'dose',
-        entityId: medId,
-        action: 'toggle',
-        title: `Dosis ${currentTaken ? 'desmarcada' : 'tomada'}: ${targetMed?.name || 'Medicamento'}`,
-        scheduledAt: `Programada a las ${doseTime} hrs (Día: ${todayStr})`,
-        details: { doseTime, day: todayStr },
-      })
-    } catch (auditErr) {
-      console.error('Error registrando auditoría de dosis:', auditErr)
-    }
-
     setLoadingAction(null)
-    router.refresh()
   }
 
   // Guardar (Crear o Actualizar)
@@ -244,8 +292,14 @@ export default function MedsClientView({
         ? `days:${selectedDays.join(',')}`
         : frequency
 
-    const payload = {
-      family_id: familyId,
+    const tempId =
+      editingId ||
+      (typeof crypto !== 'undefined' && crypto.randomUUID
+        ? crypto.randomUUID()
+        : `med_${Date.now()}`)
+
+    const medPayload: Medication = {
+      id: tempId,
       name: name.trim(),
       dose: dose.trim(),
       person: person.trim() || defaultMemberName,
@@ -254,48 +308,33 @@ export default function MedsClientView({
       end_date: endDate ? endDate : null,
     }
 
-    try {
-      let currentEntityId = editingId
-
+    // 1. ACTUALIZACIÓN OPTIMISTA INMEDIATA (0ms de latencia, funciona 100% offline)
+    setMeds((prev) => {
       if (editingId) {
-        await supabase
-          .from('medications')
-          .update(payload)
-          .eq('id', editingId)
-          .eq('family_id', familyId)
+        return prev.map((m) => (m.id === editingId ? medPayload : m))
       } else {
-        const { data: insertedMed } = await supabase
-          .from('medications')
-          .insert(payload)
-          .select()
-          .single()
-
-        currentEntityId = insertedMed?.id || 'new'
+        return [...prev, medPayload]
       }
+    })
 
-      // Registro de auditoría
-      await recordActivity(supabase, {
+    // 2. Persistencia en Dexie y encolado en sync_queue
+    try {
+      await mutate({
         familyId,
-        actorName: payload.person,
-        entity: 'medication',
-        entityId: currentEntityId || 'new',
-        action: editingId ? 'update' : 'create',
-        title: `Medicamento: ${payload.name} (${payload.dose || 'sin dosis'})`,
-        scheduledAt: `Horarios: ${payload.times.join(', ')} hrs`,
-        details: {
-          person: payload.person,
-          times: payload.times,
-          frequency: payload.frequency,
-          endDate: payload.end_date,
+        entity: 'medicines',
+        action: editingId ? 'UPDATE' : 'INSERT',
+        entityId: tempId,
+        payload: {
+          family_id: familyId,
+          ...medPayload,
         },
       })
     } catch (err) {
-      console.error('Error al guardar medicamento con log:', err)
+      console.warn('[Offline] Mutación encolada localmente:', err)
     }
 
     setIsSaving(false)
     setIsModalOpen(false)
-    router.refresh()
   }
 
   async function handleDeleteMed() {
@@ -303,28 +342,25 @@ export default function MedsClientView({
     if (!confirm(`¿Deseas eliminar el recordatorio de "${name}"?`)) return
     setIsDeleting(true)
 
-    await supabase
-      .from('medications')
-      .delete()
-      .eq('id', editingId)
-      .eq('family_id', familyId)
+    const targetId = editingId
 
+    // 1. Eliminación optimista en React state
+    setMeds((prev) => prev.filter((m) => m.id !== targetId))
+
+    // 2. Eliminación en Dexie y encolado en sync_queue
     try {
-      await recordActivity(supabase, {
+      await mutate({
         familyId,
-        actorName: person || 'Familiar',
-        entity: 'medication',
-        entityId: editingId,
-        action: 'delete',
-        title: `Medicamento eliminado: ${name}`,
+        entity: 'medicines',
+        action: 'DELETE',
+        entityId: targetId,
       })
-    } catch (e) {
-      console.error('Error logging med delete:', e)
+    } catch (err) {
+      console.warn('[Offline] Eliminación encolada localmente:', err)
     }
 
     setIsDeleting(false)
     setIsModalOpen(false)
-    router.refresh()
   }
 
   return (
@@ -347,7 +383,10 @@ export default function MedsClientView({
           </h1>
         </div>
 
-        <NotificationBell />
+        <div className="flex items-center gap-2">
+          <SyncStatusBadge />
+          <NotificationBell />
+        </div>
       </header>
 
       <div className="flex items-center justify-between px-1">

@@ -1,6 +1,6 @@
 {
   "name": "familia-app",
-  "version": "1.3.0",
+  "version": "1.3.1",
   "private": true,
   "scripts": {
     "dev": "next dev",
@@ -13,6 +13,8 @@
   "dependencies": {
     "@supabase/ssr": "^0.5.2",
     "@supabase/supabase-js": "^2.47.0",
+    "dexie": "^4.4.6",
+    "dexie-react-hooks": "^4.4.0",
     "next": "^15.1.0",
     "react": "^19.0.0",
     "react-dom": "^19.0.0",

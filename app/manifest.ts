@@ -6,10 +6,29 @@ export default function manifest(): MetadataRoute.Manifest {
     short_name: 'Casa',
     description: 'Administración familiar y organización del hogar',
     start_url: '/',
+    scope: '/',
+    id: '/',
     display: 'standalone',
     orientation: 'portrait',
-    background_color: '#131313', // O '#CDF6F9' si quieres que el fondo del splash nativo sea claro
-    theme_color: '#131313',      // Color de la barra de estado en Android
+    background_color: '#131313',
+    theme_color: '#131313',
+    shortcuts: [
+      {
+        name: 'Medicamentos',
+        url: '/meds',
+        description: 'Ver y confirmar dosis de medicinas',
+      },
+      {
+        name: 'Compras',
+        url: '/super',
+        description: 'Lista de supermercado y feria',
+      },
+      {
+        name: 'Colegio',
+        url: '/colegio',
+        description: 'Horario escolar, tareas y pruebas',
+      },
+    ],
     icons: [
       {
         src: '/icon-192.webp',

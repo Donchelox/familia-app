@@ -2,6 +2,7 @@ import Link from 'next/link'
 import { getContext } from '@/lib/family'
 import { todayStr, nowHHMM, rel } from '@/lib/dates'
 import NotificationBell from '@/components/NotificationBell'
+import SyncStatusBadge from '@/components/SyncStatusBadge'
 
 export default async function Inicio() {
   const { supabase, familyId } = await getContext()
@@ -245,8 +246,11 @@ export default async function Inicio() {
           </div>
         </div>
 
-        {/* Campana sincronizada con historial Push */}
-        <NotificationBell />
+        {/* Indicador de red offline-first y Campana de notificaciones */}
+        <div className="flex items-center gap-2.5">
+          <SyncStatusBadge />
+          <NotificationBell />
+        </div>
       </header>
 
       {/* GRID DE ACCESOS DIRECTOS */}

@@ -3,6 +3,7 @@
 import { useState } from 'react'
 import Link from 'next/link'
 import NotificationBell from '@/components/NotificationBell'
+import SyncStatusBadge from '@/components/SyncStatusBadge'
 import { updateAccount, signOut } from '@/app/actions/members'
 import { RELEASES, getSemVerBreakdown } from '@/lib/version'
 
@@ -76,7 +77,10 @@ export default function AjustesHubView({
           <h1 className="text-2xl font-black tracking-tight text-white m-0">Ajustes</h1>
         </div>
 
-        <NotificationBell />
+        <div className="flex items-center gap-2">
+          <SyncStatusBadge />
+          <NotificationBell />
+        </div>
       </header>
 
       {/* 2. CARD DE CUENTA Y PERFIL */}

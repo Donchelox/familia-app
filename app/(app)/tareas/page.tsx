@@ -3,9 +3,12 @@
 import { useState, useEffect } from 'react'
 import Link from 'next/link'
 import NotificationBell from '@/components/NotificationBell'
+import SyncStatusBadge from '@/components/SyncStatusBadge'
 import { useRouter } from 'next/navigation'
 import { createClient } from '@/lib/supabase/client'
 import { useActionParam } from '@/lib/useActionParam'
+import { offlineDB } from '@/lib/offline/db'
+import { useOfflineMutation } from '@/lib/offline/useOfflineMutation'
 
 interface TodoItem {
   id: string
@@ -187,18 +190,24 @@ export default function TareasPage() {
     const nextDone = !todo.done
     const nextDoneAt = nextDone ? new Date().toISOString() : null
 
+    // 1. Optimistic UI inmediato
     setTodos((prev) =>
       prev.map((t) =>
         t.id === todo.id ? { ...t, done: nextDone, done_at: nextDoneAt } : t
       )
     )
 
-    await supabase
-      .from('todos')
-      .update({ done: nextDone, done_at: nextDoneAt })
-      .eq('id', todo.id)
-
-    router.refresh()
+    // 2. Sincronizar en remoto si estamos online
+    if (typeof navigator !== 'undefined' && navigator.onLine) {
+      try {
+        await supabase
+          .from('todos')
+          .update({ done: nextDone, done_at: nextDoneAt })
+          .eq('id', todo.id)
+      } catch (e) {
+        console.warn('[Offline] Error actualizando estado de tarea en servidor:', e)
+      }
+    }
   }
 
   // Apertura Bottom Sheet
@@ -224,60 +233,60 @@ export default function TareasPage() {
     if (!title.trim()) return
     setSaving(true)
 
-    let targetFamilyId = familyId
-    if (!targetFamilyId) {
-      const { data: userRes } = await supabase.auth.getUser()
-      const userId = userRes?.user?.id
-      if (userId) {
-        const { data: member } = await supabase
-          .from('members')
-          .select('family_id')
-          .eq('user_id', userId)
-          .maybeSingle()
-        targetFamilyId = member?.family_id || null
-      }
-      if (!targetFamilyId) {
-        const { data: fm } = await supabase
-          .from('family_members')
-          .select('family_id')
-          .limit(1)
-          .maybeSingle()
-        targetFamilyId = fm?.family_id || null
-      }
-      if (targetFamilyId) setFamilyId(targetFamilyId)
-    }
+    const targetFamilyId = familyId || 'fam_default'
+    const tempId =
+      editingTodo?.id ||
+      (typeof crypto !== 'undefined' && crypto.randomUUID
+        ? crypto.randomUUID()
+        : `todo_${Date.now()}`)
 
-    const payload: any = {
+    const payload: TodoItem = {
+      id: tempId,
+      family_id: targetFamilyId,
       title: title.trim(),
       assigned_to: assignedTo.trim() || null,
       due_date: dueDateTime ? new Date(dueDateTime).toISOString() : null,
+      done: editingTodo ? editingTodo.done : false,
+      done_at: editingTodo ? editingTodo.done_at : null,
+      created_at: editingTodo?.created_at || new Date().toISOString(),
     }
-    if (targetFamilyId) payload.family_id = targetFamilyId
 
-    try {
+    // 1. Optimistic UI inmediato
+    setTodos((prev) => {
       if (editingTodo) {
-        const { error } = await supabase
-          .from('todos')
-          .update(payload)
-          .eq('id', editingTodo.id)
-        if (error) throw error
+        return prev.map((t) => (t.id === editingTodo.id ? payload : t))
       } else {
-        payload.done = false
-        const { error } = await supabase.from('todos').insert(payload)
-        if (error) throw error
+        return [payload, ...prev]
       }
+    })
 
-      setIsSheetOpen(false)
-      setTitle('')
-      setDueDateTime('')
-      setAssignedTo('')
-      await loadData()
-      router.refresh()
-    } catch (err: any) {
-      alert(`Error al guardar tarea: ${err?.message || 'Error en Supabase'}`)
-    } finally {
-      setSaving(false)
+    // 2. Si estamos online, enviar a Supabase sin bloquear
+    if (typeof navigator !== 'undefined' && navigator.onLine) {
+      ;(async () => {
+        try {
+          if (editingTodo) {
+            await supabase
+              .from('todos')
+              .update({
+                title: payload.title,
+                assigned_to: payload.assigned_to,
+                due_date: payload.due_date,
+              })
+              .eq('id', editingTodo.id)
+          } else {
+            await supabase.from('todos').insert(payload)
+          }
+        } catch (err) {
+          console.warn('[Offline] Error guardando tarea en servidor:', err)
+        }
+      })()
     }
+
+    setIsSheetOpen(false)
+    setTitle('')
+    setDueDateTime('')
+    setAssignedTo('')
+    setSaving(false)
   }
 
   // Eliminar tarea
@@ -286,21 +295,24 @@ export default function TareasPage() {
     if (!confirm('¿Eliminar esta tarea definitivamente?')) return
     setDeleting(true)
 
-    try {
-      const { error } = await supabase
-        .from('todos')
-        .delete()
-        .eq('id', editingTodo.id)
-      if (error) throw error
+    const targetId = editingTodo.id
 
-      setIsSheetOpen(false)
-      await loadData()
-      router.refresh()
-    } catch (err: any) {
-      alert(`Error al eliminar: ${err?.message || 'Error desconocido'}`)
-    } finally {
-      setDeleting(false)
+    // 1. Optimistic UI delete
+    setTodos((prev) => prev.filter((t) => t.id !== targetId))
+
+    // 2. Supabase delete si estamos online
+    if (typeof navigator !== 'undefined' && navigator.onLine) {
+      ;(async () => {
+        try {
+          await supabase.from('todos').delete().eq('id', targetId)
+        } catch (err) {
+          console.warn('[Offline] Error eliminando tarea en servidor:', err)
+        }
+      })()
     }
+
+    setIsSheetOpen(false)
+    setDeleting(false)
   }
 
   const pendingTodos = todos.filter((t) => !t.done)
@@ -329,7 +341,10 @@ export default function TareasPage() {
           </h1>
         </div>
 
-        <NotificationBell />
+        <div className="flex items-center gap-2">
+          <SyncStatusBadge />
+          <NotificationBell />
+        </div>
       </header>
 
       {/* BARRA DE ESTADO Y FILTRO POR INTEGRANTE */}

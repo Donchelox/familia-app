@@ -13,6 +13,11 @@ export default function Nav({ family, role }: NavProps) {
   const pathname = usePathname()
   const [isOpen, setIsOpen] = useState(false)
 
+  // El navbar SOLO debe aparecer en el dashboard (/)
+  if (pathname !== '/') {
+    return null
+  }
+
   // Estado activo de cada ruta
   const isHomeActive = pathname === '/' && !isOpen
   const isComprasActive = (pathname.startsWith('/super') || pathname.startsWith('/feria')) && !isOpen

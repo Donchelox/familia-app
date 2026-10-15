@@ -3,6 +3,7 @@
 import { useState, useEffect } from 'react'
 import Link from 'next/link'
 import NotificationBell from '@/components/NotificationBell'
+import SyncStatusBadge from '@/components/SyncStatusBadge'
 import { useRouter } from 'next/navigation'
 import { createClient } from '@/lib/supabase/client'
 import { useActionParam } from '@/lib/useActionParam'
@@ -465,7 +466,10 @@ export default function ColegioPage() {
           <h1 className="text-2xl font-black tracking-tight text-white m-0">Colegio</h1>
         </div>
 
-        <NotificationBell />
+        <div className="flex items-center gap-2">
+          <SyncStatusBadge />
+          <NotificationBell />
+        </div>
       </header>
 
       {/* SECCIÓN 1: HORARIO DE CLASES DE DIEGO */}

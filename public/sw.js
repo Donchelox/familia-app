@@ -1,57 +1,240 @@
-// --- Historial de notificaciones (IndexedDB, compartido con la app: ver lib/pushHistory.ts) ---
-const DB_NAME = 'casa-push'
-const STORE = 'notifications'
-const MAX_ITEMS = 100
+/**
+ * Service Worker para Casa App
+ * Soporte Offline-First (PWA), Caching de App Shell, Background Sync y Notificaciones Web Push
+ */
 
-function openDb() {
-  return new Promise(function (resolve, reject) {
-    const req = indexedDB.open(DB_NAME, 1)
-    req.onupgradeneeded = function () {
+const CACHE_VERSION = 'casa-pwa-v1.4'
+const STATIC_CACHE = `${CACHE_VERSION}-static`
+const DYNAMIC_CACHE = `${CACHE_VERSION}-dynamic`
+const APP_SHELL_CACHE = `${CACHE_VERSION}-shell`
+
+// Rutas esenciales que componen el App Shell completo de Casa App
+const APP_SHELL_URLS = [
+  '/',
+  '/meds',
+  '/colegio',
+  '/super',
+  '/feria',
+  '/tareas',
+  '/ajustes',
+  '/manifest.webmanifest',
+  '/icon-192.webp',
+  '/icon-512.webp',
+  '/splash-art.webp',
+]
+
+// --- 1. INSTALACIÓN Y PRECACHE DEL APP SHELL ---
+self.addEventListener('install', (event) => {
+  event.waitUntil(
+    caches.open(APP_SHELL_CACHE).then((cache) => {
+      // Precachear todas las páginas principales de forma resiliente
+      return Promise.allSettled(
+        APP_SHELL_URLS.map(async (url) => {
+          try {
+            const res = await fetch(url)
+            if (res.ok) {
+              await cache.put(url, res)
+            }
+          } catch (err) {
+            console.warn(`[SW] Precache ignorado para ${url} (offline o no disponible):`, err)
+          }
+        })
+      )
+    })
+  )
+  self.skipWaiting()
+})
+
+// --- 2. ACTIVACIÓN Y LIMPIEZA DE CACHES ANTIGUAS ---
+self.addEventListener('activate', (event) => {
+  event.waitUntil(
+    caches.keys().then((keys) => {
+      return Promise.all(
+        keys.map((key) => {
+          if (!key.startsWith(CACHE_VERSION)) {
+            console.log(`[SW] Eliminando caché obsoleta: ${key}`)
+            return caches.delete(key)
+          }
+        })
+      )
+    }).then(() => self.clients.claim())
+  )
+})
+
+// --- 3. INTERCEPCIÓN DE RED Y ESTRATEGIAS DE CACHÉ ---
+self.addEventListener('fetch', (event) => {
+  const { request } = event
+  const url = new URL(request.url)
+
+  // Ignorar orígenes externos (ej. Supabase API directa, analytics o extensiones)
+  if (url.origin !== self.location.origin) {
+    return
+  }
+
+  // Ignorar APIs del backend (/api/*) y métodos no GET (POST/PUT/DELETE)
+  if (request.method !== 'GET' || url.pathname.startsWith('/api/')) {
+    return
+  }
+
+  const isNavigation = request.mode === 'navigate'
+  const isRSC =
+    url.searchParams.has('_rsc') ||
+    request.headers.get('RSC') === '1' ||
+    Boolean(request.headers.get('Accept')?.includes('text/x-component'))
+
+  // ESTRATEGIA A: Rutas de Navegación HTML Y Peticiones RSC de Next.js
+  // (Crucial: Next.js App Router navega pidiendo datos RSC mediante fetch soft-navigation)
+  if (isNavigation || isRSC) {
+    event.respondWith(
+      fetch(request)
+        .then((response) => {
+          if (response && response.status === 200) {
+            const responseClone = response.clone()
+            caches.open(APP_SHELL_CACHE).then((cache) => {
+              // Cachear tanto con la URL exacta como con el pathname limpio
+              cache.put(request, responseClone)
+              cache.put(url.pathname, response.clone())
+            })
+          }
+          return response
+        })
+        .catch(async () => {
+          // Si estamos offline o la red falla, resolver desde Caché local:
+          // 1. Intentar coincidencia exacta de la petición (incluyendo querystring de RSC)
+          const exactMatch = await caches.match(request)
+          if (exactMatch) return exactMatch
+
+          // 2. Intentar coincidencia por el pathname limpio (ej. /meds, /super)
+          const pathMatch = await caches.match(url.pathname)
+          if (pathMatch) return pathMatch
+
+          // 3. Fallback a la raíz '/' si es navegación principal
+          if (isNavigation) {
+            const rootShell = await caches.match('/')
+            if (rootShell) return rootShell
+          }
+
+          // 4. Fallback si no hay nada guardado aún
+          return new Response(
+            '<!DOCTYPE html><html><head><meta charset="utf-8"><title>Casa - Offline</title></head><body style="background:#131313;color:#fff;font-family:sans-serif;padding:24px;text-align:center;"><h2>Modo sin conexión</h2><p>Página en espera de sincronización local.</p></body></html>',
+            { headers: { 'Content-Type': 'text/html; charset=utf-8' } }
+          )
+        })
+    )
+    return
+  }
+
+  // ESTRATEGIA B: Archivos estáticos de Next.js (_next/static/)
+  // Cache-First (tienen hashes inmutables de contenido)
+  if (url.pathname.startsWith('/_next/static/')) {
+    event.respondWith(
+      caches.match(request).then((cachedResponse) => {
+        if (cachedResponse) return cachedResponse
+        return fetch(request).then((response) => {
+          if (response && response.status === 200) {
+            const clone = response.clone()
+            caches.open(STATIC_CACHE).then((cache) => cache.put(request, clone))
+          }
+          return response
+        })
+      })
+    )
+    return
+  }
+
+  // ESTRATEGIA C: Imágenes estáticas, fuentes, css e iconos
+  // Stale-While-Revalidate
+  if (
+    request.destination === 'image' ||
+    request.destination === 'font' ||
+    request.destination === 'style' ||
+    request.destination === 'script' ||
+    url.pathname.endsWith('.webp') ||
+    url.pathname.endsWith('.png') ||
+    url.pathname.endsWith('.webmanifest')
+  ) {
+    event.respondWith(
+      caches.match(request).then((cachedResponse) => {
+        const fetchPromise = fetch(request).then((networkResponse) => {
+          if (networkResponse && networkResponse.status === 200) {
+            const clone = networkResponse.clone()
+            caches.open(DYNAMIC_CACHE).then((cache) => cache.put(request, clone))
+          }
+          return networkResponse
+        }).catch(() => null)
+
+        return cachedResponse || fetchPromise
+      })
+    )
+    return
+  }
+})
+
+// --- 4. BACKGROUND SYNC API ---
+self.addEventListener('sync', (event) => {
+  if (event.tag === 'casa-sync-queue' || event.tag === 'sync-family-data') {
+    event.waitUntil(notifyClientsToSync())
+  }
+})
+
+function notifyClientsToSync() {
+  return self.clients.matchAll({ type: 'window', includeUncontrolled: true }).then((clients) => {
+    clients.forEach((client) => {
+      client.postMessage({ type: 'BACKGROUND_SYNC_TRIGGERED' })
+    })
+  })
+}
+
+// --- 5. HISTORIAL DE NOTIFICACIONES PUSH EN INDEXEDDB ---
+const PUSH_DB_NAME = 'casa-push'
+const PUSH_STORE = 'notifications'
+const MAX_PUSH_ITEMS = 100
+
+function openPushDb() {
+  return new Promise((resolve, reject) => {
+    const req = indexedDB.open(PUSH_DB_NAME, 1)
+    req.onupgradeneeded = () => {
       const db = req.result
-      if (!db.objectStoreNames.contains(STORE)) {
-        const store = db.createObjectStore(STORE, { keyPath: 'id' })
+      if (!db.objectStoreNames.contains(PUSH_STORE)) {
+        const store = db.createObjectStore(PUSH_STORE, { keyPath: 'id' })
         store.createIndex('received_at', 'received_at')
       }
     }
-    req.onsuccess = function () { resolve(req.result) }
-    req.onerror = function () { reject(req.error) }
+    req.onsuccess = () => resolve(req.result)
+    req.onerror = () => reject(req.error)
   })
 }
 
 async function saveNotification(item) {
-  const db = await openDb()
+  const db = await openPushDb()
   try {
-    await new Promise(function (resolve, reject) {
-      const tx = db.transaction(STORE, 'readwrite')
-      const store = tx.objectStore(STORE)
+    await new Promise((resolve, reject) => {
+      const tx = db.transaction(PUSH_STORE, 'readwrite')
+      const store = tx.objectStore(PUSH_STORE)
       store.put(item)
-      // Conserva solo las últimas MAX_ITEMS (las claves salen ordenadas de la más antigua a la más nueva)
       const keysReq = store.index('received_at').getAllKeys()
-      keysReq.onsuccess = function () {
-        const extra = keysReq.result.length - MAX_ITEMS
+      keysReq.onsuccess = () => {
+        const extra = keysReq.result.length - MAX_PUSH_ITEMS
         for (let i = 0; i < extra; i++) store.delete(keysReq.result[i])
       }
-      tx.oncomplete = function () { resolve() }
-      tx.onerror = function () { reject(tx.error) }
+      tx.oncomplete = () => resolve()
+      tx.onerror = () => reject(tx.error)
     })
   } finally {
     db.close()
   }
 }
 
-function notifyClients() {
+function notifyPushClients() {
   return self.clients
     .matchAll({ type: 'window', includeUncontrolled: true })
-    .then(function (list) {
-      list.forEach(function (c) { c.postMessage({ type: 'push-history-updated' }) })
+    .then((list) => {
+      list.forEach((c) => c.postMessage({ type: 'push-history-updated' }))
     })
 }
 
-// Toma el control de inmediato cuando hay una versión nueva del service worker
-self.addEventListener('install', function () { self.skipWaiting() })
-self.addEventListener('activate', function (event) { event.waitUntil(self.clients.claim()) })
-
-self.addEventListener('push', function (event) {
+// --- 6. EVENTOS DE PUSH Y CLICK DE NOTIFICACIÓN ---
+self.addEventListener('push', (event) => {
   let title = '💊 Recordatorio de Medicamento'
   let body = 'Es hora de tu dosis programada.'
   let url = '/meds'
@@ -64,8 +247,7 @@ self.addEventListener('push', function (event) {
       if (data.body) body = data.body
       if (data.url) url = data.url
       if (data.tag) tag = data.tag
-    } catch (e) {
-      // Si vino en formato texto
+    } catch {
       body = event.data.text()
     }
   }
@@ -76,32 +258,31 @@ self.addEventListener('push', function (event) {
       : String(Date.now()) + Math.random().toString(16).slice(2)
 
   const show = self.registration.showNotification(title, {
-    body: body,
+    body,
     icon: '/icon-192.webp',
     badge: '/icon-192.webp',
     vibrate: [200, 100, 200],
-    // Un tag distinto por aviso: si no, dos remedios a la misma hora se pisan en la bandeja
     tag: tag || 'casa-' + id,
     renotify: true,
-    data: { url: url, id: id },
+    data: { url, id },
   })
 
   const save = saveNotification({
-    id: id,
-    title: title,
-    body: body,
-    url: url,
-    tag: tag,
+    id,
+    title,
+    body,
+    url,
+    tag,
     received_at: new Date().toISOString(),
     read: false,
   })
-    .then(notifyClients)
-    .catch(function (err) { console.error('No se pudo guardar la notificación:', err) })
+    .then(notifyPushClients)
+    .catch((err) => console.error('No se pudo guardar la notificación:', err))
 
   event.waitUntil(Promise.all([show, save]))
 })
 
-self.addEventListener('notificationclick', function (event) {
+self.addEventListener('notificationclick', (event) => {
   event.notification.close()
   const targetUrl = (event.notification.data && event.notification.data.url) || '/meds'
 

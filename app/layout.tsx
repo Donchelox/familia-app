@@ -1,8 +1,7 @@
 import type { Metadata, Viewport } from 'next'
 import './globals.css'
 import PreventContextMenu from '@/components/PreventContextMenu'
-
-
+import PWARegister from '@/components/PWARegister'
 
 export const viewport: Viewport = {
   themeColor: '#131313',
@@ -31,6 +30,7 @@ export default function RootLayout({
   return (
     <html lang="es" suppressHydrationWarning>
       <body className="bg-[#131313] text-white" suppressHydrationWarning>
+        <PWARegister />
         <PreventContextMenu />
         {children}
       </body>
