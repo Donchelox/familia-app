@@ -99,6 +99,17 @@ export default function TareasPage() {
   async function loadData() {
     setLoading(true)
 
+    // 0. Cargar integrantes cacheados para disponibilidad inmediata
+    try {
+      const cached = localStorage.getItem('casa_family_members')
+      if (cached) {
+        const parsed = JSON.parse(cached)
+        if (Array.isArray(parsed) && parsed.length > 0) {
+          setMembers(parsed)
+        }
+      }
+    } catch {}
+
     // 1. CARGA INMEDIATA DESDE DEXIE (OFFLINE-FIRST SIN LATENCIA DE RED)
     let localTodos: TodoItem[] = []
     try {
@@ -157,35 +168,23 @@ export default function TareasPage() {
       }
     } catch {}
 
-    // 3. Unificar integrantes: 'members' + 'family_members'
+    // 3. Cargar integrantes reales del hogar (family_members + usuario actual)
     if (typeof navigator !== 'undefined' && navigator.onLine) {
       try {
         const membersMap = new Map<string, FamilyMember>()
 
-        let mQuery = supabase.from('members').select('user_id, display_name, email')
-        if (currentFamId) mQuery = mQuery.eq('family_id', currentFamId)
-        const { data: mList } = await mQuery
-
-        if (mList) {
-          mList.forEach((m: any) => {
-            const name = m.display_name?.trim() || m.email?.split('@')[0] || 'Propietario'
-            if (name) {
-              membersMap.set(name.toLowerCase(), {
-                id: m.user_id || name,
-                name: name,
-              })
-            }
-          })
-        }
-
-        let fmQuery = supabase.from('family_members').select('id, name')
+        // 1. Integrantes del hogar (configurados en Ajustes > Integrantes)
+        let fmQuery = supabase
+          .from('family_members')
+          .select('id, name')
+          .order('created_at', { ascending: true })
         if (currentFamId) fmQuery = fmQuery.eq('family_id', currentFamId)
         const { data: fmList } = await fmQuery
 
         if (fmList) {
           fmList.forEach((fm: any) => {
             const name = fm.name?.trim()
-            if (name && !membersMap.has(name.toLowerCase())) {
+            if (name) {
               membersMap.set(name.toLowerCase(), {
                 id: fm.id,
                 name: name,
@@ -194,7 +193,50 @@ export default function TareasPage() {
           })
         }
 
-        setMembers(Array.from(membersMap.values()))
+        // 2. Usuario administrador / sesión actual (si no está ya en la lista)
+        const { data: userRes } = await supabase.auth.getUser()
+        const user = userRes?.user
+        const currentUserName =
+          user?.user_metadata?.full_name ||
+          user?.user_metadata?.name ||
+          'Marcelo Vásquez'
+
+        if (currentUserName && currentUserName.trim()) {
+          const trimmed = currentUserName.trim()
+          if (!membersMap.has(trimmed.toLowerCase())) {
+            membersMap.set(trimmed.toLowerCase(), {
+              id: user?.id || 'me',
+              name: trimmed,
+            })
+          }
+        }
+
+        // 3. Otros miembros que hayan aceptado invitación y tengan display_name explícito
+        // (nunca usar correos ni prefijos para invitados pendientes o sin nombre)
+        let mQuery = supabase
+          .from('members')
+          .select('user_id, display_name')
+          .not('display_name', 'is', null)
+        if (currentFamId) mQuery = mQuery.eq('family_id', currentFamId)
+        const { data: mList } = await mQuery
+
+        if (mList) {
+          mList.forEach((m: any) => {
+            const name = m.display_name?.trim()
+            if (name && !membersMap.has(name.toLowerCase())) {
+              membersMap.set(name.toLowerCase(), {
+                id: m.user_id,
+                name: name,
+              })
+            }
+          })
+        }
+
+        const validMembers = Array.from(membersMap.values())
+        setMembers(validMembers)
+        try {
+          localStorage.setItem('casa_family_members', JSON.stringify(validMembers))
+        } catch {}
       } catch (err) {
         console.warn('[Offline] Error cargando integrantes remotos:', err)
       }
