@@ -2,7 +2,7 @@ import { getContext } from '@/lib/family'
 import AjustesView from '@/components/AjustesView'
 
 export default async function AjustesPage() {
-  const { supabase, familyId, familyName } = await getContext()
+  const { supabase, familyId, familyName, role } = await getContext()
 
   const [membersRes, userRes, familyRes] = await Promise.all([
     supabase
@@ -44,6 +44,7 @@ export default async function AjustesPage() {
       userEmail={userEmail}
       familyName={familyName}
       members={members}
+      isAdmin={role === 'admin'}
       initialMedReminders={medRemindersEnabled}
       initialMorningSummary={morningSummaryEnabled}
     />

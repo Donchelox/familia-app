@@ -25,6 +25,7 @@ interface AjustesViewProps {
   userEmail: string
   familyName: string
   members: FamilyMember[]
+  isAdmin?: boolean
   initialMedReminders?: boolean
   initialMorningSummary?: boolean
   appVersion?: string
@@ -42,6 +43,7 @@ export default function AjustesView({
   userEmail,
   familyName,
   members,
+  isAdmin = false,
   initialMedReminders = true,
   initialMorningSummary = true,
   appVersion = '1.2.0',
@@ -62,6 +64,9 @@ export default function AjustesView({
   const [memberName, setMemberName] = useState('')
   const [memberRole, setMemberRole] = useState('Hijo')
   const [memberType, setMemberType] = useState('child')
+  const [memberEmail, setMemberEmail] = useState('')
+  const [memberError, setMemberError] = useState('')
+  const [notice, setNotice] = useState('')
 
   const cardGradientStyle = {
     background: 'linear-gradient(134.95deg, #F76911 47.75%, #F2A957 100%)',
@@ -100,6 +105,8 @@ export default function AjustesView({
     setMemberName('')
     setMemberRole('Hijo')
     setMemberType('child')
+    setMemberEmail('')
+    setMemberError('')
     setSheet({ type: 'add_member' })
   }
 
@@ -107,6 +114,8 @@ export default function AjustesView({
     setMemberName(m.name)
     setMemberRole(m.role)
     setMemberType(m.type)
+    setMemberEmail('')
+    setMemberError('')
     setSheet({ type: 'edit_member', member: m })
   }
 
@@ -210,27 +219,47 @@ export default function AjustesView({
                   </div>
                 </div>
 
-                <button
-                  type="button"
-                  onClick={() => openEditMember(member)}
-                  className="text-sm font-bold text-[#F76911] hover:text-[#F2A957] transition-colors p-1 cursor-pointer"
-                >
-                  Editar
-                </button>
+                {isAdmin && (
+                  <button
+                    type="button"
+                    onClick={() => openEditMember(member)}
+                    className="text-sm font-bold text-[#F76911] hover:text-[#F2A957] transition-colors p-1 cursor-pointer"
+                  >
+                    Editar
+                  </button>
+                )}
               </div>
             ))
           )}
         </div>
 
-        <button
-          type="button"
-          onClick={openAddMember}
-          style={cardGradientStyle}
-          className="w-full py-4 mt-2 rounded-[20px] font-black text-sm text-white shadow-[0_4px_16px_rgba(247,105,17,0.3)] flex items-center justify-center gap-2 active:scale-[0.98] transition-transform cursor-pointer"
-        >
-          <span className="text-lg leading-none">+</span>
-          <span>Añadir integrante</span>
-        </button>
+        {notice && (
+          <div
+            role="status"
+            className="p-3 rounded-2xl bg-[#1f1a14] border border-[#F76911]/30 text-[#F2A957] text-xs font-semibold flex items-start justify-between gap-2"
+          >
+            <span>{notice}</span>
+            <button type="button" onClick={() => setNotice('')} className="text-neutral-400 hover:text-white cursor-pointer">
+              ✕
+            </button>
+          </div>
+        )}
+
+        {isAdmin ? (
+          <button
+            type="button"
+            onClick={openAddMember}
+            style={cardGradientStyle}
+            className="w-full py-4 mt-2 rounded-[20px] font-black text-sm text-white shadow-[0_4px_16px_rgba(247,105,17,0.3)] flex items-center justify-center gap-2 active:scale-[0.98] transition-transform cursor-pointer"
+          >
+            <span className="text-lg leading-none">+</span>
+            <span>Añadir integrante</span>
+          </button>
+        ) : (
+          <p className="text-[11px] text-neutral-500 text-center m-0">
+            Solo el administrador de la familia puede añadir o editar integrantes.
+          </p>
+        )}
       </section>
 
       {/* 4. SECCIÓN: PREFERENCIAS CON TOGGLES */}
@@ -426,11 +455,13 @@ export default function AjustesView({
             {(sheet.type === 'add_member' || sheet.type === 'edit_member') && (
               <form
                 action={async (formData) => {
-                  if (sheet.type === 'add_member') {
-                    await addFamilyMember(formData)
-                  } else {
-                    await updateFamilyMember(formData)
-                  }
+                  setMemberError('')
+                  const res =
+                    sheet.type === 'add_member'
+                      ? await addFamilyMember(formData)
+                      : await updateFamilyMember(formData)
+                  if (!res.ok) return setMemberError(res.error || 'No se pudo guardar.')
+                  setNotice(res.message || '')
                   closeSheet()
                 }}
                 className="flex flex-col gap-3.5"
@@ -481,6 +512,34 @@ export default function AjustesView({
                     </select>
                   </div>
                 </div>
+
+                {/* Adulto: correo para invitarlo como editor (obligatorio al añadir, opcional al editar) */}
+                {memberType === 'adult' && (
+                  <div className="flex flex-col gap-1.5">
+                    <label htmlFor="member-email" className="text-xs font-bold text-neutral-300">
+                      {sheet.type === 'add_member' ? 'Correo electrónico' : 'Invitar con correo (opcional)'}
+                    </label>
+                    <input
+                      id="member-email"
+                      name="email"
+                      type="email"
+                      autoComplete="off"
+                      value={memberEmail}
+                      onChange={(e) => setMemberEmail(e.target.value)}
+                      placeholder="correo@ejemplo.com"
+                      required={sheet.type === 'add_member'}
+                      className="w-full bg-[#131313] border border-neutral-800 rounded-2xl px-4 py-3 text-sm text-white placeholder-neutral-500 focus:outline-none focus:border-[#F76911]"
+                    />
+                    <span className="text-[11px] text-neutral-500 leading-snug">
+                      Le enviaremos una invitación. Entrará con este correo como <b className="text-neutral-300">editor</b>:
+                      podrá añadir medicinas, tareas, súper, feria y colegio, pero no integrantes.
+                    </span>
+                  </div>
+                )}
+
+                {memberError && (
+                  <p className="text-xs font-semibold text-red-400 m-0">{memberError}</p>
+                )}
 
                 <div className="flex gap-2 pt-2">
                   <button
