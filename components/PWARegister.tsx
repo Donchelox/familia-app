@@ -3,43 +3,25 @@
 import { useEffect } from 'react'
 import { useRouter } from 'next/navigation'
 
-const CORE_ROUTES = ['/', '/resumen', '/meds', '/colegio', '/super', '/feria', '/tareas', '/ajustes']
+const CORE_ROUTES = ['/', '/tareas', '/feria', '/super', '/colegio', '/meds', '/resumen', '/ajustes']
 
 export default function PWARegister() {
   const router = useRouter()
 
   useEffect(() => {
-    // 1. Precalentar la caché de Next.js para todas las rutas principales
+    // 1. Precalentar la caché de Next.js y del Service Worker para todas las rutas principales
     if (typeof window !== 'undefined') {
       CORE_ROUTES.forEach((r) => {
         try {
           router.prefetch(r)
+          if ('serviceWorker' in navigator && navigator.onLine) {
+            fetch(r, { headers: { RSC: '1', Accept: 'text/x-component' } }).catch(() => {})
+          }
         } catch {}
       })
     }
 
     if (typeof window === 'undefined' || !('serviceWorker' in navigator)) {
-      return
-    }
-
-    // En desarrollo local (localhost, IPs privadas o puertos locales), desregistrar SW para no romper CSS ni HMR
-    const isLocalDev =
-      window.location.hostname === 'localhost' ||
-      window.location.hostname === '127.0.0.1' ||
-      window.location.hostname.endsWith('.local') ||
-      window.location.hostname.startsWith('192.168.') ||
-      window.location.hostname.startsWith('10.') ||
-      Boolean(window.location.port)
-
-    if (isLocalDev) {
-      navigator.serviceWorker.getRegistrations().then((regs) => {
-        for (const reg of regs) {
-          reg.unregister()
-        }
-      })
-      if (typeof caches !== 'undefined') {
-        caches.keys().then((keys) => keys.forEach((k) => caches.delete(k)))
-      }
       return
     }
 
@@ -54,7 +36,7 @@ export default function PWARegister() {
           await registration.update()
         } catch {}
 
-        // Comprobar actualizaciones en cada visita
+        // Comprobar actualizaciones
         registration.addEventListener('updatefound', () => {
           const installingWorker = registration.installing
           if (!installingWorker) return
@@ -79,7 +61,7 @@ export default function PWARegister() {
       }
     }
 
-    // Escuchar cambio de controlador para refrescar con los nuevos estilos limpios
+    // Escuchar cambio de controlador para refrescar con la versión actualizada
     let refreshing = false
     navigator.serviceWorker.addEventListener('controllerchange', () => {
       if (!refreshing) {
