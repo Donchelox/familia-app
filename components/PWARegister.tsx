@@ -22,12 +22,16 @@ export default function PWARegister() {
       return
     }
 
-    // En desarrollo local (localhost), desregistrar Service Worker para no romper CSS ni HMR
-    if (
+    // En desarrollo local (localhost, IPs privadas o puertos locales), desregistrar SW para no romper CSS ni HMR
+    const isLocalDev =
       window.location.hostname === 'localhost' ||
       window.location.hostname === '127.0.0.1' ||
-      window.location.hostname.endsWith('.local')
-    ) {
+      window.location.hostname.endsWith('.local') ||
+      window.location.hostname.startsWith('192.168.') ||
+      window.location.hostname.startsWith('10.') ||
+      Boolean(window.location.port)
+
+    if (isLocalDev) {
       navigator.serviceWorker.getRegistrations().then((regs) => {
         for (const reg of regs) {
           reg.unregister()

@@ -3,7 +3,7 @@
  * Soporte Offline-First (PWA), Caching de App Shell, Background Sync y Notificaciones Web Push
  */
 
-const CACHE_VERSION = 'casa-pwa-v2.1'
+const CACHE_VERSION = 'casa-pwa-v3.0'
 const STATIC_CACHE = `${CACHE_VERSION}-static`
 const DYNAMIC_CACHE = `${CACHE_VERSION}-dynamic`
 const APP_SHELL_CACHE = `${CACHE_VERSION}-shell`
@@ -24,24 +24,41 @@ const APP_SHELL_URLS = [
   '/splash-art.webp',
 ]
 
-// --- 1. INSTALACIÓN Y PRECACHE DEL APP SHELL ---
+// --- 1. INSTALACIÓN Y PRECACHE DEL APP SHELL CON SUS ESTILOS CSS REALES ---
 self.addEventListener('install', (event) => {
   event.waitUntil(
-    caches.open(APP_SHELL_CACHE).then((cache) => {
-      // Precachear todas las páginas principales de forma resiliente
-      return Promise.allSettled(
-        APP_SHELL_URLS.map(async (url) => {
-          try {
-            const res = await fetch(url)
-            if (res.ok) {
-              await cache.put(url, res)
+    (async () => {
+      const shellCache = await caches.open(APP_SHELL_CACHE)
+      const staticCache = await caches.open(STATIC_CACHE)
+
+      for (const url of APP_SHELL_URLS) {
+        try {
+          const res = await fetch(url, { cache: 'no-cache' })
+          if (res.ok) {
+            await shellCache.put(url, res.clone())
+
+            // Si es la página principal '/', extraer las hojas de estilo <link rel="stylesheet">
+            if (url === '/') {
+              const html = await res.text()
+              const cssMatches = html.matchAll(/href="(\/_next\/static\/css\/[^"]+\.css)"/g)
+              for (const match of cssMatches) {
+                const cssUrl = match[1]
+                try {
+                  const cssRes = await fetch(cssUrl)
+                  if (cssRes.ok) {
+                    await staticCache.put(cssUrl, cssRes.clone())
+                    // Guardar como respaldo maestro permanente
+                    await staticCache.put('/_next/static/css/global-fallback.css', cssRes.clone())
+                  }
+                } catch {}
+              }
             }
-          } catch (err) {
-            console.warn(`[SW] Precache ignorado para ${url} (offline o no disponible):`, err)
           }
-        })
-      )
-    })
+        } catch (err) {
+          console.warn(`[SW] Precache ignorado para ${url}:`, err)
+        }
+      }
+    })()
   )
   self.skipWaiting()
 })
@@ -66,6 +83,19 @@ self.addEventListener('activate', (event) => {
 self.addEventListener('fetch', (event) => {
   const { request } = event
   const url = new URL(request.url)
+
+  // En desarrollo local (localhost, IPs privadas o con puerto de desarrollo), no interceptar
+  // para permitir que Webpack HMR y Tailwind CSS en tiempo real funcionen al 100% sin interferencias
+  const isLocalDev =
+    self.location.hostname === 'localhost' ||
+    self.location.hostname === '127.0.0.1' ||
+    self.location.hostname.startsWith('192.168.') ||
+    self.location.hostname.startsWith('10.') ||
+    Boolean(self.location.port)
+
+  if (isLocalDev) {
+    return
+  }
 
   // Ignorar orígenes externos (ej. Supabase API directa, analytics o extensiones)
   if (url.origin !== self.location.origin) {
@@ -127,33 +157,61 @@ self.addEventListener('fetch', (event) => {
   }
 
   // ESTRATEGIA B: Archivos estáticos de Next.js (_next/static/) y Estilos CSS
-  // Network-First con fallback a caché para garantizar que nunca se cargue CSS desactualizado o roto
-  if (url.pathname.startsWith('/_next/static/') || request.destination === 'style') {
+  // Garantiza que la página NUNCA quede sin estilos (si el hash cambió o está offline, usa el respaldo)
+  if (url.pathname.startsWith('/_next/static/') || request.destination === 'style' || url.pathname.endsWith('.css')) {
+    const isCss = request.destination === 'style' || url.pathname.endsWith('.css')
+
     event.respondWith(
       fetch(request)
-        .then((response) => {
+        .then(async (response) => {
           if (response && response.status === 200) {
             const clone = response.clone()
-            caches.open(STATIC_CACHE).then((cache) => cache.put(request, clone))
+            const cache = await caches.open(STATIC_CACHE)
+            await cache.put(request, clone)
+            if (isCss) {
+              await cache.put('/_next/static/css/global-fallback.css', response.clone())
+            }
+            return response
           }
+
+          // Si el servidor devolvió 404 (el hash del CSS cambió con el nuevo build), buscar en caché
+          if (isCss) {
+            const exactCss = await caches.match(request)
+            if (exactCss) return exactCss
+
+            const fallbackCss = await caches.match('/_next/static/css/global-fallback.css')
+            if (fallbackCss) return fallbackCss
+
+            const staticCache = await caches.open(STATIC_CACHE)
+            const keys = await staticCache.keys()
+            const cssKey = keys.find((k) => k.url.includes('.css'))
+            if (cssKey) {
+              const anyCss = await staticCache.match(cssKey)
+              if (anyCss) return anyCss
+            }
+          }
+
           return response
         })
         .catch(async () => {
           const cached = await caches.match(request)
           if (cached) return cached
 
-          // Si es CSS y no está la clave exacta, buscar cualquier CSS disponible en caché estática
-          if (request.destination === 'style' || url.pathname.endsWith('.css')) {
+          // Respaldo resiliente de CSS para modo offline
+          if (isCss) {
+            const fallbackCss = await caches.match('/_next/static/css/global-fallback.css')
+            if (fallbackCss) return fallbackCss
+
             const staticCache = await caches.open(STATIC_CACHE)
             const keys = await staticCache.keys()
             const cssKey = keys.find((k) => k.url.includes('.css'))
             if (cssKey) {
-              const fallbackCss = await staticCache.match(cssKey)
-              if (fallbackCss) return fallbackCss
+              const anyCss = await staticCache.match(cssKey)
+              if (anyCss) return anyCss
             }
           }
 
-          return new Response('', { headers: { 'Content-Type': 'text/css' } })
+          return new Response('', { status: 404 })
         })
     )
     return
