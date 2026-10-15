@@ -322,6 +322,8 @@ class SyncManager {
             family_id: s.family_id,
             list: s.list as 'super' | 'feria',
             name: s.name,
+            category: s.category || null,
+            quantity: s.quantity || null,
             done: s.done || false,
             done_at: s.done_at,
             created_at: s.created_at,

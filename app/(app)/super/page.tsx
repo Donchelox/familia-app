@@ -30,7 +30,62 @@ const CATEGORIES = [
   'Bebidas y Licores',
   'Panadería y Dulces',
   'Otros',
-]
+] as const
+
+function inferCategoryByName(name: string): string {
+  const n = (name || '').toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '')
+
+  // Lácteos y Quesos
+  if (/\b(leche|queso|quesillo|yogur|yogurt|yoghurt|mantequilla|crema|ricotta|mozzarella|gouda|parmesano|manjar|chamyto|flan|postre)\b/.test(n)) {
+    return 'Lácteos y Quesos'
+  }
+
+  // Carnes y Pescados
+  if (/\b(carne|pollo|vacuno|cerdo|pescado|atun|salmon|reineta|merluza|lomo|posta|pechuga|bistec|molida|hamburguesa|vienesa|vienesas|salchicha|salchichas|jamon|pavo|chorizo|longaniza|costillar|marisco|camaron|camarones)\b/.test(n)) {
+    return 'Carnes y Pescados'
+  }
+
+  // Frutas y Verduras
+  if (/\b(manzana|platano|naranja|limon|palta|lechuga|tomate|cebolla|papa|papas|zanahoria|zapallo|acelga|espinaca|apio|cilantro|perejil|frutilla|uva|arandano|sandia|melon|pepino|choclo|pimenton|ajo|champinon|champinones|pera|durazno)\b/.test(n)) {
+    return 'Frutas y Verduras'
+  }
+
+  // Limpieza y Aseo
+  if (/\b(detergente|suavizante|cloro|lavaloza|lavalozas|jabon|shampoo|acondicionador|dientes|confort|higienico|toalla|limpiador|desinfectante|esponja|basura|trapero|lustramuebles|poett|ajax|desodorante|toallitas)\b/.test(n)) {
+    return 'Limpieza y Aseo'
+  }
+
+  // Bebidas y Licores
+  if (/\b(agua|aguas|bebida|bebidas|coca|sprite|fanta|jugo|jugos|cerveza|cervezas|vino|vinos|pisco|gin|ron|vodka|whisky|nectar|energetica|gatorade)\b/.test(n)) {
+    return 'Bebidas y Licores'
+  }
+
+  // Panadería y Dulces
+  if (/\b(pan|marraqueta|hallulla|molde|pita|galleta|galletas|queque|torta|pastel|chocolate|chocolates|dulce|dulces|medialuna|tostadas|muffins|brownie)\b/.test(n)) {
+    return 'Panadería y Dulces'
+  }
+
+  // Abarrotes
+  if (/\b(arroz|fideo|fideos|pasta|pastas|harina|aceite|azucar|sal|vinagre|salsa|salsas|cereal|cereales|avena|lenteja|lentejas|poroto|porotos|garbanzo|garbanzos|salmas|conserva|conservas|cafe|te|mayonesa|ketchup|mostaza|sopa|caldo)\b/.test(n)) {
+    return 'Abarrotes'
+  }
+
+  return 'Abarrotes'
+}
+
+function getItemCategory(item: { name?: string; category?: string | null }): string {
+
+  if (item.category && item.category.trim() && item.category !== 'Otros') {
+    const found = CATEGORIES.find((c) => c.toLowerCase() === item.category!.trim().toLowerCase())
+    if (found) return found
+    return item.category.trim()
+  }
+  if (item.category === 'Otros') {
+    return 'Otros'
+  }
+  return inferCategoryByName(item.name || '')
+}
+
 
 export default function SuperPage() {
   const router = useRouter()
@@ -63,7 +118,12 @@ export default function SuperPage() {
       if (!familyId) setFamilyId(fallbackFamId)
 
       const localData = await offlineDB.shopping_lists.toArray()
-      const localSuper = localData.filter((i) => i.list !== 'feria')
+      const localSuper = localData
+        .filter((i) => i.list !== 'feria')
+        .map((i) => ({
+          ...i,
+          category: getItemCategory(i),
+        }))
       if (localSuper.length > 0) {
         setItems(localSuper)
         if (localSuper[0].family_id) setFamilyId(localSuper[0].family_id)
@@ -93,9 +153,14 @@ export default function SuperPage() {
           const unsyncedMap = new Map(unsyncedSuper.map((i) => [i.id, i]))
 
           const mergedMap = new Map<string, ShoppingItem>()
-          unsyncedSuper.forEach((i) => mergedMap.set(i.id, i as any))
+          unsyncedSuper.forEach((i) => mergedMap.set(i.id, { ...i, category: getItemCategory(i) } as any))
           superOnly.forEach((rem: any) => {
-            if (!unsyncedMap.has(rem.id)) mergedMap.set(rem.id, rem)
+            if (!unsyncedMap.has(rem.id)) {
+              mergedMap.set(rem.id, {
+                ...rem,
+                category: getItemCategory(rem),
+              })
+            }
           })
 
           setItems(Array.from(mergedMap.values()))
@@ -111,7 +176,7 @@ export default function SuperPage() {
               family_id: item.family_id,
               list: 'super' as const,
               name: item.name,
-              category: item.category || 'Abarrotes',
+              category: getItemCategory(item),
               done: item.done || false,
               done_at: item.done_at,
               created_at: item.created_at,
@@ -167,7 +232,7 @@ export default function SuperPage() {
         id: item.id,
         family_id: targetFamId,
         name: item.name,
-        category: item.category || 'Abarrotes',
+        category: getItemCategory(item),
         list: 'super',
         done: nextDone,
         done_at: nextDone ? new Date().toISOString() : null,
@@ -178,15 +243,22 @@ export default function SuperPage() {
   function openCreate() {
     setEditingItem(null)
     setName('')
-    setCategory('Abarrotes')
+    setCategory(selectedCategory !== 'Todos' ? selectedCategory : 'Abarrotes')
     setIsSheetOpen(true)
   }
 
   function openEdit(item: ShoppingItem) {
     setEditingItem(item)
     setName(item.name)
-    setCategory(item.category || 'Abarrotes')
+    setCategory(getItemCategory(item))
     setIsSheetOpen(true)
+  }
+
+  function handleNameChange(val: string) {
+    setName(val)
+    if (!editingItem) {
+      setCategory(inferCategoryByName(val))
+    }
   }
 
   async function handleSave(e: React.FormEvent) {
@@ -198,10 +270,12 @@ export default function SuperPage() {
     const targetFamId = (editingItem ? editingItem.family_id : familyId) || (await getOfflineFamilyId())
     if (!familyId) setFamilyId(targetFamId)
 
+    const effectiveCategory = category || inferCategoryByName(trimmedName)
+
     if (editingItem) {
       // Actualización optimista local
       setItems((prev) =>
-        prev.map((it) => (it.id === editingItem.id ? { ...it, name: trimmedName, category } : it))
+        prev.map((it) => (it.id === editingItem.id ? { ...it, name: trimmedName, category: effectiveCategory } : it))
       )
 
       await mutate({
@@ -214,7 +288,7 @@ export default function SuperPage() {
           family_id: targetFamId,
           name: trimmedName,
           list: 'super',
-          category,
+          category: effectiveCategory,
         },
       })
     } else {
@@ -226,7 +300,7 @@ export default function SuperPage() {
       const newItem: ShoppingItem = {
         id: tempId,
         name: trimmedName,
-        category,
+        category: effectiveCategory,
         done: false,
         family_id: targetFamId,
         list: 'super',
@@ -245,7 +319,7 @@ export default function SuperPage() {
           family_id: targetFamId,
           name: trimmedName,
           list: 'super',
-          category,
+          category: effectiveCategory,
           done: false,
           created_at: new Date().toISOString(),
         },
@@ -283,7 +357,13 @@ export default function SuperPage() {
   const displayedPending =
     selectedCategory === 'Todos'
       ? pendingItems
-      : pendingItems.filter((i) => (i.category || 'Otros') === selectedCategory)
+      : pendingItems.filter((i) => getItemCategory(i) === selectedCategory)
+
+  const displayedCompleted =
+    selectedCategory === 'Todos'
+      ? completedItems
+      : completedItems.filter((i) => getItemCategory(i) === selectedCategory)
+
 
   return (
     <div className="w-full flex flex-col gap-5 select-none">
@@ -386,7 +466,7 @@ export default function SuperPage() {
                       {item.name}
                     </h3>
                     <p className="text-[11px] text-neutral-400 mt-0.5 truncate">
-                      {item.category || 'Abarrotes'}
+                      {getItemCategory(item)}
                     </p>
                   </div>
 
@@ -413,16 +493,16 @@ export default function SuperPage() {
         {/* YA COMPRADOS */}
         <section className="flex flex-col gap-3">
           <h2 className="text-sm font-bold text-neutral-400 px-1 m-0">
-            Comprados ({completedItems.length})
+            Comprados ({displayedCompleted.length})
           </h2>
 
           <div className="flex flex-col gap-2.5">
-            {completedItems.length === 0 ? (
+            {displayedCompleted.length === 0 ? (
               <div className="p-8 text-center text-xs text-neutral-600 bg-[#151515] rounded-[28px] border border-neutral-800/40">
                 Ningún producto comprado aún.
               </div>
             ) : (
-              completedItems.map((item) => (
+              displayedCompleted.map((item) => (
                 <article
                   key={item.id}
                   className="p-4 rounded-[24px] bg-[#151515] border border-neutral-800/40 opacity-60 flex items-center justify-between gap-3"
@@ -435,7 +515,7 @@ export default function SuperPage() {
                       {item.name}
                     </h3>
                     <p className="text-[11px] text-neutral-500 mt-0.5 truncate">
-                      {item.category || 'Abarrotes'}
+                      {getItemCategory(item)}
                     </p>
                   </div>
 
@@ -497,7 +577,7 @@ export default function SuperPage() {
                   required
                   placeholder="Ej. Leche descremada, Arroz, Detergente"
                   value={name}
-                  onChange={(e) => setName(e.target.value)}
+                  onChange={(e) => handleNameChange(e.target.value)}
                   className="w-full bg-[#131313] border border-neutral-800 rounded-2xl px-4 py-3 text-sm text-white focus:outline-none focus:border-[#F76911]"
                 />
               </div>
