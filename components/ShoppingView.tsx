@@ -2,6 +2,7 @@
 
 import { useState } from 'react'
 import Link from 'next/link'
+import NotificationBell from '@/components/NotificationBell'
 import {
   addShoppingItem,
   updateShoppingItem,
@@ -58,35 +59,22 @@ export default function ShoppingView({
 
   return (
     <div className="w-full flex flex-col gap-5 relative min-h-[calc(100vh-80px)] pb-28">
-      {/* 1. HEADER CON FLECHA NARANJA Y CAMPANA */}
-      <header className="flex items-center justify-between">
+      {/* 1. HEADER HOMOLOGADO */}
+      <header className="flex items-center justify-between py-1">
         <div className="flex items-center gap-3">
           <Link
             href="/"
             aria-label="Volver al inicio"
-            className="text-[#F76911] hover:opacity-80 transition-opacity p-1 no-underline flex items-center justify-center"
+            className="w-10 h-10 -ml-2 rounded-full flex items-center justify-center text-[#F76911] hover:bg-neutral-800/60 active:scale-95 transition-all cursor-pointer no-underline"
           >
-            <svg className="w-7 h-7 stroke-current stroke-[3] fill-none" viewBox="0 0 24 24">
+            <svg className="w-7 h-7 stroke-current stroke-[2.5] fill-none" viewBox="0 0 24 24">
               <path strokeLinecap="round" strokeLinejoin="round" d="M15 19l-7-7 7-7" />
             </svg>
           </Link>
-          <h1 className="text-2xl font-black tracking-tight text-white">{title}</h1>
+          <h1 className="text-2xl font-black tracking-tight text-white m-0">{title}</h1>
         </div>
 
-        <Link
-          href="/notificaciones"
-          aria-label="Notificaciones"
-          className="relative p-2 text-white hover:opacity-80 transition-opacity no-underline"
-        >
-          <svg className="w-6 h-6 stroke-white stroke-2 fill-none" viewBox="0 0 24 24">
-            <path
-              strokeLinecap="round"
-              strokeLinejoin="round"
-              d="M15 17h5l-1.405-1.405A2.032 2.032 0 0118 14.158V11a6.002 6.002 0 00-4-5.659V5a2 2 0 10-4 0v.341C7.67 6.165 6 8.388 6 11v3.159c0 .538-.214 1.055-.595 1.436L4 17h5m6 0v1a3 3 0 11-6 0v-1m6 0H9"
-            />
-          </svg>
-          <span className="absolute top-1.5 right-1.5 w-2 h-2 bg-[#F76911] rounded-full ring-2 ring-[#131313]" />
-        </Link>
+        <NotificationBell />
       </header>
 
       {/* 2. TABS SEGMENTADOS PARA ALTERNAR ENTRE SÚPER Y FERIA */}
