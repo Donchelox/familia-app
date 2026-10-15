@@ -5,6 +5,7 @@ import Link from 'next/link'
 import NotificationBell from '@/components/NotificationBell'
 import SyncStatusBadge from '@/components/SyncStatusBadge'
 import { updateAccount, signOut } from '@/app/actions/members'
+import { unsubscribeCurrentPush } from '@/components/PushSubscriptionManager'
 import { RELEASES, getSemVerBreakdown } from '@/lib/version'
 
 interface AjustesHubViewProps {
@@ -213,7 +214,12 @@ export default function AjustesHubView({
 
       {/* 5. CERRAR SESIÓN */}
       <section className="pt-2">
-        <form action={signOut}>
+        <form
+          action={async () => {
+            await unsubscribeCurrentPush()
+            await signOut()
+          }}
+        >
           <button
             type="submit"
             className="w-full py-3.5 rounded-2xl bg-[#201212] border border-red-900/40 text-red-400 hover:text-red-300 hover:bg-[#2c1616] hover:scale-[1.01] active:scale-[0.98] font-bold text-sm transition-all duration-150 cursor-pointer shadow-sm"

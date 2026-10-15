@@ -1,4 +1,4 @@
-import { getContext } from '@/lib/family'
+import { getApiContext } from '@/lib/family'
 import { TZ } from '@/lib/dates'
 
 export const dynamic = 'force-dynamic'
@@ -14,7 +14,8 @@ const q = (v: unknown) => {
 }
 
 export async function GET() {
-  const ctx = await getContext()
+  const ctx = await getApiContext()
+  if (!ctx) return new Response(JSON.stringify({ error: 'No autenticado' }), { status: 401, headers: { 'Content-Type': 'application/json' } })
   if (ctx.role !== 'admin') return new Response('No autorizado', { status: 403 })
 
   const all: { created_at: string; user_name: string | null; module: string; action: string; item: string | null }[] = []

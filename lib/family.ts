@@ -81,11 +81,11 @@ async function claimPendingInvites(supabase: any, user: { id: string; email?: st
   }
 }
 
-/** Usuario + familia activa. Reclama invitaciones o manda a crear familia. */
-export const getContext = cache(async () => {
+/** Resuelve contexto de sesión y familia sin redirecciones; seguro para rutas API. */
+export const getApiContext = cache(async () => {
   const supabase = await createClient()
   const { data: { user } } = await supabase.auth.getUser()
-  if (!user) redirect('/login')
+  if (!user) return null
 
   const query = () =>
     supabase
@@ -101,7 +101,7 @@ export const getContext = cache(async () => {
     const retry = await query()
     m = retry.data
   }
-  if (!m) redirect('/onboarding')
+  if (!m) return null
 
   const fam = Array.isArray(m.families) ? m.families[0] : m.families
   return {
@@ -116,4 +116,17 @@ export const getContext = cache(async () => {
   }
 })
 
+/** Usuario + familia activa. Reclama invitaciones o manda a crear familia. */
+export const getContext = cache(async () => {
+  const ctx = await getApiContext()
+  if (!ctx) {
+    const supabase = await createClient()
+    const { data: { user } } = await supabase.auth.getUser()
+    if (!user) redirect('/login')
+    redirect('/onboarding')
+  }
+  return ctx
+})
+
 export type Ctx = Awaited<ReturnType<typeof getContext>>
+

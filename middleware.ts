@@ -21,6 +21,9 @@ export async function middleware(request: NextRequest) {
   const onLogin = request.nextUrl.pathname.startsWith('/login')
 
   if (!user && !onLogin) {
+    if (request.nextUrl.pathname.startsWith('/api/')) {
+      return NextResponse.json({ error: 'No autenticado' }, { status: 401 })
+    }
     const url = request.nextUrl.clone()
     url.pathname = '/login'
     return NextResponse.redirect(url)

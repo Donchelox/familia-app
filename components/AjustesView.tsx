@@ -12,6 +12,7 @@ import {
   updatePreferences,
   signOut,
 } from '@/app/actions/members'
+import { unsubscribeCurrentPush } from '@/components/PushSubscriptionManager'
 
 export type FamilyMember = {
   id: string
@@ -316,7 +317,12 @@ export default function AjustesView({
 
       {/* 6. CERRAR SESIÓN */}
       <section className="pt-2">
-        <form action={signOut}>
+        <form
+          action={async () => {
+            await unsubscribeCurrentPush()
+            await signOut()
+          }}
+        >
           <button
             type="submit"
             className="w-full py-3.5 rounded-2xl bg-[#201212] border border-red-900/40 text-red-400 hover:text-red-300 hover:bg-[#2c1616] font-bold text-sm transition-colors active:scale-[0.98] cursor-pointer"

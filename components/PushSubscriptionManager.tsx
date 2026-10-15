@@ -159,3 +159,23 @@ export default function PushSubscriptionManager() {
     </div>
   )
 }
+
+/** Cancela la suscripción en el navegador y en el servidor vía DELETE /api/push/subscribe */
+export async function unsubscribeCurrentPush(): Promise<void> {
+  if (typeof window === 'undefined' || !('serviceWorker' in navigator)) return
+  try {
+    const reg = await navigator.serviceWorker.ready
+    const sub = await reg.pushManager.getSubscription()
+    if (sub) {
+      await fetch('/api/push/subscribe', {
+        method: 'DELETE',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ endpoint: sub.endpoint }),
+      }).catch((e) => console.warn('Push delete request error:', e))
+      await sub.unsubscribe().catch((e) => console.warn('Push unsubscribe error:', e))
+    }
+  } catch (e) {
+    console.warn('Error en unsubscribeCurrentPush:', e)
+  }
+}
+
