@@ -4,6 +4,7 @@ import { useState } from 'react'
 import Link from 'next/link'
 import NotificationBell from '@/components/NotificationBell'
 import { updateAccount, signOut } from '@/app/actions/members'
+import { RELEASES, getSemVerBreakdown } from '@/lib/version'
 
 interface AjustesHubViewProps {
   familyId: string
@@ -25,9 +26,10 @@ export default function AjustesHubView({
   isAdmin = false,
   medRemindersEnabled = true,
   medReminderInterval = 5,
-  appVersion = '1.2.0',
+  appVersion = '1.3.0',
 }: AjustesHubViewProps) {
   const [isEditingAccount, setIsEditingAccount] = useState(false)
+  const [showReleaseModal, setShowReleaseModal] = useState(false)
   const [accountName, setAccountName] = useState(userName)
   const [accountEmail, setAccountEmail] = useState(userEmail)
   const [currentFamilyName, setCurrentFamilyName] = useState(familyName)
@@ -45,13 +47,17 @@ export default function AjustesHubView({
 
   const closeAccountEdit = () => setIsEditingAccount(false)
 
-  const initials = userName
-    .split(' ')
-    .filter(Boolean)
-    .map((w) => w[0])
-    .slice(0, 2)
-    .join('')
-    .toUpperCase() || 'U'
+  const initials =
+    userName
+      .split(' ')
+      .filter(Boolean)
+      .map((w) => w[0])
+      .slice(0, 2)
+      .join('')
+      .toUpperCase() || 'U'
+
+  const semver = getSemVerBreakdown(appVersion)
+  const currentRelease = RELEASES.find((r) => r.version === appVersion) || RELEASES[0]
 
   return (
     <div className="w-full flex flex-col gap-6 relative min-h-[calc(100vh-80px)] pb-16 select-none">
@@ -213,17 +219,116 @@ export default function AjustesHubView({
         </form>
       </section>
 
-      {/* 6. VERSIÓN DE LA APP */}
-      <footer className="pt-4 pb-2 flex flex-col items-center justify-center gap-1 text-center">
-        <p className="text-xs font-semibold text-neutral-500 tracking-wide m-0">
-          Casa APP - Versión {appVersion}
-        </p>
-        <p className="text-[10px] text-neutral-600 font-medium m-0">
+      {/* 6. VERSIÓN DE LA APP CON SEMVER INTERACTIVO */}
+      <footer className="pt-4 pb-2 flex flex-col items-center justify-center gap-1.5 text-center">
+        <button
+          type="button"
+          onClick={() => setShowReleaseModal(true)}
+          className="inline-flex items-center gap-2 px-3.5 py-1.5 rounded-full bg-neutral-900 border border-neutral-800 hover:border-neutral-700 text-neutral-300 hover:text-white transition-all cursor-pointer group shadow-sm active:scale-95"
+        >
+          <span className="w-2 h-2 rounded-full bg-emerald-500 animate-pulse shrink-0" />
+          <span className="text-xs font-bold tracking-wide">Casa APP · v{appVersion}</span>
+          <span className="text-[10px] text-neutral-500 group-hover:text-[#F76911] font-semibold">
+            (SemVer) ℹ️
+          </span>
+        </button>
+        <p className="text-[10px] text-neutral-500 font-medium m-0">
           Diseñado para el día a día familiar
         </p>
       </footer>
 
-      {/* 7. BOTTOM SHEET PARA EDITAR CUENTA */}
+      {/* 7. MODAL DE INFORMACIÓN DE VERSIÓN Y SEMVER */}
+      {showReleaseModal && (
+        <div className="fixed inset-0 z-50 flex items-end justify-center">
+          <div className="fixed inset-0 bg-black/75 backdrop-blur-sm transition-opacity" onClick={() => setShowReleaseModal(false)} />
+
+          <div className="relative w-full max-w-[402px] bg-[#1a1a1a] rounded-t-[28px] border-t border-neutral-800 p-6 flex flex-col gap-4 shadow-2xl z-10 animate-in slide-in-from-bottom duration-200 max-h-[85vh] overflow-y-auto">
+            <div className="w-12 h-1.5 bg-neutral-700 rounded-full mx-auto shrink-0" />
+
+            <div className="flex items-center justify-between">
+              <div>
+                <div className="flex items-center gap-2">
+                  <h3 className="text-base font-black text-white m-0">Versión {appVersion}</h3>
+                  <span className="text-[10px] font-black uppercase tracking-wider px-2 py-0.5 rounded-md bg-emerald-950/50 text-emerald-400 border border-emerald-900/40">
+                    SemVer: {currentRelease.type}
+                  </span>
+                </div>
+                <p className="text-xs text-neutral-400 mt-0.5 m-0">
+                  {currentRelease.date} · {currentRelease.title}
+                </p>
+              </div>
+
+              <button
+                type="button"
+                onClick={() => setShowReleaseModal(false)}
+                className="w-8 h-8 rounded-full bg-[#242424] text-neutral-400 hover:text-white flex items-center justify-center transition-colors cursor-pointer"
+              >
+                ✕
+              </button>
+            </div>
+
+            {/* Desglose Semantic Versioning */}
+            <div className="p-3 rounded-2xl bg-[#131313] border border-neutral-800 flex flex-col gap-2">
+              <span className="text-[11px] font-bold text-neutral-300">
+                Estructura Semantic Versioning (SemVer)
+              </span>
+              <div className="grid grid-cols-3 gap-1.5 text-center">
+                <div className="p-2 rounded-xl bg-neutral-900/60 border border-neutral-800/80">
+                  <span className="text-xs font-black text-white">{semver.major}</span>
+                  <p className="text-[10px] text-neutral-400 m-0">Major</p>
+                </div>
+                <div className="p-2 rounded-xl bg-neutral-900/60 border border-[#F76911]/40">
+                  <span className="text-xs font-black text-[#F76911]">{semver.minor}</span>
+                  <p className="text-[10px] text-neutral-400 m-0">Minor (Features)</p>
+                </div>
+                <div className="p-2 rounded-xl bg-neutral-900/60 border border-neutral-800/80">
+                  <span className="text-xs font-black text-white">{semver.patch}</span>
+                  <p className="text-[10px] text-neutral-400 m-0">Patch (Fixes)</p>
+                </div>
+              </div>
+            </div>
+
+            {/* Cambios de la versión actual */}
+            <div className="flex flex-col gap-2">
+              <span className="text-xs font-bold text-white">Novedades de esta versión:</span>
+              <ul className="flex flex-col gap-1.5 p-0 m-0 list-none">
+                {currentRelease.highlights.map((h, i) => (
+                  <li key={i} className="text-xs text-neutral-300 flex items-start gap-2">
+                    <span className="text-[#F76911] font-bold">✓</span>
+                    <span>{h}</span>
+                  </li>
+                ))}
+              </ul>
+            </div>
+
+            {/* Historial anterior */}
+            <div className="flex flex-col gap-2 pt-2 border-t border-neutral-800/60">
+              <span className="text-xs font-bold text-neutral-400">Versiones anteriores:</span>
+              <div className="flex flex-col gap-2">
+                {RELEASES.filter((r) => r.version !== appVersion).map((rel) => (
+                  <div key={rel.version} className="p-2.5 rounded-xl bg-neutral-900/40 border border-neutral-800/60 flex items-center justify-between">
+                    <div className="flex flex-col">
+                      <span className="text-xs font-bold text-white">v{rel.version} · {rel.title}</span>
+                      <span className="text-[10px] text-neutral-500">{rel.date}</span>
+                    </div>
+                    <span className="text-[10px] font-bold text-neutral-400 capitalize">{rel.type}</span>
+                  </div>
+                ))}
+              </div>
+            </div>
+
+            <button
+              type="button"
+              onClick={() => setShowReleaseModal(false)}
+              className="w-full py-3 rounded-2xl bg-neutral-800 hover:bg-neutral-700 text-white font-bold text-xs active:scale-95 transition-all cursor-pointer mt-1"
+            >
+              Cerrar
+            </button>
+          </div>
+        </div>
+      )}
+
+      {/* 8. BOTTOM SHEET PARA EDITAR CUENTA */}
       {isEditingAccount && (
         <div className="fixed inset-0 z-50 flex items-end justify-center">
           <div className="fixed inset-0 bg-black/75 backdrop-blur-sm transition-opacity" onClick={closeAccountEdit} />

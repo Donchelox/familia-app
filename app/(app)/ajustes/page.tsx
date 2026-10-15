@@ -1,5 +1,6 @@
 import { getContext } from '@/lib/family'
 import AjustesHubView from '@/components/AjustesHubView'
+import { APP_VERSION } from '@/lib/version'
 
 export default async function AjustesPage() {
   const { supabase, familyId, familyName, role } = await getContext()
@@ -45,6 +46,7 @@ export default async function AjustesPage() {
       isAdmin={role === 'admin'}
       medRemindersEnabled={medRemindersEnabled}
       medReminderInterval={medReminderInterval}
+      appVersion={APP_VERSION}
     />
   )
 }
