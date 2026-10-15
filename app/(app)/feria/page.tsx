@@ -50,7 +50,7 @@ export default function FeriaPage() {
     // 1. Cargar de inmediato desde Dexie (persistencia offline sin latencia de red)
     try {
       const fallbackFamId = await getOfflineFamilyId()
-      if (!familyId) setFamilyId(fallbackFamId)
+      if (!familyId && fallbackFamId) setFamilyId(fallbackFamId)
 
       const localData = await offlineDB.shopping_lists.toArray()
       const localFeria = localData
@@ -58,7 +58,7 @@ export default function FeriaPage() {
         .map((i) => ({ ...i, quantity: (i as any).quantity || '1 kg' }))
       if (localFeria.length > 0) {
         setItems(localFeria)
-        if (localFeria[0].family_id) setFamilyId(localFeria[0].family_id)
+        if (localFeria[0].family_id && !familyId) setFamilyId(localFeria[0].family_id)
         setLoading(false)
       }
     } catch (e) {
@@ -68,12 +68,43 @@ export default function FeriaPage() {
     // 2. Si hay conexión, descargar de Supabase y sincronizar caché local Dexie
     if (typeof navigator !== 'undefined' && navigator.onLine) {
       try {
-        const { data } = await supabase
+        let currentFamId = familyId
+        if (!currentFamId) {
+          try {
+            const { data: memberData } = await supabase
+              .from('members')
+              .select('family_id')
+              .limit(1)
+              .maybeSingle()
+            if (memberData?.family_id) {
+              currentFamId = memberData.family_id
+              setFamilyId(memberData.family_id)
+            }
+          } catch {}
+        }
+        if (!currentFamId) {
+          currentFamId = await getOfflineFamilyId()
+          if (currentFamId) setFamilyId(currentFamId)
+        }
+
+        let query = supabase
           .from('shopping_items')
           .select('*')
           .order('created_at', { ascending: false })
 
-        if (data) {
+        if (currentFamId) {
+          query = query.eq('family_id', currentFamId)
+        }
+
+        const timeoutPromise = new Promise<{ data: any[]; error: any }>((_, reject) =>
+          setTimeout(() => reject(new Error('Timeout de consulta remota')), 8000)
+        )
+
+        const { data, error } = await Promise.race([query, timeoutPromise])
+
+        if (error) throw error
+
+        if (data && data.length > 0) {
           const feriaOnly = data.filter((item: any) => {
             const listVal = (item.list || item.location || '').toLowerCase()
             return listVal === 'feria'
@@ -90,7 +121,8 @@ export default function FeriaPage() {
             if (!unsyncedMap.has(rem.id)) mergedMap.set(rem.id, rem)
           })
 
-          setItems(Array.from(mergedMap.values()))
+          const finalItems = Array.from(mergedMap.values())
+          setItems(finalItems)
           if (data.length > 0 && data[0].family_id) {
             setFamilyId(data[0].family_id)
           }
@@ -115,11 +147,13 @@ export default function FeriaPage() {
           }
         }
       } catch (err) {
-        console.warn('[Offline] Petición remota fallida, usando caché local:', err)
+        console.warn('[Offline] Petición remota fallida o con timeout, usando caché local:', err)
+      } finally {
+        setLoading(false)
       }
+    } else {
+      setLoading(false)
     }
-
-    setLoading(false)
   }
 
   useEffect(() => {
