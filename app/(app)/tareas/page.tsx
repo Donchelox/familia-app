@@ -93,93 +93,196 @@ export default function TareasPage() {
     }
   }
 
+  const { mutate } = useOfflineMutation()
+
   async function loadData() {
     setLoading(true)
 
-    // 1. Obtener la sesión del usuario conectado
-    const { data: userRes } = await supabase.auth.getUser()
-    const userId = userRes?.user?.id
-
-    let currentFamId = familyId
-    if (!currentFamId && userId) {
-      const { data: memberUser } = await supabase
-        .from('members')
-        .select('family_id')
-        .eq('user_id', userId)
-        .maybeSingle()
-
-      if (memberUser?.family_id) {
-        currentFamId = memberUser.family_id
-        setFamilyId(memberUser.family_id)
-      } else {
-        const { data: fmUser } = await supabase
-          .from('family_members')
-          .select('family_id')
-          .limit(1)
-          .maybeSingle()
-        if (fmUser?.family_id) {
-          currentFamId = fmUser.family_id
-          setFamilyId(fmUser.family_id)
+    // 1. CARGA INMEDIATA DESDE DEXIE (OFFLINE-FIRST SIN LATENCIA DE RED)
+    let localTodos: TodoItem[] = []
+    try {
+      const stored = await offlineDB.todos.toArray()
+      if (stored && stored.length > 0) {
+        localTodos = stored.map((t) => ({
+          id: t.id,
+          family_id: t.family_id,
+          title: t.title,
+          assigned_to: t.assigned_to,
+          due_date: t.due_date,
+          done: t.done,
+          done_at: t.done_at,
+          created_at: t.created_at,
+        }))
+        setTodos(localTodos)
+        if (stored[0]?.family_id && !familyId) {
+          setFamilyId(stored[0].family_id)
         }
+        setLoading(false)
+      }
+    } catch (err) {
+      console.warn('[Offline] Error cargando tareas locales:', err)
+    }
+
+    // 2. Obtener la sesión del usuario conectado
+    let currentFamId = familyId
+    try {
+      const { data: userRes } = await supabase.auth.getUser()
+      const userId = userRes?.user?.id
+
+      if (!currentFamId && userId) {
+        const { data: memberUser } = await supabase
+          .from('members')
+          .select('family_id')
+          .eq('user_id', userId)
+          .maybeSingle()
+
+        if (memberUser?.family_id) {
+          currentFamId = memberUser.family_id
+          setFamilyId(memberUser.family_id)
+        } else {
+          const { data: fmUser } = await supabase
+            .from('family_members')
+            .select('family_id')
+            .limit(1)
+            .maybeSingle()
+          if (fmUser?.family_id) {
+            currentFamId = fmUser.family_id
+            setFamilyId(fmUser.family_id)
+          }
+        }
+      }
+    } catch {}
+
+    // 3. Unificar integrantes: 'members' + 'family_members'
+    if (typeof navigator !== 'undefined' && navigator.onLine) {
+      try {
+        const membersMap = new Map<string, FamilyMember>()
+
+        let mQuery = supabase.from('members').select('user_id, display_name, email')
+        if (currentFamId) mQuery = mQuery.eq('family_id', currentFamId)
+        const { data: mList } = await mQuery
+
+        if (mList) {
+          mList.forEach((m: any) => {
+            const name = m.display_name?.trim() || m.email?.split('@')[0] || 'Propietario'
+            if (name) {
+              membersMap.set(name.toLowerCase(), {
+                id: m.user_id || name,
+                name: name,
+              })
+            }
+          })
+        }
+
+        let fmQuery = supabase.from('family_members').select('id, name')
+        if (currentFamId) fmQuery = fmQuery.eq('family_id', currentFamId)
+        const { data: fmList } = await fmQuery
+
+        if (fmList) {
+          fmList.forEach((fm: any) => {
+            const name = fm.name?.trim()
+            if (name && !membersMap.has(name.toLowerCase())) {
+              membersMap.set(name.toLowerCase(), {
+                id: fm.id,
+                name: name,
+              })
+            }
+          })
+        }
+
+        setMembers(Array.from(membersMap.values()))
+      } catch (err) {
+        console.warn('[Offline] Error cargando integrantes remotos:', err)
       }
     }
 
-    // 2. Unificar integrantes: 'members' (tú y usuarios auth) + 'family_members' (demás integrantes)
-    const membersMap = new Map<string, FamilyMember>()
+    // 4. Si hay conexión a internet, sincronizar con Supabase SIN pisar tareas pendientes offline
+    if (typeof navigator !== 'undefined' && navigator.onLine) {
+      try {
+        let todosQuery = supabase
+          .from('todos')
+          .select('*')
+          .order('created_at', { ascending: false })
 
-    // A) Traer miembros auth de 'members' (incluyéndote a ti)
-    let mQuery = supabase.from('members').select('user_id, display_name, email')
-    if (currentFamId) mQuery = mQuery.eq('family_id', currentFamId)
-    const { data: mList } = await mQuery
-
-    if (mList) {
-      mList.forEach((m: any) => {
-        const name = m.display_name?.trim() || m.email?.split('@')[0] || 'Propietario'
-        if (name) {
-          membersMap.set(name.toLowerCase(), {
-            id: m.user_id || name,
-            name: name,
-          })
+        if (currentFamId) {
+          todosQuery = todosQuery.eq('family_id', currentFamId)
         }
-      })
-    }
 
-    // B) Traer familiares de 'family_members'
-    let fmQuery = supabase.from('family_members').select('id, name')
-    if (currentFamId) fmQuery = fmQuery.eq('family_id', currentFamId)
-    const { data: fmList } = await fmQuery
+        const { data: todosRes } = await todosQuery
 
-    if (fmList) {
-      fmList.forEach((fm: any) => {
-        const name = fm.name?.trim()
-        if (name && !membersMap.has(name.toLowerCase())) {
-          membersMap.set(name.toLowerCase(), {
-            id: fm.id,
-            name: name,
+        if (todosRes) {
+          // Obtener tareas que aún no se han sincronizado en Dexie
+          const currentLocal = await offlineDB.todos.toArray()
+          const unsyncedItems = currentLocal.filter((t) => !t._synced)
+          const unsyncedMap = new Map(unsyncedItems.map((t) => [t.id, t]))
+
+          // Mezclar: lo remoto actualizado + lo pendiente local no subido aún
+          const mergedMap = new Map<string, TodoItem>()
+          // 1. Agregar pendientes locales primero para asegurar que nunca desaparezcan
+          unsyncedItems.forEach((it) => {
+            mergedMap.set(it.id, {
+              id: it.id,
+              family_id: it.family_id,
+              title: it.title,
+              assigned_to: it.assigned_to,
+              due_date: it.due_date,
+              done: it.done,
+              done_at: it.done_at,
+              created_at: it.created_at,
+            })
           })
+
+          // 2. Agregar elementos del servidor
+          todosRes.forEach((rem: any) => {
+            if (!unsyncedMap.has(rem.id)) {
+              mergedMap.set(rem.id, rem)
+            }
+          })
+
+          const mergedList = Array.from(mergedMap.values())
+          setTodos(mergedList)
+
+          // Respaldar servidor en Dexie sin sobrescribir los no sincronizados
+          const serverToStore = todosRes
+            .filter((rem: any) => !unsyncedMap.has(rem.id))
+            .map((rem: any) => ({
+              id: rem.id,
+              family_id: rem.family_id,
+              title: rem.title,
+              assigned_to: rem.assigned_to,
+              due_date: rem.due_date,
+              done: rem.done || false,
+              done_at: rem.done_at,
+              created_at: rem.created_at,
+              _synced: true,
+            }))
+
+          if (serverToStore.length > 0) {
+            await offlineDB.todos.bulkPut(serverToStore)
+          }
         }
-      })
+      } catch (err) {
+        console.warn('[Offline] Error descargando tareas de Supabase, manteniendo datos locales:', err)
+      }
     }
 
-    setMembers(Array.from(membersMap.values()))
-
-    // 3. Consultar tareas de 'todos'
-    let todosQuery = supabase
-      .from('todos')
-      .select('*')
-      .order('created_at', { ascending: false })
-
-    if (currentFamId) {
-      todosQuery = todosQuery.eq('family_id', currentFamId)
-    }
-
-    const { data: todosRes } = await todosQuery
-    setTodos(todosRes ?? [])
     setLoading(false)
   }
 
   useEffect(() => {
     loadData()
+
+    // Re-cargar automáticamente si la sincronización en segundo plano sube cambios
+    function handleSyncComplete() {
+      loadData()
+    }
+    window.addEventListener('casa-sync-complete', handleSyncComplete)
+    window.addEventListener('online', handleSyncComplete)
+
+    return () => {
+      window.removeEventListener('casa-sync-complete', handleSyncComplete)
+      window.removeEventListener('online', handleSyncComplete)
+    }
   }, [])
 
   // Abre el sheet si viene del botón + (?action=new)
@@ -189,24 +292,34 @@ export default function TareasPage() {
   async function toggleDone(todo: TodoItem) {
     const nextDone = !todo.done
     const nextDoneAt = nextDone ? new Date().toISOString() : null
+    const targetFamId = todo.family_id || familyId || 'fam_default'
 
-    // 1. Optimistic UI inmediato
+    // 1. Optimistic UI inmediato en React
     setTodos((prev) =>
       prev.map((t) =>
         t.id === todo.id ? { ...t, done: nextDone, done_at: nextDoneAt } : t
       )
     )
 
-    // 2. Sincronizar en remoto si estamos online
-    if (typeof navigator !== 'undefined' && navigator.onLine) {
-      try {
-        await supabase
-          .from('todos')
-          .update({ done: nextDone, done_at: nextDoneAt })
-          .eq('id', todo.id)
-      } catch (e) {
-        console.warn('[Offline] Error actualizando estado de tarea en servidor:', e)
-      }
+    // 2. Persistencia offline garantizada en Dexie y encolado en sync_queue
+    try {
+      await mutate({
+        familyId: targetFamId,
+        entity: 'todos',
+        action: 'UPDATE',
+        entityId: todo.id,
+        payload: {
+          id: todo.id,
+          family_id: targetFamId,
+          title: todo.title,
+          assigned_to: todo.assigned_to,
+          due_date: todo.due_date,
+          done: nextDone,
+          done_at: nextDoneAt,
+        },
+      })
+    } catch (e) {
+      console.warn('[Offline] Error mutando estado de tarea localmente:', e)
     }
   }
 
@@ -233,12 +346,16 @@ export default function TareasPage() {
     if (!title.trim()) return
     setSaving(true)
 
-    const targetFamilyId = familyId || 'fam_default'
+    const targetFamilyId = familyId || 'bb16bf3f-db99-4a2f-96e1-4943389bcba2'
     const tempId =
       editingTodo?.id ||
       (typeof crypto !== 'undefined' && crypto.randomUUID
         ? crypto.randomUUID()
-        : `todo_${Date.now()}`)
+        : 'xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx'.replace(/[xy]/g, (c) => {
+            const r = (Math.random() * 16) | 0
+            const v = c === 'x' ? r : (r & 0x3) | 0x8
+            return v.toString(16)
+          }))
 
     const payload: TodoItem = {
       id: tempId,
@@ -251,7 +368,7 @@ export default function TareasPage() {
       created_at: editingTodo?.created_at || new Date().toISOString(),
     }
 
-    // 1. Optimistic UI inmediato
+    // 1. ACTUALIZACIÓN OPTIMISTA INMEDIATA EN REACT
     setTodos((prev) => {
       if (editingTodo) {
         return prev.map((t) => (t.id === editingTodo.id ? payload : t))
@@ -260,26 +377,26 @@ export default function TareasPage() {
       }
     })
 
-    // 2. Si estamos online, enviar a Supabase sin bloquear
-    if (typeof navigator !== 'undefined' && navigator.onLine) {
-      ;(async () => {
-        try {
-          if (editingTodo) {
-            await supabase
-              .from('todos')
-              .update({
-                title: payload.title,
-                assigned_to: payload.assigned_to,
-                due_date: payload.due_date,
-              })
-              .eq('id', editingTodo.id)
-          } else {
-            await supabase.from('todos').insert(payload)
-          }
-        } catch (err) {
-          console.warn('[Offline] Error guardando tarea en servidor:', err)
-        }
-      })()
+    // 2. PERSISTENCIA OFFLINE EN DEXIE Y ENCOLADO EN SYNC_QUEUE
+    try {
+      await mutate({
+        familyId: targetFamilyId,
+        entity: 'todos',
+        action: editingTodo ? 'UPDATE' : 'INSERT',
+        entityId: tempId,
+        payload: {
+          id: tempId,
+          family_id: targetFamilyId,
+          title: payload.title,
+          assigned_to: payload.assigned_to,
+          due_date: payload.due_date,
+          done: payload.done,
+          done_at: payload.done_at,
+          created_at: payload.created_at,
+        },
+      })
+    } catch (err) {
+      console.warn('[Offline] Tarea encolada localmente con éxito:', err)
     }
 
     setIsSheetOpen(false)
@@ -296,19 +413,21 @@ export default function TareasPage() {
     setDeleting(true)
 
     const targetId = editingTodo.id
+    const targetFamId = editingTodo.family_id || familyId || 'fam_default'
 
     // 1. Optimistic UI delete
     setTodos((prev) => prev.filter((t) => t.id !== targetId))
 
-    // 2. Supabase delete si estamos online
-    if (typeof navigator !== 'undefined' && navigator.onLine) {
-      ;(async () => {
-        try {
-          await supabase.from('todos').delete().eq('id', targetId)
-        } catch (err) {
-          console.warn('[Offline] Error eliminando tarea en servidor:', err)
-        }
-      })()
+    // 2. Mutación offline-first (elimina de Dexie y encola DELETE para Supabase)
+    try {
+      await mutate({
+        familyId: targetFamId,
+        entity: 'todos',
+        action: 'DELETE',
+        entityId: targetId,
+      })
+    } catch (err) {
+      console.warn('[Offline] Eliminación encolada localmente:', err)
     }
 
     setIsSheetOpen(false)

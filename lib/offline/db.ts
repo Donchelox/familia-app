@@ -4,19 +4,21 @@ import type {
   LocalSchoolTask,
   LocalExam,
   LocalShoppingItem,
+  LocalTodo,
   SyncQueueItem,
 } from './types'
 
 /**
  * Base de datos local IndexedDB para Casa App utilizando Dexie.js
  * Capa de persistencia Offline-First para medicamentos, tareas escolares,
- * exámenes, listas de compras y la cola transaccional de sincronización.
+ * exámenes, listas de compras, quehaceres del hogar y la cola transaccional de sincronización.
  */
 export class CasaOfflineDatabase extends Dexie {
   medicines!: Table<LocalMedicine, string>
   school_tasks!: Table<LocalSchoolTask, string>
   exams!: Table<LocalExam, string>
   shopping_lists!: Table<LocalShoppingItem, string>
+  todos!: Table<LocalTodo, string>
   sync_queue!: Table<SyncQueueItem, number>
 
   constructor() {
@@ -32,6 +34,15 @@ export class CasaOfflineDatabase extends Dexie {
       shopping_lists: 'id, family_id, list, name, done, created_at, _synced',
       sync_queue: '++id, mutationId, familyId, entity, action, status, timestamp',
     })
+
+    this.version(2).stores({
+      medicines: 'id, family_id, person, name, created_at, _synced',
+      school_tasks: 'id, family_id, subject, due, due_date, done, created_at, _synced',
+      exams: 'id, family_id, subject, test_date, created_at, _synced',
+      shopping_lists: 'id, family_id, list, name, done, created_at, _synced',
+      todos: 'id, family_id, title, assigned_to, due_date, done, created_at, _synced',
+      sync_queue: '++id, mutationId, familyId, entity, action, status, timestamp',
+    })
   }
 
   /**
@@ -43,12 +54,14 @@ export class CasaOfflineDatabase extends Dexie {
       this.school_tasks,
       this.exams,
       this.shopping_lists,
+      this.todos,
       this.sync_queue,
     ], async () => {
       await this.medicines.clear()
       await this.school_tasks.clear()
       await this.exams.clear()
       await this.shopping_lists.clear()
+      await this.todos.clear()
       await this.sync_queue.clear()
     })
   }

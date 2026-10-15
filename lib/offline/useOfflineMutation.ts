@@ -13,6 +13,17 @@ interface MutationOptions {
   payload?: Record<string, any>
 }
 
+function safeUUID(): string {
+  if (typeof crypto !== 'undefined' && typeof crypto.randomUUID === 'function') {
+    return crypto.randomUUID()
+  }
+  return 'xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx'.replace(/[xy]/g, (c) => {
+    const r = (Math.random() * 16) | 0
+    const v = c === 'x' ? r : (r & 0x3) | 0x8
+    return v.toString(16)
+  })
+}
+
 export function useOfflineMutation() {
   const [isMutating, setIsMutating] = useState(false)
   const [error, setError] = useState<string | null>(null)
@@ -29,13 +40,8 @@ export function useOfflineMutation() {
       setError(null)
 
       try {
-        // Generar UUID consistente si no se proporcionó
-        const finalId =
-          entityId ||
-          payload.id ||
-          (typeof crypto !== 'undefined' && crypto.randomUUID
-            ? crypto.randomUUID()
-            : `loc_${Date.now()}_${Math.random().toString(36).slice(2, 9)}`)
+        // Generar UUID v4 válido y consistente para PostgreSQL
+        const finalId = entityId || payload.id || safeUUID()
 
         const table = offlineDB[entity] as any
         const now = Date.now()
@@ -55,10 +61,7 @@ export function useOfflineMutation() {
         }
 
         // 2. ENCOLAR EN LA COLA TRANSACCIONAL (sync_queue)
-        const mutationId =
-          typeof crypto !== 'undefined' && crypto.randomUUID
-            ? crypto.randomUUID()
-            : `mut_${now}_${Math.random().toString(36).slice(2, 7)}`
+        const mutationId = safeUUID()
 
         await offlineDB.sync_queue.add({
           mutationId,

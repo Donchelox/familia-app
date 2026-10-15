@@ -9,6 +9,8 @@ import { createClient } from '@/lib/supabase/client'
 import { useActionParam } from '@/lib/useActionParam'
 import { translateErrorMessage } from '@/lib/formatErrors'
 import { isSchoolTestActive } from '@/lib/dates'
+import { offlineDB } from '@/lib/offline/db'
+import { useOfflineMutation } from '@/lib/offline/useOfflineMutation'
 
 interface SchoolScheduleBlock {
   id: string
@@ -137,6 +139,8 @@ export default function ColegioPage() {
   const [saving, setSaving] = useState(false)
   const [deleting, setDeleting] = useState(false)
 
+  const { mutate } = useOfflineMutation()
+
   const orangeGradient = {
     background: 'linear-gradient(134.95deg, #F76911 47.75%, #F2A957 100%)',
   }
@@ -145,79 +149,206 @@ export default function ColegioPage() {
   async function loadData() {
     setLoading(true)
 
-    const { data: memberData } = await supabase
-      .from('members')
-      .select('family_id')
-      .limit(1)
-      .maybeSingle()
+    // 1. CARGA INMEDIATA DESDE DEXIE (OFFLINE-FIRST)
+    try {
+      const [localTasks, localExams] = await Promise.all([
+        offlineDB.school_tasks.toArray(),
+        offlineDB.exams.toArray(),
+      ])
 
-    const currentFamId = memberData?.family_id || null
-    if (currentFamId) setFamilyId(currentFamId)
-
-    let schedQuery = supabase
-      .from('school_schedule')
-      .select('*')
-      .order('time_start', { ascending: true })
-
-    let testsQuery = supabase
-      .from('school_tests')
-      .select('*')
-      .order('test_date', { ascending: true })
-
-    let hwQuery = supabase
-      .from('school_homework')
-      .select('*')
-      .order('created_at', { ascending: false })
-
-    if (currentFamId) {
-      schedQuery = schedQuery.eq('family_id', currentFamId)
-      testsQuery = testsQuery.eq('family_id', currentFamId)
-      hwQuery = hwQuery.eq('family_id', currentFamId)
-    }
-
-    const [schedRes, testsRes, hwRes] = await Promise.all([schedQuery, testsQuery, hwQuery])
-
-    if (!schedRes.data || schedRes.data.length === 0) {
-      const fallbackList: SchoolScheduleBlock[] = DEFAULT_DIEGO_SCHEDULE.map((item, idx) => ({
-        ...item,
-        id: `local-${idx}`,
-        valid_until: '2026-12-31',
-        family_id: currentFamId || undefined,
-      }))
-      setSchedule(fallbackList)
-
-      if (currentFamId) {
-        supabase
-          .from('school_schedule')
-          .insert(
-            DEFAULT_DIEGO_SCHEDULE.map((item) => ({
-              ...item,
-              family_id: currentFamId,
-              valid_until: '2026-12-31',
-            }))
-          )
-          .then(() => {})
+      if (localTasks && localTasks.length > 0) {
+        setHomework(
+          localTasks.map((t) => ({
+            id: t.id,
+            family_id: t.family_id,
+            subject: t.subject,
+            task: t.task,
+            due: t.due,
+            due_date: t.due_date || t.due,
+            done: t.done,
+            done_at: t.done_at,
+          }))
+        )
       }
-    } else {
-      setSchedule(schedRes.data)
+
+      if (localExams && localExams.length > 0) {
+        setTests(
+          localExams
+            .filter((e) => isSchoolTestActive(e.test_date))
+            .map((e) => ({
+              id: e.id,
+              family_id: e.family_id,
+              subject: e.subject,
+              topic: e.topic,
+              test_date: e.test_date,
+            }))
+        )
+      }
+
+      if (localTasks.length > 0 || localExams.length > 0) {
+        setLoading(false)
+      }
+    } catch (e) {
+      console.warn('[Offline] Error leyendo colegio local:', e)
     }
 
-    const rawTests: SchoolTest[] = testsRes.data ?? []
-    const activeTests = rawTests.filter((t) => isSchoolTestActive(t.test_date))
-    setTests(activeTests)
+    let currentFamId = familyId
+    if (typeof navigator !== 'undefined' && navigator.onLine) {
+      try {
+        const { data: memberData } = await supabase
+          .from('members')
+          .select('family_id')
+          .limit(1)
+          .maybeSingle()
 
-    // Borrado automático de pruebas vencidas (pasadas las 20:00 hrs del día de la prueba o días posteriores)
-    const expiredTestIds = rawTests.filter((t) => !isSchoolTestActive(t.test_date)).map((t) => t.id)
-    if (expiredTestIds.length > 0 && currentFamId) {
-      supabase.from('school_tests').delete().in('id', expiredTestIds).then(() => {})
+        if (memberData?.family_id) {
+          currentFamId = memberData.family_id
+          setFamilyId(memberData.family_id)
+        }
+      } catch {}
+
+      try {
+        let schedQuery = supabase
+          .from('school_schedule')
+          .select('*')
+          .order('time_start', { ascending: true })
+
+        let testsQuery = supabase
+          .from('school_tests')
+          .select('*')
+          .order('test_date', { ascending: true })
+
+        let hwQuery = supabase
+          .from('school_homework')
+          .select('*')
+          .order('created_at', { ascending: false })
+
+        if (currentFamId) {
+          schedQuery = schedQuery.eq('family_id', currentFamId)
+          testsQuery = testsQuery.eq('family_id', currentFamId)
+          hwQuery = hwQuery.eq('family_id', currentFamId)
+        }
+
+        const [schedRes, testsRes, hwRes] = await Promise.all([schedQuery, testsQuery, hwQuery])
+
+        if (!schedRes.data || schedRes.data.length === 0) {
+          const fallbackList: SchoolScheduleBlock[] = DEFAULT_DIEGO_SCHEDULE.map((item, idx) => ({
+            ...item,
+            id: `local-${idx}`,
+            valid_until: '2026-12-31',
+            family_id: currentFamId || undefined,
+          }))
+          setSchedule(fallbackList)
+        } else {
+          setSchedule(schedRes.data)
+        }
+
+        // Manejo de pruebas remotas + pendientes locales
+        const rawTests: SchoolTest[] = testsRes.data ?? []
+        const currentLocalExams = await offlineDB.exams.toArray()
+        const unsyncedExams = currentLocalExams.filter((e) => !e._synced)
+        const unsyncedExamsMap = new Map(unsyncedExams.map((e) => [e.id, e]))
+
+        const mergedTestsMap = new Map<string, SchoolTest>()
+        unsyncedExams.forEach((e) => {
+          if (isSchoolTestActive(e.test_date)) {
+            mergedTestsMap.set(e.id, {
+              id: e.id,
+              family_id: e.family_id,
+              subject: e.subject,
+              topic: e.topic,
+              test_date: e.test_date,
+            })
+          }
+        })
+
+        rawTests.forEach((t) => {
+          if (isSchoolTestActive(t.test_date) && !unsyncedExamsMap.has(t.id)) {
+            mergedTestsMap.set(t.id, t)
+          }
+        })
+        setTests(Array.from(mergedTestsMap.values()))
+
+        // Guardar pruebas limpias en Dexie
+        const validExamsToStore = rawTests
+          .filter((t) => !unsyncedExamsMap.has(t.id))
+          .map((t) => ({
+            id: t.id,
+            family_id: t.family_id || currentFamId || '',
+            subject: t.subject,
+            topic: t.topic,
+            test_date: t.test_date,
+            _synced: true,
+          }))
+        if (validExamsToStore.length > 0) {
+          await offlineDB.exams.bulkPut(validExamsToStore)
+        }
+
+        // Manejo de tareas escolares remotas + pendientes locales
+        const rawHw: SchoolHomework[] = hwRes.data ?? []
+        const currentLocalTasks = await offlineDB.school_tasks.toArray()
+        const unsyncedTasks = currentLocalTasks.filter((t) => !t._synced)
+        const unsyncedTasksMap = new Map(unsyncedTasks.map((t) => [t.id, t]))
+
+        const mergedHwMap = new Map<string, SchoolHomework>()
+        unsyncedTasks.forEach((t) => {
+          mergedHwMap.set(t.id, {
+            id: t.id,
+            family_id: t.family_id,
+            subject: t.subject,
+            task: t.task,
+            due: t.due,
+            due_date: t.due_date || t.due,
+            done: t.done,
+            done_at: t.done_at,
+          })
+        })
+
+        rawHw.forEach((h) => {
+          if (!unsyncedTasksMap.has(h.id)) {
+            mergedHwMap.set(h.id, h)
+          }
+        })
+        setHomework(Array.from(mergedHwMap.values()))
+
+        // Guardar tareas escolares limpias en Dexie
+        const validTasksToStore = rawHw
+          .filter((h) => !unsyncedTasksMap.has(h.id))
+          .map((h) => ({
+            id: h.id,
+            family_id: h.family_id || currentFamId || '',
+            subject: h.subject,
+            task: h.task,
+            due: h.due || h.due_date || '',
+            due_date: h.due_date || h.due,
+            done: h.done || false,
+            done_at: h.done_at,
+            _synced: true,
+          }))
+        if (validTasksToStore.length > 0) {
+          await offlineDB.school_tasks.bulkPut(validTasksToStore)
+        }
+      } catch (err) {
+        console.warn('[Offline] Error actualizando datos escolares de Supabase:', err)
+      }
     }
 
-    setHomework(hwRes.data ?? [])
     setLoading(false)
   }
 
   useEffect(() => {
     loadData()
+
+    function handleSyncComplete() {
+      loadData()
+    }
+    window.addEventListener('casa-sync-complete', handleSyncComplete)
+    window.addEventListener('online', handleSyncComplete)
+
+    return () => {
+      window.removeEventListener('casa-sync-complete', handleSyncComplete)
+      window.removeEventListener('online', handleSyncComplete)
+    }
   }, [])
 
   // Abre el sheet si viene del botón + (?action=new-homework | new-test)
@@ -227,19 +358,36 @@ export default function ColegioPage() {
   async function toggleHw(hw: SchoolHomework) {
     const nextDone = !hw.done
     const nextDoneAt = nextDone ? new Date().toISOString() : null
+    const targetFamId = hw.family_id || familyId || 'bb16bf3f-db99-4a2f-96e1-4943389bcba2'
 
+    // Optimistic UI en React
     setHomework((prev) =>
       prev.map((item) =>
         item.id === hw.id ? { ...item, done: nextDone, done_at: nextDoneAt } : item
       )
     )
 
-    await supabase
-      .from('school_homework')
-      .update({ done: nextDone, done_at: nextDoneAt })
-      .eq('id', hw.id)
-
-    router.refresh()
+    // Persistencia offline inmediata en Dexie y encolado en sync_queue
+    try {
+      await mutate({
+        familyId: targetFamId,
+        entity: 'school_tasks',
+        action: 'UPDATE',
+        entityId: hw.id,
+        payload: {
+          id: hw.id,
+          family_id: targetFamId,
+          subject: hw.subject,
+          task: hw.task,
+          due: hw.due || hw.due_date,
+          due_date: hw.due_date || hw.due,
+          done: nextDone,
+          done_at: nextDoneAt,
+        },
+      })
+    } catch (e) {
+      console.warn('[Offline] Error al actualizar estado de tarea escolar:', e)
+    }
   }
 
   // Modos de apertura del modal
@@ -354,64 +502,83 @@ export default function ColegioPage() {
         setSaving(false)
         return
       }
-      const payload: any = {
+      const tempId =
+        editingId ||
+        (typeof crypto !== 'undefined' && crypto.randomUUID
+          ? crypto.randomUUID()
+          : 'xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx'.replace(/[xy]/g, (c) => {
+              const r = (Math.random() * 16) | 0
+              const v = c === 'x' ? r : (r & 0x3) | 0x8
+              return v.toString(16)
+            }))
+
+      const payload: SchoolTest = {
+        id: tempId,
         subject,
         topic: taskOrTopic.trim(),
         test_date: dateVal || new Date().toISOString().split('T')[0],
+        family_id: targetFamilyId || undefined,
       }
-      if (targetFamilyId) payload.family_id = targetFamilyId
 
-      if (editingId) {
-        const { error } = await supabase
-          .from('school_tests')
-          .update(payload)
-          .eq('id', editingId)
-        if (error) {
-          alert(`Error al actualizar prueba: ${translateErrorMessage(error)}`)
-          setSaving(false)
-          return
-        }
-      } else {
-        const { error } = await supabase.from('school_tests').insert(payload)
-        if (error) {
-          alert(`Error al guardar prueba: ${translateErrorMessage(error)}`)
-          setSaving(false)
-          return
-        }
+      setTests((prev) => {
+        if (editingId) return prev.map((t) => (t.id === editingId ? payload : t))
+        return [...prev, payload]
+      })
+
+      try {
+        await mutate({
+          familyId: targetFamilyId || 'bb16bf3f-db99-4a2f-96e1-4943389bcba2',
+          entity: 'exams',
+          action: editingId ? 'UPDATE' : 'INSERT',
+          entityId: tempId,
+          payload,
+        })
+      } catch (err) {
+        console.warn('[Offline] Error guardando prueba escolar localmente:', err)
       }
-    } 
+    }
     // C) TAREA ESCOLAR (usa 'task')
     else {
       if (!taskOrTopic.trim()) {
         setSaving(false)
         return
       }
-      const payload: any = {
+      const tempId =
+        editingId ||
+        (typeof crypto !== 'undefined' && crypto.randomUUID
+          ? crypto.randomUUID()
+          : 'xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx'.replace(/[xy]/g, (c) => {
+              const r = (Math.random() * 16) | 0
+              const v = c === 'x' ? r : (r & 0x3) | 0x8
+              return v.toString(16)
+            }))
+
+      const isDone = editingId ? (homework.find((h) => h.id === editingId)?.done ?? false) : false
+      const payload: SchoolHomework = {
+        id: tempId,
         subject,
         task: taskOrTopic.trim(),
         due: dateVal || null,
         due_date: dateVal || null,
+        done: isDone,
+        family_id: targetFamilyId || undefined,
       }
-      if (targetFamilyId) payload.family_id = targetFamilyId
 
-      if (editingId) {
-        const { error } = await supabase
-          .from('school_homework')
-          .update(payload)
-          .eq('id', editingId)
-        if (error) {
-          alert(`Error al actualizar tarea: ${translateErrorMessage(error)}`)
-          setSaving(false)
-          return
-        }
-      } else {
-        payload.done = false
-        const { error } = await supabase.from('school_homework').insert(payload)
-        if (error) {
-          alert(`Error al guardar tarea: ${translateErrorMessage(error)}`)
-          setSaving(false)
-          return
-        }
+      setHomework((prev) => {
+        if (editingId) return prev.map((h) => (h.id === editingId ? payload : h))
+        return [payload, ...prev]
+      })
+
+      try {
+        await mutate({
+          familyId: targetFamilyId || 'bb16bf3f-db99-4a2f-96e1-4943389bcba2',
+          entity: 'school_tasks',
+          action: editingId ? 'UPDATE' : 'INSERT',
+          entityId: tempId,
+          payload,
+        })
+      } catch (err) {
+        console.warn('[Offline] Error guardando tarea escolar localmente:', err)
       }
     }
 
@@ -419,8 +586,6 @@ export default function ColegioPage() {
     setIsSheetOpen(false)
     setTaskOrTopic('')
     setDateVal('')
-    await loadData()
-    router.refresh()
   }
 
   // Eliminar
@@ -435,6 +600,8 @@ export default function ColegioPage() {
     if (!confirm(msg)) return
     setDeleting(true)
 
+    const targetFamId = familyId || 'bb16bf3f-db99-4a2f-96e1-4943389bcba2'
+
     if (modalType === 'schedule') {
       if (!editingId.startsWith('local-')) {
         await supabase.from('school_schedule').delete().eq('id', editingId)
@@ -442,15 +609,33 @@ export default function ColegioPage() {
         setSchedule((prev) => prev.filter((b) => b.id !== editingId))
       }
     } else if (modalType === 'test') {
-      await supabase.from('school_tests').delete().eq('id', editingId)
+      setTests((prev) => prev.filter((t) => t.id !== editingId))
+      try {
+        await mutate({
+          familyId: targetFamId,
+          entity: 'exams',
+          action: 'DELETE',
+          entityId: editingId,
+        })
+      } catch (err) {
+        console.warn('[Offline] Error eliminando prueba escolar:', err)
+      }
     } else {
-      await supabase.from('school_homework').delete().eq('id', editingId)
+      setHomework((prev) => prev.filter((h) => h.id !== editingId))
+      try {
+        await mutate({
+          familyId: targetFamId,
+          entity: 'school_tasks',
+          action: 'DELETE',
+          entityId: editingId,
+        })
+      } catch (err) {
+        console.warn('[Offline] Error eliminando tarea escolar:', err)
+      }
     }
 
     setDeleting(false)
     setIsSheetOpen(false)
-    await loadData()
-    router.refresh()
   }
 
   const currentDayBlocks = schedule

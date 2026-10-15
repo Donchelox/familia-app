@@ -1,5 +1,11 @@
 import { SupabaseClient } from '@supabase/supabase-js'
-import { todayStr, weekday, isSchoolTestActive } from '@/lib/dates'
+import {
+  todayStr,
+  nowHHMM,
+  weekday,
+  isSchoolTestActive,
+  isMedicationScheduledForDay,
+} from '@/lib/dates'
 
 export interface SummaryMedItem {
   id: string
@@ -52,7 +58,8 @@ export async function fetchMorningSummary(
   targetDate?: string
 ): Promise<MorningSummaryData> {
   const day = targetDate || todayStr()
-  const currentWeekday = weekday() // 1 = lunes ... 7 = domingo
+  const currentWeekday = weekday(day) // 1 = lunes ... 7 = domingo
+  const currentHM = nowHHMM()
 
   const [medsRes, doseLogsRes, testsRes, homeworkRes, todosRes, shoppingRes] =
     await Promise.all([
@@ -97,7 +104,7 @@ export async function fetchMorningSummary(
         .or('done.eq.false,done.is.null'),
     ])
 
-  // Procesar medicamentos de hoy
+  // Procesar medicamentos de hoy: solo los programados estrictamente para este día
   const takenSet = new Set(
     (doseLogsRes.data ?? []).map(
       (l) => `${l.medication_id}|${String(l.time).slice(0, 5)}`
@@ -106,12 +113,10 @@ export async function fetchMorningSummary(
 
   const medsToday: SummaryMedItem[] = []
   for (const m of medsRes.data ?? []) {
-    // Si ya terminó el tratamiento, no aplica
-    if (m.end_date && m.end_date < day) continue
-
-    // Filtro por frecuencia
-    if (m.frequency === 'weekdays' && currentWeekday > 5) continue
-    if (m.frequency === 'weekends' && currentWeekday <= 5) continue
+    // Evalúa si corresponde tomar este medicamento hoy (frecuencia, días específicos, fecha de fin)
+    if (!isMedicationScheduledForDay(m, day, currentWeekday)) {
+      continue
+    }
 
     const times: string[] = Array.isArray(m.times)
       ? m.times
@@ -139,7 +144,7 @@ export async function fetchMorningSummary(
 
   // Pruebas escolares (solo activas hoy según la regla de borrado a las 20:00 hrs)
   const testsToday: SummaryTestItem[] = (testsRes.data ?? [])
-    .filter((t: any) => t.test_date === day && isSchoolTestActive(t.test_date))
+    .filter((t: any) => t.test_date === day && isSchoolTestActive(t.test_date, currentHM, day))
     .map((t: any) => ({
       id: t.id,
       subject: t.subject,
@@ -147,7 +152,7 @@ export async function fetchMorningSummary(
       date: t.test_date,
     }))
 
-  // Tareas escolares
+  // Tareas escolares del día
   const homeworkToday: SummaryHomeworkItem[] = (homeworkRes.data ?? []).map(
     (h) => ({
       id: h.id,
@@ -158,19 +163,29 @@ export async function fetchMorningSummary(
     })
   )
 
-  // Tareas del hogar
-  const todosToday: SummaryTodoItem[] = (todosRes.data ?? []).map((t) => ({
-    id: t.id,
-    title: t.title,
-    dueDate: t.due_date,
-  }))
+  // Tareas del hogar: solo pendientes para hoy o sin fecha futura
+  const todosToday: SummaryTodoItem[] = (todosRes.data ?? [])
+    .filter((t: any) => {
+      if (!t.due_date) return true
+      const dueDay = String(t.due_date).slice(0, 10)
+      return dueDay <= day
+    })
+    .map((t) => ({
+      id: t.id,
+      title: t.title,
+      dueDate: t.due_date,
+    }))
 
   // Conteo de compras
+  // Feria: aplica si hoy es día de feria (Jueves = 4 o Domingo = 7 por defecto) o hay pendientes
+  const isFeriaDay = currentWeekday === 4 || currentWeekday === 7
   let shoppingSuperCount = 0
   let shoppingFeriaCount = 0
   for (const item of shoppingRes.data ?? []) {
     if (item.list === 'feria') {
-      shoppingFeriaCount++
+      if (isFeriaDay) {
+        shoppingFeriaCount++
+      }
     } else {
       shoppingSuperCount++
     }

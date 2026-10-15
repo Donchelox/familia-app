@@ -3,7 +3,7 @@
  * Compatible con Dexie.js e IndexedDB
  */
 
-export type SyncEntity = 'medicines' | 'school_tasks' | 'exams' | 'shopping_lists'
+export type SyncEntity = 'medicines' | 'school_tasks' | 'exams' | 'shopping_lists' | 'todos'
 export type SyncAction = 'INSERT' | 'UPDATE' | 'DELETE'
 export type SyncStatus = 'pending' | 'syncing' | 'failed'
 
@@ -50,6 +50,7 @@ export interface LocalSchoolTask {
   subject: string
   task: string
   due: string
+  due_date?: string | null
   done: boolean
   done_at?: string | null
   created_at?: string
@@ -79,6 +80,22 @@ export interface LocalShoppingItem {
   family_id: string
   list: 'super' | 'feria'
   name: string
+  done: boolean
+  done_at?: string | null
+  created_at?: string
+  _synced?: boolean
+  _updated_at?: number
+}
+
+/**
+ * Entidad local: Tarea del hogar / Quehacer
+ */
+export interface LocalTodo {
+  id: string
+  family_id: string
+  title: string
+  assigned_to?: string | null
+  due_date?: string | null
   done: boolean
   done_at?: string | null
   created_at?: string

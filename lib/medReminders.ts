@@ -37,6 +37,8 @@ export interface PlannedReminder {
   minutesLate: number
 }
 
+import { isMedicationScheduledForDay } from '@/lib/dates'
+
 const toMin = (hm: string) => {
   const [h, m] = hm.split(':').map(Number)
   return h * 60 + m
@@ -44,12 +46,7 @@ const toMin = (hm: string) => {
 
 /** ¿Toca tomar este medicamento hoy? (frecuencia + fecha de término). isoWeekday: 1 = lunes … 7 = domingo */
 export function runsToday(med: Pick<MedRow, 'frequency' | 'end_date'>, day: string, isoWeekday: number): boolean {
-  if (med.end_date && med.end_date < day) return false
-  const freq = med.frequency || 'daily'
-  if (freq === 'weekdays') return isoWeekday <= 5
-  if (freq === 'weekends') return isoWeekday >= 6
-  if (freq.startsWith('days:')) return freq.slice(5).split(',').map(Number).includes(isoWeekday)
-  return true
+  return isMedicationScheduledForDay(med, day, isoWeekday)
 }
 
 /**

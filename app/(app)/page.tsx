@@ -1,6 +1,6 @@
 import Link from 'next/link'
 import { getContext } from '@/lib/family'
-import { todayStr, nowHHMM, rel, isSchoolTestActive } from '@/lib/dates'
+import { todayStr, nowHHMM, rel, isSchoolTestActive, isMedicationScheduledForDay, weekday } from '@/lib/dates'
 import NotificationBell from '@/components/NotificationBell'
 import SyncStatusBadge from '@/components/SyncStatusBadge'
 
@@ -91,27 +91,11 @@ export default async function Inicio() {
   const feriaCount = feriaItems.length
 
   // 3. MEDICINAS PENDIENTES DE HOY (Filtradas según frecuencia y fecha de fin)
-  const currentIsoDay = (() => {
-    const d = new Date().getDay()
-    return d === 0 ? 7 : d
-  })()
+  const currentIsoDay = weekday(today)
 
   const taken = new Set((logsRes.data ?? []).map((l) => `${l.medication_id}|${l.time}`))
   const pendingMeds = (medsRes.data ?? [])
-    .filter((med: any) => {
-      // Si el tratamiento ya venció antes de hoy, no se muestra
-      if (med.end_date && med.end_date < today) return false
-
-      const freq = med.frequency || 'daily'
-      if (freq === 'daily' || freq === 'every_8h' || freq === 'every_12h' || freq === 'as_needed') return true
-      if (freq === 'weekdays') return currentIsoDay >= 1 && currentIsoDay <= 5
-      if (freq === 'weekends') return currentIsoDay === 6 || currentIsoDay === 7
-      if (freq.startsWith('days:')) {
-        const days = freq.replace('days:', '').split(',').map(Number)
-        return days.includes(currentIsoDay)
-      }
-      return true
-    })
+    .filter((med: any) => isMedicationScheduledForDay(med, today, currentIsoDay))
     .flatMap((m: any) =>
       (m.times || []).map((t: string) => ({
         id: m.id,

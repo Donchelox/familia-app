@@ -9,6 +9,7 @@ import type {
   LocalSchoolTask,
   LocalExam,
   LocalShoppingItem,
+  LocalTodo,
 } from './types'
 
 // Mapeo entre entidades Dexie y tablas en Supabase
@@ -17,6 +18,7 @@ const ENTITY_TABLE_MAP: Record<SyncEntity, string> = {
   school_tasks: 'school_homework',
   exams: 'school_tests',
   shopping_lists: 'shopping_items',
+  todos: 'todos',
 }
 
 type SyncListener = (status: {
@@ -211,6 +213,9 @@ class SyncManager {
       }
 
       this.lastSyncTime = new Date()
+      if (typeof window !== 'undefined' && processedCount > 0) {
+        window.dispatchEvent(new CustomEvent('casa-sync-complete', { detail: { processed: processedCount } }))
+      }
     } catch (globalErr) {
       console.error('[SyncManager] Error general en processSyncQueue:', globalErr)
     } finally {
@@ -232,14 +237,15 @@ class SyncManager {
       const supabase = createClient()
 
       // Descargar datos en paralelo desde Supabase
-      const [medsRes, tasksRes, examsRes, shoppingRes] = await Promise.all([
+      const [medsRes, tasksRes, examsRes, shoppingRes, todosRes] = await Promise.all([
         supabase.from('medications').select('*').eq('family_id', familyId),
         supabase.from('school_homework').select('*').eq('family_id', familyId),
         supabase.from('school_tests').select('*').eq('family_id', familyId),
         supabase.from('shopping_items').select('*').eq('family_id', familyId),
+        supabase.from('todos').select('*').eq('family_id', familyId),
       ])
 
-      // 1. Guardar Medicamentos en Dexie
+      // 1. Guardar Medicamentos en Dexie (preservando los pendientes offline)
       if (medsRes.data) {
         const localMeds: LocalMedicine[] = medsRes.data.map((m: any) => ({
           id: m.id,
@@ -263,7 +269,8 @@ class SyncManager {
           family_id: t.family_id,
           subject: t.subject,
           task: t.task,
-          due: t.due,
+          due: t.due || t.due_date || '',
+          due_date: t.due_date || t.due,
           done: t.done || false,
           done_at: t.done_at,
           created_at: t.created_at,
@@ -299,6 +306,22 @@ class SyncManager {
           _synced: true,
         }))
         await offlineDB.shopping_lists.bulkPut(localShopping)
+      }
+
+      // 5. Guardar Tareas del Hogar (todos) en Dexie
+      if (todosRes.data) {
+        const localTodos: LocalTodo[] = todosRes.data.map((t: any) => ({
+          id: t.id,
+          family_id: t.family_id,
+          title: t.title,
+          assigned_to: t.assigned_to,
+          due_date: t.due_date,
+          done: t.done || false,
+          done_at: t.done_at,
+          created_at: t.created_at,
+          _synced: true,
+        }))
+        await offlineDB.todos.bulkPut(localTodos)
       }
 
       this.lastSyncTime = new Date()
