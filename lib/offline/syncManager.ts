@@ -247,81 +247,111 @@ class SyncManager {
 
       // 1. Guardar Medicamentos en Dexie (preservando los pendientes offline)
       if (medsRes.data) {
-        const localMeds: LocalMedicine[] = medsRes.data.map((m: any) => ({
-          id: m.id,
-          family_id: m.family_id,
-          name: m.name,
-          person: m.person,
-          dose: m.dose,
-          times: m.times || [],
-          frequency: m.frequency,
-          end_date: m.end_date,
-          created_at: m.created_at,
-          _synced: true,
-        }))
-        await offlineDB.medicines.bulkPut(localMeds)
+        const currentMeds = await offlineDB.medicines.toArray()
+        const unsyncedIds = new Set(currentMeds.filter((m) => !m._synced).map((m) => m.id))
+        const localMeds: LocalMedicine[] = medsRes.data
+          .filter((m: any) => !unsyncedIds.has(m.id))
+          .map((m: any) => ({
+            id: m.id,
+            family_id: m.family_id,
+            name: m.name,
+            person: m.person,
+            dose: m.dose,
+            times: m.times || [],
+            frequency: m.frequency,
+            end_date: m.end_date,
+            created_at: m.created_at,
+            _synced: true,
+          }))
+        if (localMeds.length > 0) {
+          await offlineDB.medicines.bulkPut(localMeds)
+        }
       }
 
       // 2. Guardar Tareas Escolares en Dexie
       if (tasksRes.data) {
-        const localTasks: LocalSchoolTask[] = tasksRes.data.map((t: any) => ({
-          id: t.id,
-          family_id: t.family_id,
-          subject: t.subject,
-          task: t.task,
-          due: t.due || t.due_date || '',
-          due_date: t.due_date || t.due,
-          done: t.done || false,
-          done_at: t.done_at,
-          created_at: t.created_at,
-          _synced: true,
-        }))
-        await offlineDB.school_tasks.bulkPut(localTasks)
+        const currentTasks = await offlineDB.school_tasks.toArray()
+        const unsyncedIds = new Set(currentTasks.filter((t) => !t._synced).map((t) => t.id))
+        const localTasks: LocalSchoolTask[] = tasksRes.data
+          .filter((t: any) => !unsyncedIds.has(t.id))
+          .map((t: any) => ({
+            id: t.id,
+            family_id: t.family_id,
+            subject: t.subject,
+            task: t.task,
+            due: t.due || t.due_date || '',
+            due_date: t.due_date || t.due,
+            done: t.done || false,
+            done_at: t.done_at,
+            created_at: t.created_at,
+            _synced: true,
+          }))
+        if (localTasks.length > 0) {
+          await offlineDB.school_tasks.bulkPut(localTasks)
+        }
       }
 
       // 3. Guardar Exámenes/Pruebas en Dexie
       if (examsRes.data) {
-        const localExams: LocalExam[] = examsRes.data.map((e: any) => ({
-          id: e.id,
-          family_id: e.family_id,
-          subject: e.subject,
-          topic: e.topic,
-          test_date: e.test_date,
-          created_at: e.created_at,
-          _synced: true,
-        }))
-        await offlineDB.exams.bulkPut(localExams)
+        const currentExams = await offlineDB.exams.toArray()
+        const unsyncedIds = new Set(currentExams.filter((e) => !e._synced).map((e) => e.id))
+        const localExams: LocalExam[] = examsRes.data
+          .filter((e: any) => !unsyncedIds.has(e.id))
+          .map((e: any) => ({
+            id: e.id,
+            family_id: e.family_id,
+            subject: e.subject,
+            topic: e.topic,
+            test_date: e.test_date,
+            created_at: e.created_at,
+            _synced: true,
+          }))
+        if (localExams.length > 0) {
+          await offlineDB.exams.bulkPut(localExams)
+        }
       }
 
       // 4. Guardar Lista de Compras en Dexie
       if (shoppingRes.data) {
-        const localShopping: LocalShoppingItem[] = shoppingRes.data.map((s: any) => ({
-          id: s.id,
-          family_id: s.family_id,
-          list: s.list as 'super' | 'feria',
-          name: s.name,
-          done: s.done || false,
-          done_at: s.done_at,
-          created_at: s.created_at,
-          _synced: true,
-        }))
-        await offlineDB.shopping_lists.bulkPut(localShopping)
+        const currentShop = await offlineDB.shopping_lists.toArray()
+        const unsyncedIds = new Set(currentShop.filter((s) => !s._synced).map((s) => s.id))
+        const localShopping: LocalShoppingItem[] = shoppingRes.data
+          .filter((s: any) => !unsyncedIds.has(s.id))
+          .map((s: any) => ({
+            id: s.id,
+            family_id: s.family_id,
+            list: s.list as 'super' | 'feria',
+            name: s.name,
+            done: s.done || false,
+            done_at: s.done_at,
+            created_at: s.created_at,
+            _synced: true,
+          }))
+        if (localShopping.length > 0) {
+          await offlineDB.shopping_lists.bulkPut(localShopping)
+        }
       }
 
       // 5. Guardar Tareas del Hogar (todos) en Dexie
       if (todosRes.data) {
-        const localTodos: LocalTodo[] = todosRes.data.map((t: any) => ({
-          id: t.id,
-          family_id: t.family_id,
-          title: t.title,
-          assigned_to: t.assigned_to,
-          due_date: t.due_date,
-          done: t.done || false,
-          done_at: t.done_at,
-          created_at: t.created_at,
-          _synced: true,
-        }))
-        await offlineDB.todos.bulkPut(localTodos)
+        const currentTodos = await offlineDB.todos.toArray()
+        const unsyncedIds = new Set(currentTodos.filter((t) => !t._synced).map((t) => t.id))
+        const localTodos: LocalTodo[] = todosRes.data
+          .filter((t: any) => !unsyncedIds.has(t.id))
+          .map((t: any) => ({
+            id: t.id,
+            family_id: t.family_id,
+            title: t.title,
+            assigned_to: t.assigned_to,
+            due_date: t.due_date,
+            done: t.done || false,
+            done_at: t.done_at,
+            created_at: t.created_at,
+            _synced: true,
+          }))
+        if (localTodos.length > 0) {
+          await offlineDB.todos.bulkPut(localTodos)
+        }
       }
 
       this.lastSyncTime = new Date()

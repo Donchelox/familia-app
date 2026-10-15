@@ -10,6 +10,8 @@ import { useActionParam } from '@/lib/useActionParam'
 import { offlineDB } from '@/lib/offline/db'
 import { useOfflineMutation } from '@/lib/offline/useOfflineMutation'
 
+import { getOfflineFamilyId } from '@/lib/offline/familyContext'
+
 interface ShoppingItem {
   id: string
   name: string
@@ -57,6 +59,9 @@ export default function SuperPage() {
 
     // 1. Cargar de inmediato desde Dexie (persistencia offline sin latencia de red)
     try {
+      const fallbackFamId = await getOfflineFamilyId()
+      if (!familyId) setFamilyId(fallbackFamId)
+
       const localData = await offlineDB.shopping_lists.toArray()
       const localSuper = localData.filter((i) => i.list !== 'feria')
       if (localSuper.length > 0) {
@@ -81,24 +86,41 @@ export default function SuperPage() {
             const listVal = (item.list || item.location || '').toLowerCase()
             return listVal !== 'feria'
           })
-          setItems(superOnly)
+
+          // Preservar elementos locales no sincronizados aún
+          const currentLocal = await offlineDB.shopping_lists.toArray()
+          const unsyncedSuper = currentLocal.filter((i) => i.list !== 'feria' && !i._synced)
+          const unsyncedMap = new Map(unsyncedSuper.map((i) => [i.id, i]))
+
+          const mergedMap = new Map<string, ShoppingItem>()
+          unsyncedSuper.forEach((i) => mergedMap.set(i.id, i as any))
+          superOnly.forEach((rem: any) => {
+            if (!unsyncedMap.has(rem.id)) mergedMap.set(rem.id, rem)
+          })
+
+          setItems(Array.from(mergedMap.values()))
           if (data.length > 0 && data[0].family_id) {
             setFamilyId(data[0].family_id)
           }
 
-          // Actualizar base de datos local Dexie
-          await offlineDB.shopping_lists.bulkPut(
-            data.map((item: any) => ({
+          // Actualizar base de datos local Dexie preservando pendientes
+          const serverToStore = superOnly
+            .filter((rem: any) => !unsyncedMap.has(rem.id))
+            .map((item: any) => ({
               id: item.id,
               family_id: item.family_id,
-              list: item.list || 'super',
+              list: 'super' as const,
               name: item.name,
+              category: item.category || 'Abarrotes',
               done: item.done || false,
               done_at: item.done_at,
               created_at: item.created_at,
               _synced: true,
             }))
-          )
+
+          if (serverToStore.length > 0) {
+            await offlineDB.shopping_lists.bulkPut(serverToStore)
+          }
         }
       } catch (err) {
         console.warn('[Offline] Petición remota fallida, usando caché local:', err)
@@ -110,6 +132,17 @@ export default function SuperPage() {
 
   useEffect(() => {
     loadItems()
+
+    function handleSync() {
+      loadItems()
+    }
+    window.addEventListener('casa-sync-complete', handleSync)
+    window.addEventListener('online', handleSync)
+
+    return () => {
+      window.removeEventListener('casa-sync-complete', handleSync)
+      window.removeEventListener('online', handleSync)
+    }
   }, [])
 
   // Abre el sheet si viene del botón + (?action=new)
@@ -117,6 +150,7 @@ export default function SuperPage() {
 
   async function toggleDone(item: ShoppingItem) {
     const nextDone = !item.done
+    const targetFamId = item.family_id || familyId || (await getOfflineFamilyId())
 
     // Optimistic UI inmediato
     setItems((prev) =>
@@ -125,14 +159,15 @@ export default function SuperPage() {
 
     // Mutación Offline-First
     await mutate({
-      familyId: item.family_id || familyId,
+      familyId: targetFamId,
       entity: 'shopping_lists',
       action: 'UPDATE',
       entityId: item.id,
       payload: {
         id: item.id,
-        family_id: item.family_id || familyId,
+        family_id: targetFamId,
         name: item.name,
+        category: item.category || 'Abarrotes',
         list: 'super',
         done: nextDone,
         done_at: nextDone ? new Date().toISOString() : null,
@@ -160,6 +195,8 @@ export default function SuperPage() {
     setSaving(true)
 
     const trimmedName = name.trim()
+    const targetFamId = (editingItem ? editingItem.family_id : familyId) || (await getOfflineFamilyId())
+    if (!familyId) setFamilyId(targetFamId)
 
     if (editingItem) {
       // Actualización optimista local
@@ -168,13 +205,13 @@ export default function SuperPage() {
       )
 
       await mutate({
-        familyId: editingItem.family_id || familyId,
+        familyId: targetFamId,
         entity: 'shopping_lists',
         action: 'UPDATE',
         entityId: editingItem.id,
         payload: {
           id: editingItem.id,
-          family_id: editingItem.family_id || familyId,
+          family_id: targetFamId,
           name: trimmedName,
           list: 'super',
           category,
@@ -191,7 +228,7 @@ export default function SuperPage() {
         name: trimmedName,
         category,
         done: false,
-        family_id: familyId,
+        family_id: targetFamId,
         list: 'super',
       }
 
@@ -199,13 +236,13 @@ export default function SuperPage() {
       setItems((prev) => [newItem, ...prev])
 
       await mutate({
-        familyId,
+        familyId: targetFamId,
         entity: 'shopping_lists',
         action: 'INSERT',
         entityId: tempId,
         payload: {
           id: tempId,
-          family_id: familyId,
+          family_id: targetFamId,
           name: trimmedName,
           list: 'super',
           category,
@@ -224,11 +261,13 @@ export default function SuperPage() {
     if (!confirm(`¿Eliminar "${editingItem.name}" de la lista?`)) return
     setDeleting(true)
 
+    const targetFamId = editingItem.family_id || familyId || (await getOfflineFamilyId())
+
     // Eliminación optimista local
     setItems((prev) => prev.filter((it) => it.id !== editingItem.id))
 
     await mutate({
-      familyId: editingItem.family_id || familyId,
+      familyId: targetFamId,
       entity: 'shopping_lists',
       action: 'DELETE',
       entityId: editingItem.id,

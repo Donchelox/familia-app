@@ -5,64 +5,71 @@ import MedsClientView from '@/components/MedsClientView'
 export const dynamic = 'force-dynamic'
 
 export default async function MedsPage() {
-  const ctx = await getContext()
-  const supabase = ctx.supabase
-
-  // 1. Integrantes del hogar (family_members + usuario actual)
-  const [membersRes, userRes] = await Promise.all([
-    supabase
-      .from('family_members')
-      .select('id, name')
-      .eq('family_id', ctx.familyId)
-      .order('created_at', { ascending: true }),
-    supabase.auth.getUser(),
-  ])
-
-  const user = userRes.data?.user
-  const currentUserName =
-    user?.user_metadata?.full_name ||
-    user?.user_metadata?.name ||
-    'Marcelo Vásquez'
-
-  const membersList: { id: string; name: string }[] = []
-  if (currentUserName) {
-    membersList.push({ id: user?.id || 'me', name: currentUserName })
-  }
-  ;(membersRes.data ?? []).forEach((m) => {
-    if (m.name && !membersList.some((ex) => ex.name.toLowerCase() === m.name.toLowerCase())) {
-      membersList.push({ id: m.id, name: m.name })
-    }
-  })
-
-  // 2. Fecha y hora actual
   const todayStr = getToday()
   const currentHM = nowHHMM()
 
-  // 3. Medicamentos: se traen todos y se filtran si ya superaron su fecha límite
-  const { data: rawMeds } = await supabase
-    .from('medications')
-    .select('id, name, dose, times, person, frequency, end_date')
-    .eq('family_id', ctx.familyId)
-    .order('created_at', { ascending: true })
+  let familyId = ''
+  const membersList: { id: string; name: string }[] = []
+  let activeMeds: any[] = []
+  let takenKeys: string[] = []
 
-  // Si end_date es NULL o >= hoy, sigue vigente
-  const activeMeds = (rawMeds ?? []).filter((med) => {
-    if (!med.end_date) return true
-    return med.end_date >= todayStr
-  })
+  try {
+    const ctx = await getContext()
+    familyId = ctx.familyId
+    const supabase = ctx.supabase
 
-  // 4. Dosis tomadas hoy
-  const { data: doseLogs } = await supabase
-    .from('dose_logs')
-    .select('medication_id, time')
-    .eq('family_id', ctx.familyId)
-    .eq('day', todayStr)
+    // 1. Integrantes del hogar (family_members + usuario actual)
+    const [membersRes, userRes] = await Promise.all([
+      supabase
+        .from('family_members')
+        .select('id, name')
+        .eq('family_id', ctx.familyId)
+        .order('created_at', { ascending: true }),
+      supabase.auth.getUser(),
+    ])
 
-  const takenKeys = (doseLogs ?? []).map((d) => `${d.medication_id}_${d.time}`)
+    const user = userRes.data?.user
+    const currentUserName =
+      user?.user_metadata?.full_name ||
+      user?.user_metadata?.name ||
+      'Marcelo Vásquez'
+
+    if (currentUserName) {
+      membersList.push({ id: user?.id || 'me', name: currentUserName })
+    }
+    ;(membersRes.data ?? []).forEach((m) => {
+      if (m.name && !membersList.some((ex) => ex.name.toLowerCase() === m.name.toLowerCase())) {
+        membersList.push({ id: m.id, name: m.name })
+      }
+    })
+
+    // 2. Medicamentos de Supabase
+    const { data: rawMeds } = await supabase
+      .from('medications')
+      .select('id, name, dose, times, person, frequency, end_date')
+      .eq('family_id', ctx.familyId)
+      .order('created_at', { ascending: true })
+
+    activeMeds = (rawMeds ?? []).filter((med) => {
+      if (!med.end_date) return true
+      return med.end_date >= todayStr
+    })
+
+    // 3. Dosis tomadas hoy
+    const { data: doseLogs } = await supabase
+      .from('dose_logs')
+      .select('medication_id, time')
+      .eq('family_id', ctx.familyId)
+      .eq('day', todayStr)
+
+    takenKeys = (doseLogs ?? []).map((d) => `${d.medication_id}_${d.time}`)
+  } catch (err) {
+    console.debug('[MedsPage] Sin conexión remota al servidor, delegando a persistencia Dexie:', err)
+  }
 
   return (
     <MedsClientView
-      familyId={ctx.familyId}
+      familyId={familyId}
       meds={activeMeds}
       members={membersList}
       takenKeys={takenKeys}

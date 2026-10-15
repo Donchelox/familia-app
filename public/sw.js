@@ -3,7 +3,7 @@
  * Soporte Offline-First (PWA), Caching de App Shell, RSC Flight Streams, Background Sync y Push
  */
 
-const CACHE_VERSION = 'casa-pwa-v4.0'
+const CACHE_VERSION = 'casa-pwa-v5.0'
 const STATIC_CACHE = `${CACHE_VERSION}-static`
 const DYNAMIC_CACHE = `${CACHE_VERSION}-dynamic`
 const APP_SHELL_CACHE = `${CACHE_VERSION}-shell`
@@ -24,68 +24,72 @@ const APP_SHELL_URLS = [
   '/splash-art.webp',
 ]
 
-// --- 1. INSTALACIÓN Y PRECACHE COMPLETO (HTML, RSC Y CSS REALES) ---
-self.addEventListener('install', (event) => {
-  event.waitUntil(
-    (async () => {
-      const shellCache = await caches.open(APP_SHELL_CACHE)
-      const staticCache = await caches.open(STATIC_CACHE)
+/**
+ * Precachea las rutas principales tanto en HTML como en payload RSC
+ */
+async function precacheRoutes(routes) {
+  const shellCache = await caches.open(APP_SHELL_CACHE)
+  const staticCache = await caches.open(STATIC_CACHE)
 
-      for (const url of APP_SHELL_URLS) {
-        try {
-          // A) Precache de la página HTML
-          const res = await fetch(url, { cache: 'no-cache' })
-          if (res.ok && res.status === 200) {
-            await shellCache.put(url, res.clone())
-            await shellCache.put(new URL(url, self.location.origin).href, res.clone())
+  for (const url of routes) {
+    try {
+      // 1. Precache de la página HTML (solo si no es redirigida a login)
+      const res = await fetch(url, { credentials: 'include', cache: 'no-cache' })
+      if (res.ok && res.status === 200 && !res.redirected && !res.url.includes('/login')) {
+        await shellCache.put(url, res.clone())
+        await shellCache.put(new URL(url, self.location.origin).href, res.clone())
 
-            // Extraer y precachear CSS reales vinculados en el HTML
-            const html = await res.text()
-            const cssMatches = html.matchAll(/href="(\/_next\/static\/css\/[^"]+\.css)"/g)
-            for (const match of cssMatches) {
-              const cssUrl = match[1]
-              try {
-                const cssRes = await fetch(cssUrl)
-                if (cssRes.ok) {
-                  await staticCache.put(cssUrl, cssRes.clone())
-                  await staticCache.put('/_next/static/css/global-fallback.css', cssRes.clone())
-                }
-              } catch {}
+        // Extraer y precachear CSS reales vinculados en el HTML
+        const html = await res.text()
+        const cssMatches = Array.from(html.matchAll(/href="(\/_next\/static\/css\/[^"]+\.css)"/g))
+        for (const match of cssMatches) {
+          const cssUrl = match[1]
+          try {
+            const cssRes = await fetch(cssUrl)
+            if (cssRes.ok) {
+              await staticCache.put(cssUrl, cssRes.clone())
+              await staticCache.put('/_next/static/css/global-fallback.css', cssRes.clone())
             }
+          } catch {}
+        }
 
-            // Extraer y precachear scripts JS de la página
-            const jsMatches = html.matchAll(/src="(\/_next\/static\/chunks\/[^"]+\.js)"/g)
-            for (const match of jsMatches) {
-              const jsUrl = match[1]
-              try {
-                const jsRes = await fetch(jsUrl)
-                if (jsRes.ok) {
-                  await staticCache.put(jsUrl, jsRes.clone())
-                }
-              } catch {}
+        // Extraer y precachear scripts JS de la página
+        const jsMatches = Array.from(html.matchAll(/src="(\/_next\/static\/chunks\/[^"]+\.js)"/g))
+        for (const match of jsMatches) {
+          const jsUrl = match[1]
+          try {
+            const jsRes = await fetch(jsUrl)
+            if (jsRes.ok) {
+              await staticCache.put(jsUrl, jsRes.clone())
             }
-          }
-
-          // B) Precache del payload RSC (React Server Components) para navegación client-side offline
-          if (url.startsWith('/') && !url.includes('.')) {
-            try {
-              const rscRes = await fetch(url, {
-                headers: { RSC: '1', Accept: 'text/x-component' },
-                cache: 'no-cache',
-              })
-              if (rscRes.ok && rscRes.status === 200) {
-                await shellCache.put(`${url}__rsc`, rscRes.clone())
-                await shellCache.put(`${url}?_rsc=offline`, rscRes.clone())
-                await shellCache.put(new URL(`${url}?_rsc=offline`, self.location.origin).href, rscRes.clone())
-              }
-            } catch {}
-          }
-        } catch (err) {
-          console.warn(`[SW] Precache omitido temporalmente para ${url}:`, err)
+          } catch {}
         }
       }
-    })()
-  )
+
+      // 2. Precache del payload RSC (React Server Components) para navegación client-side offline
+      if (url.startsWith('/') && !url.includes('.')) {
+        try {
+          const rscRes = await fetch(url, {
+            headers: { RSC: '1', Accept: 'text/x-component' },
+            credentials: 'include',
+            cache: 'no-cache',
+          })
+          if (rscRes.ok && rscRes.status === 200 && !rscRes.redirected && !rscRes.url.includes('/login')) {
+            await shellCache.put(`${url}__rsc`, rscRes.clone())
+            await shellCache.put(`${url}?_rsc=offline`, rscRes.clone())
+            await shellCache.put(new URL(`${url}?_rsc=offline`, self.location.origin).href, rscRes.clone())
+          }
+        } catch {}
+      }
+    } catch (err) {
+      console.debug(`[SW] Precache omitido temporalmente para ${url}:`, err)
+    }
+  }
+}
+
+// --- 1. INSTALACIÓN Y PRECACHE ---
+self.addEventListener('install', (event) => {
+  event.waitUntil(precacheRoutes(APP_SHELL_URLS))
   self.skipWaiting()
 })
 
@@ -106,6 +110,13 @@ self.addEventListener('activate', (event) => {
       })
       .then(() => self.clients.claim())
   )
+})
+
+// Escuchar mensajes del cliente para precachear con sesión activa
+self.addEventListener('message', (event) => {
+  if (event.data?.type === 'PRECACHE_CORE_ROUTES') {
+    event.waitUntil(precacheRoutes(event.data.routes || APP_SHELL_URLS))
+  }
 })
 
 // --- 3. INTERCEPCIÓN DE RED CON SOPORTE RSC Y RESILIENCIA TOTAL ---
@@ -134,48 +145,49 @@ self.addEventListener('fetch', (event) => {
     request.headers.get('RSC') === '1' ||
     Boolean(request.headers.get('Accept')?.includes('text/x-component'))
 
-  // ESTRATEGIA A-1: PETICIONES RSC DE NEXT.JS (NAVEGACIÓN INTERNA CLIENT-SIDE ENTRE PÁGINAS)
+  // ESTRATEGIA A-1: PETICIONES RSC DE NEXT.JS (NAVEGACIÓN CLIENT-SIDE ENTRE PÁGINAS)
   if (isRSC) {
     event.respondWith(
       fetch(request)
         .then((response) => {
-          if (response && response.status === 200) {
+          if (response && response.status === 200 && !response.redirected) {
             const clone = response.clone()
             caches.open(APP_SHELL_CACHE).then((cache) => {
               cache.put(request, clone)
-              // Almacenar también bajo clave canónica limpia por pathname para absorber cualquier querystring
               cache.put(`${url.pathname}__rsc`, response.clone())
+              cache.put(new URL(`${url.pathname}?_rsc=offline`, self.location.origin).href, response.clone())
             })
           }
           return response
         })
         .catch(async () => {
-          // Si estamos offline: buscar el payload RSC correspondiente
-          // 1. Coincidencia exacta de la petición
-          const exact = await caches.match(request)
+          const shellCache = await caches.open(APP_SHELL_CACHE)
+
+          // 1. Coincidencia exacta ignorando search params y vary headers
+          const exact = await shellCache.match(request, { ignoreSearch: true, ignoreVary: true })
           if (exact) return exact
 
-          // 2. Coincidencia canónica para este pathname
-          const canonical = await caches.match(`${url.pathname}__rsc`)
+          // 2. Coincidencia canónica para este pathname (__rsc)
+          const canonical = await shellCache.match(`${url.pathname}__rsc`, { ignoreSearch: true, ignoreVary: true })
           if (canonical) return canonical
 
-          // 3. Buscar cualquier clave RSC almacenada para este pathname
-          const shellCache = await caches.open(APP_SHELL_CACHE)
+          // 3. Coincidencia con clave offline explícita
+          const offlineMatch = await shellCache.match(new URL(`${url.pathname}?_rsc=offline`, self.location.origin).href, { ignoreSearch: true, ignoreVary: true })
+          if (offlineMatch) return offlineMatch
+
+          // 4. Buscar cualquier clave RSC almacenada cuyo path coincida
           const keys = await shellCache.keys()
           const rscKey = keys.find((k) => {
             const u = new URL(k.url)
-            return (
-              u.pathname === url.pathname &&
-              (u.searchParams.has('_rsc') || u.pathname.endsWith('__rsc'))
-            )
+            const cleanPath = u.pathname.replace(/__rsc$/, '')
+            return cleanPath === url.pathname
           })
           if (rscKey) {
-            const cachedRsc = await shellCache.match(rscKey)
+            const cachedRsc = await shellCache.match(rscKey, { ignoreSearch: true, ignoreVary: true })
             if (cachedRsc) return cachedRsc
           }
 
-          // IMPORTANTE: NUNCA responder HTML a una petición RSC porque rompe el router de React.
-          // Responder 503 permite a Next.js intentar una navegación completa de documento.
+          // Responder 503 para que Next.js intente una navegación de documento completa
           return new Response('RSC offline no disponible en caché', {
             status: 503,
             statusText: 'Service Unavailable',
@@ -191,7 +203,7 @@ self.addEventListener('fetch', (event) => {
     event.respondWith(
       fetch(request)
         .then((response) => {
-          if (response && response.status === 200) {
+          if (response && response.status === 200 && !response.redirected) {
             const clone = response.clone()
             caches.open(APP_SHELL_CACHE).then((cache) => {
               cache.put(request, clone)
@@ -202,25 +214,45 @@ self.addEventListener('fetch', (event) => {
           return response
         })
         .catch(async () => {
+          const shellCache = await caches.open(APP_SHELL_CACHE)
+
           // 1. Coincidencia exacta de la petición
-          const exact = await caches.match(request)
+          const exact = await shellCache.match(request, { ignoreSearch: true, ignoreVary: true })
           if (exact) return exact
 
-          // 2. Coincidencia por pathname específico (ej: '/tareas' o '/feria')
-          const pathMatch = await caches.match(url.pathname)
+          // 2. Coincidencia por pathname específico (ej: '/tareas' o '/feria' o '/super')
+          const pathMatch = await shellCache.match(url.pathname, { ignoreSearch: true, ignoreVary: true })
           if (pathMatch) return pathMatch
 
-          const fullUrlMatch = await caches.match(new URL(url.pathname, self.location.origin).href)
+          const fullUrlMatch = await shellCache.match(new URL(url.pathname, self.location.origin).href, { ignoreSearch: true, ignoreVary: true })
           if (fullUrlMatch) return fullUrlMatch
 
-          // 3. Si la ruta es específicamente Home ('/'), entregar el shell de inicio
+          // 3. Coincidencia en cualquier caché local
+          const anyCacheMatch = await caches.match(url.pathname, { ignoreSearch: true, ignoreVary: true })
+          if (anyCacheMatch) return anyCacheMatch
+
+          // 4. Si la ruta es '/', entregar el shell de inicio
           if (url.pathname === '/') {
-            const homeMatch = await caches.match('/')
+            const homeMatch = await shellCache.match('/', { ignoreSearch: true, ignoreVary: true })
             if (homeMatch) return homeMatch
           }
 
-          // AVISO CRÍTICO: NO entregar caches.match('/') para rutas distintas a '/' (evita que /tareas o /feria queden pegadas en Home)
-          // 4. Si la ruta solicitada no estaba en caché aún, mostrar pantalla offline amigable
+          // 5. App Shell fallback: si se solicita una sección de la app (ej: /tareas, /super, /feria, /colegio, /meds)
+          // pero no se había abierto antes directamente con recarga HTML,
+          // intentamos servir cualquier página shell cacheada de la app (ej. /super o /tareas o /)
+          // para que el cliente Next.js cargue y monte la vista con IndexedDB.
+          const fallbackShell =
+            (await shellCache.match('/super', { ignoreSearch: true, ignoreVary: true })) ||
+            (await shellCache.match('/tareas', { ignoreSearch: true, ignoreVary: true })) ||
+            (await shellCache.match('/feria', { ignoreSearch: true, ignoreVary: true })) ||
+            (await shellCache.match('/colegio', { ignoreSearch: true, ignoreVary: true })) ||
+            (await shellCache.match('/', { ignoreSearch: true, ignoreVary: true }))
+
+          if (fallbackShell) {
+            return fallbackShell
+          }
+
+          // 6. Si no hay absolutamente nada en caché (primera apertura sin conexión nunca antes abierta):
           return new Response(
             `<!DOCTYPE html>
             <html lang="es">
@@ -237,8 +269,8 @@ self.addEventListener('fetch', (event) => {
             </head>
             <body>
               <h2>Modo sin conexión</h2>
-              <p>La sección ${url.pathname} requiere conexión inicial para guardarse offline.</p>
-              <a href="/">Volver al Inicio</a>
+              <p>Abre la aplicación con conexión al menos una vez para activar el modo offline en todas las secciones.</p>
+              <a href="/">Reintentar</a>
             </body>
             </html>`,
             { headers: { 'Content-Type': 'text/html; charset=utf-8' } }

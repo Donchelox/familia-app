@@ -11,6 +11,7 @@ import { translateErrorMessage } from '@/lib/formatErrors'
 import { isSchoolTestActive } from '@/lib/dates'
 import { offlineDB } from '@/lib/offline/db'
 import { useOfflineMutation } from '@/lib/offline/useOfflineMutation'
+import { getOfflineFamilyId } from '@/lib/offline/familyContext'
 
 interface SchoolScheduleBlock {
   id: string
@@ -151,6 +152,9 @@ export default function ColegioPage() {
 
     // 1. CARGA INMEDIATA DESDE DEXIE (OFFLINE-FIRST)
     try {
+      const fallbackFamId = await getOfflineFamilyId()
+      if (!familyId) setFamilyId(fallbackFamId)
+
       const [localTasks, localExams] = await Promise.all([
         offlineDB.school_tasks.toArray(),
         offlineDB.exams.toArray(),
@@ -454,16 +458,8 @@ export default function ColegioPage() {
     e.preventDefault()
     setSaving(true)
 
-    let targetFamilyId = familyId
-    if (!targetFamilyId) {
-      const { data: member } = await supabase
-        .from('members')
-        .select('family_id')
-        .limit(1)
-        .maybeSingle()
-      targetFamilyId = member?.family_id || null
-      if (targetFamilyId) setFamilyId(targetFamilyId)
-    }
+    let targetFamilyId = familyId || (await getOfflineFamilyId())
+    if (!familyId) setFamilyId(targetFamilyId)
 
     // A) HORARIO DE CLASES
     if (modalType === 'schedule') {
@@ -600,7 +596,7 @@ export default function ColegioPage() {
     if (!confirm(msg)) return
     setDeleting(true)
 
-    const targetFamId = familyId || 'bb16bf3f-db99-4a2f-96e1-4943389bcba2'
+    const targetFamId = familyId || (await getOfflineFamilyId())
 
     if (modalType === 'schedule') {
       if (!editingId.startsWith('local-')) {

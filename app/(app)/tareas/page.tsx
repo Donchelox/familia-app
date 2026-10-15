@@ -9,6 +9,7 @@ import { createClient } from '@/lib/supabase/client'
 import { useActionParam } from '@/lib/useActionParam'
 import { offlineDB } from '@/lib/offline/db'
 import { useOfflineMutation } from '@/lib/offline/useOfflineMutation'
+import { getOfflineFamilyId } from '@/lib/offline/familyContext'
 
 interface TodoItem {
   id: string
@@ -101,6 +102,9 @@ export default function TareasPage() {
     // 1. CARGA INMEDIATA DESDE DEXIE (OFFLINE-FIRST SIN LATENCIA DE RED)
     let localTodos: TodoItem[] = []
     try {
+      const fallbackFamId = await getOfflineFamilyId()
+      if (!familyId) setFamilyId(fallbackFamId)
+
       const stored = await offlineDB.todos.toArray()
       if (stored && stored.length > 0) {
         localTodos = stored.map((t) => ({
@@ -292,7 +296,7 @@ export default function TareasPage() {
   async function toggleDone(todo: TodoItem) {
     const nextDone = !todo.done
     const nextDoneAt = nextDone ? new Date().toISOString() : null
-    const targetFamId = todo.family_id || familyId || 'fam_default'
+    const targetFamId = todo.family_id || familyId || (await getOfflineFamilyId())
 
     // 1. Optimistic UI inmediato en React
     setTodos((prev) =>
@@ -346,7 +350,7 @@ export default function TareasPage() {
     if (!title.trim()) return
     setSaving(true)
 
-    const targetFamilyId = familyId || 'bb16bf3f-db99-4a2f-96e1-4943389bcba2'
+    const targetFamilyId = familyId || (await getOfflineFamilyId())
     const tempId =
       editingTodo?.id ||
       (typeof crypto !== 'undefined' && crypto.randomUUID
@@ -413,7 +417,7 @@ export default function TareasPage() {
     setDeleting(true)
 
     const targetId = editingTodo.id
-    const targetFamId = editingTodo.family_id || familyId || 'fam_default'
+    const targetFamId = editingTodo.family_id || familyId || (await getOfflineFamilyId())
 
     // 1. Optimistic UI delete
     setTodos((prev) => prev.filter((t) => t.id !== targetId))

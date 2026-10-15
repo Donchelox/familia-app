@@ -2,27 +2,77 @@
 
 import { useEffect } from 'react'
 import { useRouter } from 'next/navigation'
-
-const CORE_ROUTES = ['/', '/tareas', '/feria', '/super', '/colegio', '/meds', '/resumen', '/ajustes']
+import { preheatAppShell, hydrateFamilyData, CORE_ROUTES } from '@/lib/offline/clientSync'
+import { createClient } from '@/lib/supabase/client'
+import { getOfflineFamilyId } from '@/lib/offline/familyContext'
 
 export default function PWARegister() {
   const router = useRouter()
 
   useEffect(() => {
-    // 1. Precalentar la caché de Next.js y del Service Worker para todas las rutas principales
-    if (typeof window !== 'undefined') {
-      CORE_ROUTES.forEach((r) => {
-        try {
-          router.prefetch(r)
-          if ('serviceWorker' in navigator && navigator.onLine) {
-            fetch(r, { headers: { RSC: '1', Accept: 'text/x-component' } }).catch(() => {})
+    if (typeof window === 'undefined') return
+
+    // 1. Router prefetch nativo de Next.js
+    CORE_ROUTES.forEach((r) => {
+      try {
+        router.prefetch(r)
+      } catch {}
+    })
+
+    // 2. Precalentar la caché completa (HTML, RSC y chunks estáticos) e hidratar Dexie si estamos online
+    const initOfflineCapabilities = async () => {
+      if (!navigator.onLine) return
+
+      try {
+        // Pre-cargar HTML y RSC de todas las páginas de Casa
+        await preheatAppShell()
+
+        // Detectar familyId activo para hidratar la base de datos local Dexie
+        const supabase = createClient()
+        const { data: userRes } = await supabase.auth.getUser()
+        const user = userRes?.user
+
+        if (user) {
+          const { data: member } = await supabase
+            .from('members')
+            .select('family_id')
+            .eq('user_id', user.id)
+            .limit(1)
+            .maybeSingle()
+
+          if (member?.family_id) {
+            await hydrateFamilyData(member.family_id)
+          } else {
+            const fallbackId = await getOfflineFamilyId()
+            if (fallbackId) {
+              await hydrateFamilyData(fallbackId)
+            }
           }
-        } catch {}
-      })
+        } else {
+          const fallbackId = await getOfflineFamilyId()
+          if (fallbackId) {
+            await hydrateFamilyData(fallbackId)
+          }
+        }
+      } catch (err) {
+        console.debug('[PWA] Error inicializando capacidades offline:', err)
+      }
     }
 
-    if (typeof window === 'undefined' || !('serviceWorker' in navigator)) {
-      return
+    // Ejecutar precalentamiento inicial no bloqueante
+    initOfflineCapabilities()
+
+    // Volver a precalentar e hidratar cuando vuelva la conexión
+    const handleOnline = () => {
+      initOfflineCapabilities()
+    }
+    window.addEventListener('online', handleOnline)
+
+    // 3. Registro y control del Service Worker
+    if (!('serviceWorker' in navigator)) {
+      return () => {
+        window.removeEventListener('online', handleOnline)
+      }
     }
 
     const registerSW = async () => {
@@ -31,7 +81,7 @@ export default function PWARegister() {
           scope: '/',
         })
 
-        // Forzar actualización inmediata del Service Worker si hay nueva versión
+        // Forzar actualización si hay nueva versión de SW
         try {
           await registration.update()
         } catch {}
@@ -43,7 +93,7 @@ export default function PWARegister() {
 
           installingWorker.addEventListener('statechange', () => {
             if (installingWorker.state === 'installed' && navigator.serviceWorker.controller) {
-              console.log('[PWA] Nueva versión disponible en segundo plano.')
+              console.log('[PWA] Nueva versión v5.0 lista en segundo plano.')
             }
           })
         })
@@ -61,7 +111,7 @@ export default function PWARegister() {
       }
     }
 
-    // Escuchar cambio de controlador para refrescar con la versión actualizada
+    // Escuchar cambio de controlador
     let refreshing = false
     navigator.serviceWorker.addEventListener('controllerchange', () => {
       if (!refreshing) {
@@ -70,12 +120,18 @@ export default function PWARegister() {
       }
     })
 
-    // Registrar cuando la página esté lista
     if (document.readyState === 'complete') {
       registerSW()
     } else {
       window.addEventListener('load', registerSW)
-      return () => window.removeEventListener('load', registerSW)
+      return () => {
+        window.removeEventListener('load', registerSW)
+        window.removeEventListener('online', handleOnline)
+      }
+    }
+
+    return () => {
+      window.removeEventListener('online', handleOnline)
     }
   }, [router])
 

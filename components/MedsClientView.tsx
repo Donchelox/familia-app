@@ -10,6 +10,7 @@ import { recordActivity } from '@/lib/audit'
 import { useActionParam } from '@/lib/useActionParam'
 import { offlineDB } from '@/lib/offline/db'
 import { useOfflineMutation } from '@/lib/offline/useOfflineMutation'
+import { getOfflineFamilyId, saveOfflineFamilyId } from '@/lib/offline/familyContext'
 
 export interface Medication {
   id: string
@@ -76,7 +77,16 @@ export default function MedsClientView({
   useEffect(() => {
     async function loadLocalMeds() {
       try {
-        const local = await offlineDB.medicines.where('family_id').equals(familyId).toArray()
+        const activeFamilyId = familyId || (await getOfflineFamilyId())
+        if (familyId) {
+          saveOfflineFamilyId(familyId)
+        }
+
+        let local = await offlineDB.medicines.where('family_id').equals(activeFamilyId).toArray()
+        if (!local || local.length === 0) {
+          local = await offlineDB.medicines.toArray()
+        }
+
         if (local && local.length > 0) {
           setMeds((prev) => {
             const map = new Map<string, Medication>()
@@ -101,7 +111,7 @@ export default function MedsClientView({
           await offlineDB.medicines.bulkPut(
             initialMeds.map((m) => ({
               id: m.id,
-              family_id: familyId,
+              family_id: activeFamilyId,
               name: m.name,
               person: m.person,
               dose: m.dose,
@@ -118,6 +128,14 @@ export default function MedsClientView({
     }
 
     loadLocalMeds()
+
+    function handleSyncComplete() {
+      loadLocalMeds()
+    }
+    window.addEventListener('casa-sync-complete', handleSyncComplete)
+    return () => {
+      window.removeEventListener('casa-sync-complete', handleSyncComplete)
+    }
   }, [familyId, initialMeds])
 
   // Formulario Crear / Editar
@@ -257,17 +275,18 @@ export default function MedsClientView({
     // 3. Sincronizar en remoto si estamos online
     if (typeof navigator !== 'undefined' && navigator.onLine) {
       try {
+        const targetFamilyId = familyId || (await getOfflineFamilyId())
         if (!nextTaken) {
           await supabase
             .from('dose_logs')
             .delete()
-            .eq('family_id', familyId)
+            .eq('family_id', targetFamilyId)
             .eq('medication_id', medId)
             .eq('time', doseTime)
             .eq('day', todayStr)
         } else {
           await supabase.from('dose_logs').insert({
-            family_id: familyId,
+            family_id: targetFamilyId,
             medication_id: medId,
             time: doseTime,
             day: todayStr,
@@ -319,13 +338,14 @@ export default function MedsClientView({
 
     // 2. Persistencia en Dexie y encolado en sync_queue
     try {
+      const targetFamilyId = familyId || (await getOfflineFamilyId())
       await mutate({
-        familyId,
+        familyId: targetFamilyId,
         entity: 'medicines',
         action: editingId ? 'UPDATE' : 'INSERT',
         entityId: tempId,
         payload: {
-          family_id: familyId,
+          family_id: targetFamilyId,
           ...medPayload,
         },
       })
@@ -349,8 +369,9 @@ export default function MedsClientView({
 
     // 2. Eliminación en Dexie y encolado en sync_queue
     try {
+      const targetFamilyId = familyId || (await getOfflineFamilyId())
       await mutate({
-        familyId,
+        familyId: targetFamilyId,
         entity: 'medicines',
         action: 'DELETE',
         entityId: targetId,

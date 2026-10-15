@@ -10,6 +10,8 @@ import { useActionParam } from '@/lib/useActionParam'
 import { offlineDB } from '@/lib/offline/db'
 import { useOfflineMutation } from '@/lib/offline/useOfflineMutation'
 
+import { getOfflineFamilyId } from '@/lib/offline/familyContext'
+
 interface FeriaItem {
   id: string
   name: string
@@ -47,6 +49,9 @@ export default function FeriaPage() {
 
     // 1. Cargar de inmediato desde Dexie (persistencia offline sin latencia de red)
     try {
+      const fallbackFamId = await getOfflineFamilyId()
+      if (!familyId) setFamilyId(fallbackFamId)
+
       const localData = await offlineDB.shopping_lists.toArray()
       const localFeria = localData
         .filter((i) => i.list === 'feria')
@@ -73,24 +78,41 @@ export default function FeriaPage() {
             const listVal = (item.list || item.location || '').toLowerCase()
             return listVal === 'feria'
           })
-          setItems(feriaOnly)
+
+          // Preservar elementos locales de feria no sincronizados aún
+          const currentLocal = await offlineDB.shopping_lists.toArray()
+          const unsyncedFeria = currentLocal.filter((i) => i.list === 'feria' && !i._synced)
+          const unsyncedMap = new Map(unsyncedFeria.map((i) => [i.id, i]))
+
+          const mergedMap = new Map<string, FeriaItem>()
+          unsyncedFeria.forEach((i) => mergedMap.set(i.id, i as any))
+          feriaOnly.forEach((rem: any) => {
+            if (!unsyncedMap.has(rem.id)) mergedMap.set(rem.id, rem)
+          })
+
+          setItems(Array.from(mergedMap.values()))
           if (data.length > 0 && data[0].family_id) {
             setFamilyId(data[0].family_id)
           }
 
-          // Actualizar base de datos local Dexie
-          await offlineDB.shopping_lists.bulkPut(
-            feriaOnly.map((item: any) => ({
+          // Actualizar base de datos local Dexie preservando pendientes
+          const serverToStore = feriaOnly
+            .filter((rem: any) => !unsyncedMap.has(rem.id))
+            .map((item: any) => ({
               id: item.id,
               family_id: item.family_id,
-              list: 'feria',
+              list: 'feria' as const,
               name: item.name,
+              quantity: item.quantity || '1 kg',
               done: item.done || false,
               done_at: item.done_at,
               created_at: item.created_at,
               _synced: true,
             }))
-          )
+
+          if (serverToStore.length > 0) {
+            await offlineDB.shopping_lists.bulkPut(serverToStore)
+          }
         }
       } catch (err) {
         console.warn('[Offline] Petición remota fallida, usando caché local:', err)
@@ -102,6 +124,17 @@ export default function FeriaPage() {
 
   useEffect(() => {
     loadItems()
+
+    function handleSync() {
+      loadItems()
+    }
+    window.addEventListener('casa-sync-complete', handleSync)
+    window.addEventListener('online', handleSync)
+
+    return () => {
+      window.removeEventListener('casa-sync-complete', handleSync)
+      window.removeEventListener('online', handleSync)
+    }
   }, [])
 
   // Abre el sheet si viene del botón + (?action=new)
@@ -109,6 +142,7 @@ export default function FeriaPage() {
 
   async function toggleDone(item: FeriaItem) {
     const nextDone = !item.done
+    const targetFamId = item.family_id || familyId || (await getOfflineFamilyId())
 
     // Optimistic UI inmediato
     setItems((prev) =>
@@ -117,14 +151,15 @@ export default function FeriaPage() {
 
     // Mutación Offline-First
     await mutate({
-      familyId: item.family_id || familyId,
+      familyId: targetFamId,
       entity: 'shopping_lists',
       action: 'UPDATE',
       entityId: item.id,
       payload: {
         id: item.id,
-        family_id: item.family_id || familyId,
+        family_id: targetFamId,
         name: item.name,
+        quantity: item.quantity || '1 kg',
         list: 'feria',
         done: nextDone,
         done_at: nextDone ? new Date().toISOString() : null,
@@ -153,6 +188,8 @@ export default function FeriaPage() {
 
     const trimmedName = name.trim()
     const trimmedQty = quantity.trim()
+    const targetFamId = (editingItem ? editingItem.family_id : familyId) || (await getOfflineFamilyId())
+    if (!familyId) setFamilyId(targetFamId)
 
     if (editingItem) {
       // Actualización optimista local
@@ -163,13 +200,13 @@ export default function FeriaPage() {
       )
 
       await mutate({
-        familyId: editingItem.family_id || familyId,
+        familyId: targetFamId,
         entity: 'shopping_lists',
         action: 'UPDATE',
         entityId: editingItem.id,
         payload: {
           id: editingItem.id,
-          family_id: editingItem.family_id || familyId,
+          family_id: targetFamId,
           name: trimmedName,
           list: 'feria',
           quantity: trimmedQty,
@@ -186,7 +223,7 @@ export default function FeriaPage() {
         name: trimmedName,
         quantity: trimmedQty,
         done: false,
-        family_id: familyId,
+        family_id: targetFamId,
         list: 'feria',
       }
 
@@ -194,13 +231,13 @@ export default function FeriaPage() {
       setItems((prev) => [newItem, ...prev])
 
       await mutate({
-        familyId,
+        familyId: targetFamId,
         entity: 'shopping_lists',
         action: 'INSERT',
         entityId: tempId,
         payload: {
           id: tempId,
-          family_id: familyId,
+          family_id: targetFamId,
           name: trimmedName,
           list: 'feria',
           quantity: trimmedQty,
@@ -219,11 +256,13 @@ export default function FeriaPage() {
     if (!confirm(`¿Eliminar "${editingItem.name}" de la lista de feria?`)) return
     setDeleting(true)
 
+    const targetFamId = editingItem.family_id || familyId || (await getOfflineFamilyId())
+
     // Eliminación optimista local
     setItems((prev) => prev.filter((it) => it.id !== editingItem.id))
 
     await mutate({
-      familyId: editingItem.family_id || familyId,
+      familyId: targetFamId,
       entity: 'shopping_lists',
       action: 'DELETE',
       entityId: editingItem.id,

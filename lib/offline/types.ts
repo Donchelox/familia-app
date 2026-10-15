@@ -80,6 +80,8 @@ export interface LocalShoppingItem {
   family_id: string
   list: 'super' | 'feria'
   name: string
+  category?: string
+  quantity?: string
   done: boolean
   done_at?: string | null
   created_at?: string
