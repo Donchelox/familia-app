@@ -138,7 +138,7 @@ export default async function Inicio() {
   // 7. PRÓXIMOS EVENTOS (Ordenados por fecha y hora más cercana)
   type EventItem = {
     id: string
-    category: 'Colegio' | 'Medicinas' | 'Tareas' | 'Compras'
+    category: 'Colegio' | 'Medicinas' | 'Tareas' | 'Compras' | 'Feria'
     title: string
     description: string
     href: string
@@ -189,18 +189,34 @@ export default async function Inicio() {
     })
   })
 
-  // D) Compras pendientes
-  shopItems.forEach((item: any) => {
-    const isFeriaItem = (item.list || item.location || '').toLowerCase() === 'feria'
+  // D) Compras pendientes (agrupadas para Súper y Feria en una sola fila cada una)
+  if (superItems.length > 0) {
+    const superNames = superItems.map((i: any) => (i.name || '').trim()).filter(Boolean)
+    const displayed = superNames.slice(0, 4).join(', ')
+    const hasMore = superNames.length > 4
     rawEvents.push({
-      id: `shop-${item.id}`,
+      id: 'grouped-super',
       category: 'Compras',
-      title: item.name,
-      description: isFeriaItem ? 'Lista de la feria' : 'Lista del súper',
-      href: isFeriaItem ? '/feria' : '/super',
+      title: `Próxima compra de súper: ${displayed}${hasMore ? ', etc.' : ''}`,
+      description: `${superItems.length} producto${superItems.length === 1 ? '' : 's'} en la lista del súper`,
+      href: '/super',
       sortTimestamp: Date.now() + 86400000 * 2,
     })
-  })
+  }
+
+  if (feriaItems.length > 0) {
+    const feriaNames = feriaItems.map((i: any) => (i.name || '').trim()).filter(Boolean)
+    const displayedFeria = feriaNames.slice(0, 4).join(', ')
+    const hasMoreFeria = feriaNames.length > 4
+    rawEvents.push({
+      id: 'grouped-feria',
+      category: 'Feria',
+      title: `Próxima compra de feria: ${displayedFeria}${hasMoreFeria ? ', etc.' : ''}`,
+      description: `${feriaItems.length} producto${feriaItems.length === 1 ? '' : 's'} en la lista de la feria`,
+      href: '/feria',
+      sortTimestamp: Date.now() + 86400000 * 2.1,
+    })
+  }
 
   // Orden cronológico: el evento más cercano aparece primero
   const upcomingEvents = rawEvents
