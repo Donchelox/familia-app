@@ -5,6 +5,7 @@ import { redirect } from 'next/navigation'
 import { headers } from 'next/headers'
 import { createClient as createAdminClient } from '@supabase/supabase-js'
 import { getContext } from '@/lib/family'
+import { translateErrorMessage } from '@/lib/formatErrors'
 
 export type MemberActionResult = { ok: boolean; message?: string; error?: string }
 
@@ -30,9 +31,9 @@ async function sendInviteEmail(email: string): Promise<string | null> {
   if (/already|registered|exists/i.test(error.message)) {
     const anon = createAdminClient(url, anonKey, opts)
     const { error: otpErr } = await anon.auth.signInWithOtp({ email, options: { shouldCreateUser: false } })
-    return otpErr ? otpErr.message : null
+    return otpErr ? translateErrorMessage(otpErr) : null
   }
-  return error.message
+  return translateErrorMessage(error)
 }
 
 export async function updateAccount(formData: FormData) {

@@ -6,6 +6,7 @@ import NotificationBell from '@/components/NotificationBell'
 import { useRouter } from 'next/navigation'
 import { createClient } from '@/lib/supabase/client'
 import { useActionParam } from '@/lib/useActionParam'
+import { translateErrorMessage } from '@/lib/formatErrors'
 
 interface SchoolScheduleBlock {
   id: string
@@ -323,14 +324,14 @@ export default function ColegioPage() {
           .update(payload)
           .eq('id', editingId)
         if (error) {
-          alert(`Error al actualizar horario: ${error.message}`)
+          alert(`Error al actualizar horario: ${translateErrorMessage(error)}`)
           setSaving(false)
           return
         }
       } else {
         const { error } = await supabase.from('school_schedule').insert(payload)
         if (error) {
-          alert(`Error al guardar bloque de horario: ${error.message}`)
+          alert(`Error al guardar bloque de horario: ${translateErrorMessage(error)}`)
           setSaving(false)
           return
         }
@@ -355,14 +356,14 @@ export default function ColegioPage() {
           .update(payload)
           .eq('id', editingId)
         if (error) {
-          alert(`Error al actualizar prueba: ${error.message}`)
+          alert(`Error al actualizar prueba: ${translateErrorMessage(error)}`)
           setSaving(false)
           return
         }
       } else {
         const { error } = await supabase.from('school_tests').insert(payload)
         if (error) {
-          alert(`Error al insertar prueba: ${error.message}`)
+          alert(`Error al guardar prueba: ${translateErrorMessage(error)}`)
           setSaving(false)
           return
         }
@@ -388,7 +389,7 @@ export default function ColegioPage() {
           .update(payload)
           .eq('id', editingId)
         if (error) {
-          alert(`Error al actualizar tarea: ${error.message}`)
+          alert(`Error al actualizar tarea: ${translateErrorMessage(error)}`)
           setSaving(false)
           return
         }
@@ -396,7 +397,7 @@ export default function ColegioPage() {
         payload.done = false
         const { error } = await supabase.from('school_homework').insert(payload)
         if (error) {
-          alert(`Error al insertar tarea: ${error.message}`)
+          alert(`Error al guardar tarea: ${translateErrorMessage(error)}`)
           setSaving(false)
           return
         }

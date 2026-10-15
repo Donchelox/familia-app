@@ -3,6 +3,7 @@
 import { revalidatePath } from 'next/cache'
 import { getContext } from '@/lib/family'
 import { recordActivity } from '@/lib/audit'
+import { translateErrorMessage } from '@/lib/formatErrors'
 
 // Helper para obtener el nombre del usuario activo
 async function getActorName(supabase: any, user: any, familyId: string): Promise<string> {
@@ -55,7 +56,7 @@ export async function addShoppingItem(formData: FormData) {
 
   if (error) {
     console.error('addShoppingItem:', error)
-    return { ok: false, error: error.message }
+    return { ok: false, error: translateErrorMessage(error) }
   }
 
   if (newItem) {

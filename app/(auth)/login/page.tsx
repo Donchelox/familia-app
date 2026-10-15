@@ -3,6 +3,7 @@
 import { useState } from 'react'
 import { useRouter } from 'next/navigation'
 import { createClient } from '@/lib/supabase/client'
+import { translateErrorMessage } from '@/lib/formatErrors'
 
 export default function Login() {
   const [email, setEmail] = useState('')
@@ -35,7 +36,7 @@ export default function Login() {
     setBusyMessage('')
     if (error) {
       console.error('Error Supabase OTP:', error)
-      return setError(error.message || 'No pudimos enviar el código. Revisa el correo e inténtalo de nuevo.')
+      return setError(translateErrorMessage(error))
     }
     setStep('code')
   }
@@ -54,7 +55,7 @@ export default function Login() {
     if (error) {
       setBusy(false)
       setBusyMessage('')
-      return setError('El código no es válido o ya expiró. Pide uno nuevo.')
+      return setError(translateErrorMessage(error))
     }
 
     // Código válido: mantener estado de carga y feedback de éxito antes de entrar
