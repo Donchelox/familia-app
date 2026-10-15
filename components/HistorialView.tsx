@@ -4,6 +4,7 @@ import { useState } from 'react'
 import Link from 'next/link'
 import NotificationBell from '@/components/NotificationBell'
 import { clearLog } from '@/app/actions/family'
+import { getCategoryTheme } from '@/lib/categoryColors'
 
 export interface ActivityLogRow {
   id: number
@@ -38,24 +39,26 @@ export default function HistorialView({
       case 'medicinas':
       case 'medication':
       case 'dose':
-        return { label: '💊 Medicinas', color: 'bg-cyan-950/40 text-cyan-400 border-cyan-900/40' }
+        return { label: '💊 Medicinas', color: getCategoryTheme('medicinas').historyBadge }
       case 'colegio':
       case 'school_test':
       case 'school_homework':
       case 'school_schedule':
-        return { label: '🎒 Colegio', color: 'bg-orange-950/40 text-[#F76911] border-orange-900/40' }
+        return { label: '🎒 Colegio', color: getCategoryTheme('colegio').historyBadge }
       case 'supermercado':
-      case 'shopping':
+      case 'super':
+        return { label: '🛒 Súper', color: getCategoryTheme('super').historyBadge }
       case 'compras':
-        return { label: '🛒 Supermercado', color: 'bg-emerald-950/40 text-emerald-400 border-emerald-900/40' }
+      case 'shopping':
+        return { label: '🛍️ Compras', color: getCategoryTheme('compras').historyBadge }
       case 'feria':
-        return { label: '🥬 Feria', color: 'bg-lime-950/40 text-lime-400 border-lime-900/40' }
+        return { label: '🥬 Feria', color: getCategoryTheme('feria').historyBadge }
       case 'tareas':
       case 'todo':
-        return { label: '✅ Tareas', color: 'bg-amber-950/40 text-amber-400 border-amber-900/40' }
+        return { label: '✅ Tareas', color: getCategoryTheme('tareas').historyBadge }
       case 'familia':
       case 'member':
-        return { label: '👥 Familia', color: 'bg-purple-950/40 text-purple-400 border-purple-900/40' }
+        return { label: '👥 Familia', color: 'bg-indigo-950/40 text-indigo-400 border-indigo-900/40' }
       default:
         return { label: '⚙️ General', color: 'bg-neutral-800 text-neutral-300 border-neutral-700' }
     }
@@ -239,13 +242,13 @@ export default function HistorialView({
       {/* 4. CHIPS DE FILTRO POR MÓDULO */}
       <div className="flex items-center gap-1.5 overflow-x-auto pb-1 scrollbar-none">
         {[
-          { id: 'todos', label: 'Todos' },
-          { id: 'tareas', label: 'Tareas' },
-          { id: 'supermercado', label: 'Súper' },
-          { id: 'feria', label: 'Feria' },
-          { id: 'medicinas', label: 'Medicinas' },
-          { id: 'colegio', label: 'Colegio' },
-          { id: 'familia', label: 'Familia' },
+          { id: 'todos', label: 'Todos', activeStyle: 'bg-neutral-700 text-white shadow' },
+          { id: 'tareas', label: 'Tareas', activeStyle: 'bg-orange-600 text-white shadow-[0_0_12px_rgba(234,88,12,0.4)]' },
+          { id: 'supermercado', label: 'Súper', activeStyle: 'bg-sky-600 text-white shadow-[0_0_12px_rgba(2,132,199,0.4)]' },
+          { id: 'feria', label: 'Feria', activeStyle: 'bg-pink-600 text-white shadow-[0_0_12px_rgba(219,39,119,0.4)]' },
+          { id: 'medicinas', label: 'Medicinas', activeStyle: 'bg-emerald-600 text-white shadow-[0_0_12px_rgba(5,150,105,0.4)]' },
+          { id: 'colegio', label: 'Colegio', activeStyle: 'bg-purple-600 text-white shadow-[0_0_12px_rgba(124,58,237,0.4)]' },
+          { id: 'familia', label: 'Familia', activeStyle: 'bg-indigo-600 text-white shadow-[0_0_12px_rgba(79,70,229,0.4)]' },
         ].map((chip) => (
           <button
             key={chip.id}
@@ -253,7 +256,7 @@ export default function HistorialView({
             onClick={() => setSelectedModule(chip.id)}
             className={`px-3 py-1.5 rounded-xl text-xs font-bold shrink-0 transition-all duration-150 hover:scale-105 active:scale-95 cursor-pointer ${
               selectedModule === chip.id
-                ? 'bg-[#F76911] text-white shadow'
+                ? chip.activeStyle
                 : 'bg-[#1a1a1a] border border-neutral-800 text-neutral-400 hover:text-white'
             }`}
           >

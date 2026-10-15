@@ -3,6 +3,7 @@ import { getContext } from '@/lib/family'
 import { todayStr, nowHHMM, rel, isSchoolTestActive, isMedicationScheduledForDay, weekday } from '@/lib/dates'
 import NotificationBell from '@/components/NotificationBell'
 import SyncStatusBadge from '@/components/SyncStatusBadge'
+import { getCategoryTheme } from '@/lib/categoryColors'
 
 export default async function Inicio() {
   const { supabase, familyId } = await getContext()
@@ -126,7 +127,7 @@ export default async function Inicio() {
   // 7. PRÓXIMOS EVENTOS (Ordenados por fecha y hora más cercana)
   type EventItem = {
     id: string
-    category: 'Colegio' | 'Medicinas' | 'Tareas' | 'Compras' | 'Feria'
+    category: 'Colegio' | 'Medicinas' | 'Tareas' | 'Compras' | 'Feria' | 'Super'
     title: string
     description: string
     href: string
@@ -184,7 +185,7 @@ export default async function Inicio() {
     const hasMore = superNames.length > 4
     rawEvents.push({
       id: 'grouped-super',
-      category: 'Compras',
+      category: 'Super',
       title: `Próxima compra de súper: ${displayed}${hasMore ? ', etc.' : ''}`,
       description: `${superItems.length} producto${superItems.length === 1 ? '' : 's'} en la lista del súper`,
       href: '/super',
@@ -273,39 +274,39 @@ export default async function Inicio() {
 
       {/* GRID DE ACCESOS DIRECTOS */}
       <section className="flex flex-col gap-3">
-        {/* Fila 1: Compras (Súper) y Feria */}
+        {/* Fila 1: Súper y Feria */}
         <div className="grid grid-cols-2 gap-3">
-          {/* Compras -> /super */}
+          {/* Súper -> /super */}
           <Link
             href="/super"
-            style={cardGradientStyle}
-            className="relative h-[120px] rounded-[22px] p-3.5 flex flex-col justify-between overflow-hidden shadow-md text-white transition-all duration-200 ease-out hover:scale-[1.02] active:scale-[0.97] hover:shadow-[0_8px_24px_rgba(247,105,17,0.35)] group no-underline"
+            style={{ background: getCategoryTheme('super').cardGradient }}
+            className="relative h-[120px] rounded-[22px] p-3.5 flex flex-col justify-between overflow-hidden shadow-md text-white transition-all duration-200 ease-out hover:scale-[1.02] active:scale-[0.97] hover:shadow-[0_8px_24px_rgba(14,165,233,0.35)] group no-underline"
           >
             <div className="flex justify-between items-start">
               <svg className="w-6 h-6 stroke-white stroke-[2.2] fill-none transition-transform duration-200 group-hover:scale-110" viewBox="0 0 24 24">
                 <path strokeLinecap="round" strokeLinejoin="round" d="M16 11V7a4 4 0 00-8 0v4M5 9h14l1 12H4L5 9z" />
               </svg>
               {superCount > 0 && (
-                <span className="w-6 h-6 rounded-full bg-white text-[#F76911] text-xs font-black flex items-center justify-center shadow transition-transform duration-200 group-hover:scale-110">
+                <span className={`w-6 h-6 rounded-full text-xs font-black flex items-center justify-center shadow transition-transform duration-200 group-hover:scale-110 ${getCategoryTheme('super').countBadge}`}>
                   {superCount}
                 </span>
               )}
             </div>
-            <span className="text-base font-black tracking-wide text-white">Compras</span>
+            <span className="text-base font-black tracking-wide text-white">Súper</span>
           </Link>
 
           {/* Feria -> /feria */}
           <Link
             href="/feria"
-            style={cardGradientStyle}
-            className="relative h-[120px] rounded-[22px] p-3.5 flex flex-col justify-between overflow-hidden shadow-md text-white transition-all duration-200 ease-out hover:scale-[1.02] active:scale-[0.97] hover:shadow-[0_8px_24px_rgba(247,105,17,0.35)] group no-underline"
+            style={{ background: getCategoryTheme('feria').cardGradient }}
+            className="relative h-[120px] rounded-[22px] p-3.5 flex flex-col justify-between overflow-hidden shadow-md text-white transition-all duration-200 ease-out hover:scale-[1.02] active:scale-[0.97] hover:shadow-[0_8px_24px_rgba(236,72,153,0.35)] group no-underline"
           >
             <div className="flex justify-between items-start">
               <svg className="w-6 h-6 stroke-white stroke-[2.2] fill-none transition-transform duration-200 group-hover:scale-110" viewBox="0 0 24 24">
                 <path strokeLinecap="round" strokeLinejoin="round" d="M3 3h2l.4 2M7 13h10l4-8H5.4M7 13L5.4 5M7 13l-2.293 2.293c-.63.63-.184 1.707.707 1.707H17m0 0a2 2 0 100 4 2 2 0 000-4zm-8 2a2 2 0 11-4 0 2 2 0 014 0z" />
               </svg>
               {feriaCount > 0 && (
-                <span className="w-6 h-6 rounded-full bg-white text-[#F76911] text-xs font-black flex items-center justify-center shadow transition-transform duration-200 group-hover:scale-110">
+                <span className={`w-6 h-6 rounded-full text-xs font-black flex items-center justify-center shadow transition-transform duration-200 group-hover:scale-110 ${getCategoryTheme('feria').countBadge}`}>
                   {feriaCount}
                 </span>
               )}
@@ -319,8 +320,8 @@ export default async function Inicio() {
           {/* Medicinas -> /meds */}
           <Link
             href="/meds"
-            style={cardGradientStyle}
-            className="relative h-[115px] rounded-[22px] p-3 flex flex-col justify-between overflow-hidden shadow-md text-white transition-all duration-200 ease-out hover:scale-[1.02] active:scale-[0.97] hover:shadow-[0_8px_24px_rgba(247,105,17,0.35)] group no-underline"
+            style={{ background: getCategoryTheme('medicinas').cardGradient }}
+            className="relative h-[115px] rounded-[22px] p-3 flex flex-col justify-between overflow-hidden shadow-md text-white transition-all duration-200 ease-out hover:scale-[1.02] active:scale-[0.97] hover:shadow-[0_8px_24px_rgba(16,185,129,0.35)] group no-underline"
           >
             <svg className="absolute -bottom-3 -right-3 w-20 h-20 text-white/15 stroke-current stroke-[1.5] fill-none pointer-events-none transition-transform duration-300 group-hover:scale-110" viewBox="0 0 24 24">
               <path strokeLinecap="round" strokeLinejoin="round" d="M4.318 6.318a4.5 4.5 0 000 6.364L12 20.364l7.682-7.682a4.5 4.5 0 00-6.364-6.364L12 7.636l-1.318-1.318a4.5 4.5 0 00-6.364 0z" />
@@ -330,7 +331,7 @@ export default async function Inicio() {
                 <path strokeLinecap="round" strokeLinejoin="round" d="M4.318 6.318a4.5 4.5 0 000 6.364L12 20.364l7.682-7.682a4.5 4.5 0 00-6.364-6.364L12 7.636l-1.318-1.318a4.5 4.5 0 00-6.364 0z" />
               </svg>
               {pendingMeds.length > 0 && (
-                <span className="w-5 h-5 rounded-full bg-white text-[#F76911] text-[11px] font-black flex items-center justify-center shadow transition-transform duration-200 group-hover:scale-110">
+                <span className={`w-5 h-5 rounded-full text-[11px] font-black flex items-center justify-center shadow transition-transform duration-200 group-hover:scale-110 ${getCategoryTheme('medicinas').countBadge}`}>
                   {pendingMeds.length}
                 </span>
               )}
@@ -341,8 +342,8 @@ export default async function Inicio() {
           {/* Colegio -> /colegio */}
           <Link
             href="/colegio"
-            style={cardGradientStyle}
-            className="relative h-[115px] rounded-[22px] p-3 flex flex-col justify-between overflow-hidden shadow-md text-white transition-all duration-200 ease-out hover:scale-[1.02] active:scale-[0.97] hover:shadow-[0_8px_24px_rgba(247,105,17,0.35)] group no-underline"
+            style={{ background: getCategoryTheme('colegio').cardGradient }}
+            className="relative h-[115px] rounded-[22px] p-3 flex flex-col justify-between overflow-hidden shadow-md text-white transition-all duration-200 ease-out hover:scale-[1.02] active:scale-[0.97] hover:shadow-[0_8px_24px_rgba(139,92,246,0.35)] group no-underline"
           >
             <svg className="absolute -bottom-2 -right-2 w-20 h-20 text-white/15 stroke-current stroke-[1.5] fill-none pointer-events-none transition-transform duration-300 group-hover:scale-110" viewBox="0 0 24 24">
               <path strokeLinecap="round" strokeLinejoin="round" d="M12 14l9-5-9-5-9 5 9 5z" />
@@ -354,7 +355,7 @@ export default async function Inicio() {
                 <path strokeLinecap="round" strokeLinejoin="round" d="M12 14l6.16-3.422a12.083 12.083 0 01.665 6.479A11.952 11.952 0 0012 20.055a11.952 11.952 0 00-6.824-2.998 12.078 12.078 0 01.665-6.479L12 14z" />
               </svg>
               {schoolTotalCount > 0 && (
-                <span className="w-5 h-5 rounded-full bg-white text-[#F76911] text-[11px] font-black flex items-center justify-center shadow transition-transform duration-200 group-hover:scale-110">
+                <span className={`w-5 h-5 rounded-full text-[11px] font-black flex items-center justify-center shadow transition-transform duration-200 group-hover:scale-110 ${getCategoryTheme('colegio').countBadge}`}>
                   {schoolTotalCount}
                 </span>
               )}
@@ -365,8 +366,8 @@ export default async function Inicio() {
           {/* Tareas -> /tareas */}
           <Link
             href="/tareas"
-            style={cardGradientStyle}
-            className="relative h-[115px] rounded-[22px] p-3 flex flex-col justify-between overflow-hidden shadow-md text-white transition-all duration-200 ease-out hover:scale-[1.02] active:scale-[0.97] hover:shadow-[0_8px_24px_rgba(247,105,17,0.35)] group no-underline"
+            style={{ background: getCategoryTheme('tareas').cardGradient }}
+            className="relative h-[115px] rounded-[22px] p-3 flex flex-col justify-between overflow-hidden shadow-md text-white transition-all duration-200 ease-out hover:scale-[1.02] active:scale-[0.97] hover:shadow-[0_8px_24px_rgba(249,115,22,0.35)] group no-underline"
           >
             <svg className="absolute -bottom-2 -right-2 w-20 h-20 text-white/15 stroke-current stroke-[1.5] fill-none pointer-events-none transition-transform duration-300 group-hover:scale-110" viewBox="0 0 24 24">
               <path strokeLinecap="round" strokeLinejoin="round" d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2m-6 9l2 2 4-4" />
@@ -376,7 +377,7 @@ export default async function Inicio() {
                 <path strokeLinecap="round" strokeLinejoin="round" d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2m-6 9l2 2 4-4" />
               </svg>
               {generalTodosCount > 0 && (
-                <span className="w-5 h-5 rounded-full bg-white text-[#F76911] text-[11px] font-black flex items-center justify-center shadow transition-transform duration-200 group-hover:scale-110">
+                <span className={`w-5 h-5 rounded-full text-[11px] font-black flex items-center justify-center shadow transition-transform duration-200 group-hover:scale-110 ${getCategoryTheme('tareas').countBadge}`}>
                   {generalTodosCount}
                 </span>
               )}
@@ -402,29 +403,35 @@ export default async function Inicio() {
           {upcomingEvents.length === 0 ? (
             <p className="text-neutral-500 text-sm py-4">No hay eventos pendientes hoy.</p>
           ) : (
-            upcomingEvents.map((evt) => (
-              <Link
-                key={evt.id}
-                href={evt.href}
-                className="flex items-center justify-between py-2.5 px-3 rounded-2xl border-b border-neutral-800/40 hover:bg-neutral-800/30 hover:translate-x-1 active:scale-[0.99] transition-all duration-150 group no-underline text-white cursor-pointer"
-              >
-                <div className="space-y-1">
-                  <span className="inline-block px-2.5 py-0.5 rounded-full text-[11px] font-bold bg-[#fde9da] !text-[#F76911] transition-transform duration-150 group-hover:scale-105">
-                    {evt.category}
-                  </span>
-                  <h3 className="text-base font-bold text-white group-hover:text-[#F2A957] transition-colors leading-snug">
-                    {evt.title}
-                  </h3>
-                  <p className="text-xs text-neutral-400 font-medium">{evt.description}</p>
-                </div>
+            upcomingEvents.map((evt) => {
+              const theme = getCategoryTheme(evt.category)
+              return (
+                <Link
+                  key={evt.id}
+                  href={evt.href}
+                  className="flex items-center justify-between py-2.5 px-3 rounded-2xl border-b border-neutral-800/40 hover:bg-neutral-800/30 hover:translate-x-1 active:scale-[0.99] transition-all duration-150 group no-underline text-white cursor-pointer"
+                >
+                  <div className="space-y-1">
+                    <span className={`inline-block px-2.5 py-0.5 rounded-full text-[11px] font-bold transition-transform duration-150 group-hover:scale-105 ${theme.badge}`}>
+                      {evt.category}
+                    </span>
+                    <h3 className="text-base font-bold text-white group-hover:text-neutral-200 transition-colors leading-snug">
+                      {evt.title}
+                    </h3>
+                    <p className="text-xs text-neutral-400 font-medium">{evt.description}</p>
+                  </div>
 
-                <div className="text-[#F76911] pl-3 transition-transform duration-150 group-hover:translate-x-1">
-                  <svg className="w-5 h-5 stroke-current stroke-[2.5] fill-none" viewBox="0 0 24 24">
-                    <path strokeLinecap="round" strokeLinejoin="round" d="M9 5l7 7-7 7" />
-                  </svg>
-                </div>
-              </Link>
-            ))
+                  <div
+                    style={{ color: theme.accentHex }}
+                    className="pl-3 transition-transform duration-150 group-hover:translate-x-1 opacity-80 group-hover:opacity-100"
+                  >
+                    <svg className="w-5 h-5 stroke-current stroke-[2.5] fill-none" viewBox="0 0 24 24">
+                      <path strokeLinecap="round" strokeLinejoin="round" d="M9 5l7 7-7 7" />
+                    </svg>
+                  </div>
+                </Link>
+              )
+            })
           )}
         </div>
       </section>

@@ -94,8 +94,8 @@ export default function Nav({ family, role }: NavProps) {
     {
       label: 'Añadir nueva tarea colegio',
       href: '/colegio?action=new-homework',
-      colorBg: 'bg-[#98F6B4]',
-      colorText: 'text-[#064e26]',
+      colorBg: 'bg-purple-500/20',
+      colorText: 'text-purple-300',
       icon: (
         <svg className="w-5 h-5 stroke-current stroke-[2.2] fill-none" viewBox="0 0 24 24">
           <path strokeLinecap="round" strokeLinejoin="round" d="M12 6.253v13m0-13C10.832 5.477 9.246 5 7.5 5S4.168 5.477 3 6.253v13C4.168 18.477 5.754 18 7.5 18s3.332.477 4.5 1.253m0-13C13.168 5.477 14.754 5 16.5 5c1.747 0 3.332.477 4.5 1.253v13C19.832 18.477 18.247 18 16.5 18c-1.746 0-3.332.477-4.5 1.253" />
@@ -105,8 +105,8 @@ export default function Nav({ family, role }: NavProps) {
     {
       label: 'Añadir nueva prueba',
       href: '/colegio?action=new-test',
-      colorBg: 'bg-[#FCA5C0]',
-      colorText: 'text-[#6b1129]',
+      colorBg: 'bg-purple-500/20',
+      colorText: 'text-purple-300',
       icon: (
         <svg className="w-5 h-5 stroke-current stroke-[2.2] fill-none" viewBox="0 0 24 24">
           <path strokeLinecap="round" strokeLinejoin="round" d="M8 7V3m8 4V3m-9 8h10M5 21h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z" />
@@ -116,8 +116,8 @@ export default function Nav({ family, role }: NavProps) {
     {
       label: 'Añadir nuevo medicamento',
       href: '/meds?action=new',
-      colorBg: 'bg-[#A5C8FC]',
-      colorText: 'text-[#102d6b]',
+      colorBg: 'bg-emerald-500/20',
+      colorText: 'text-emerald-300',
       icon: (
         <svg className="w-5 h-5 stroke-current stroke-[2.2] fill-none" viewBox="0 0 24 24">
           <path strokeLinecap="round" strokeLinejoin="round" d="M4.318 6.318a4.5 4.5 0 000 6.364L12 20.364l7.682-7.682a4.5 4.5 0 00-6.364-6.364L12 7.636l-1.318-1.318a4.5 4.5 0 00-6.364 0z" />
@@ -127,8 +127,8 @@ export default function Nav({ family, role }: NavProps) {
     {
       label: 'Añadir nuevo producto feria',
       href: '/feria?action=new',
-      colorBg: 'bg-[#FDE28A]',
-      colorText: 'text-[#714b09]',
+      colorBg: 'bg-pink-500/20',
+      colorText: 'text-pink-300',
       icon: (
         <svg className="w-5 h-5 stroke-current stroke-[2.2] fill-none" viewBox="0 0 24 24">
           <path strokeLinecap="round" strokeLinejoin="round" d="M3 3h2l.4 2M7 13h10l4-8H5.4M7 13L5.4 5M7 13l-2.293 2.293c-.63.63-.184 1.707.707 1.707H17m0 0a2 2 0 100 4 2 2 0 000-4zm-8 2a2 2 0 11-4 0 2 2 0 014 0z" />
@@ -138,8 +138,8 @@ export default function Nav({ family, role }: NavProps) {
     {
       label: 'Añadir nuevo producto super',
       href: '/super?action=new',
-      colorBg: 'bg-[#FDBA74]',
-      colorText: 'text-[#7c2d12]',
+      colorBg: 'bg-sky-500/20',
+      colorText: 'text-sky-300',
       icon: (
         <svg className="w-5 h-5 stroke-current stroke-[2.2] fill-none" viewBox="0 0 24 24">
           <path strokeLinecap="round" strokeLinejoin="round" d="M16 11V7a4 4 0 00-8 0v4M5 9h14l1 12H4L5 9z" />
@@ -149,8 +149,8 @@ export default function Nav({ family, role }: NavProps) {
     {
       label: 'Añadir nueva tarea',
       href: '/tareas?action=new',
-      colorBg: 'bg-[#E9D5FF]',
-      colorText: 'text-[#581c87]',
+      colorBg: 'bg-orange-500/20',
+      colorText: 'text-orange-300',
       icon: (
         <svg className="w-5 h-5 stroke-current stroke-[2.2] fill-none" viewBox="0 0 24 24">
           <path strokeLinecap="round" strokeLinejoin="round" d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2m-6 9l2 2 4-4" />

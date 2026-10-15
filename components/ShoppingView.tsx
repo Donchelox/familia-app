@@ -83,7 +83,7 @@ export default function ShoppingView({
           href="/super"
           className={`flex-1 py-2 text-center text-xs font-bold rounded-xl transition-all no-underline ${
             !isFeria
-              ? 'bg-[#F76911] text-white shadow-md'
+              ? 'bg-sky-600 text-white shadow-md'
               : 'text-neutral-400 hover:text-white'
           }`}
         >
@@ -93,7 +93,7 @@ export default function ShoppingView({
           href="/feria"
           className={`flex-1 py-2 text-center text-xs font-bold rounded-xl transition-all no-underline ${
             isFeria
-              ? 'bg-[#F76911] text-white shadow-md'
+              ? 'bg-pink-600 text-white shadow-md'
               : 'text-neutral-400 hover:text-white'
           }`}
         >

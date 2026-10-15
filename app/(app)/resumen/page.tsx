@@ -99,12 +99,12 @@ export default async function ResumenPage() {
         {hasItems && (
           <div className="flex flex-wrap gap-2 pt-2 relative z-10">
             {summary.medsToday.length > 0 && (
-              <span className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-[#131313]/90 border border-neutral-800 text-xs font-bold text-neutral-200">
+              <span className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-emerald-950/40 border border-emerald-900/50 text-xs font-bold text-emerald-300">
                 <span>💊</span>
                 <span>
                   {summary.medsToday.length} dosis de medicinas
                   {pendingMedsCount > 0 && (
-                    <span className="text-[#F76911] ml-1 font-black">
+                    <span className="text-emerald-400 ml-1 font-black">
                       ({pendingMedsCount} pend.)
                     </span>
                   )}
@@ -113,28 +113,28 @@ export default async function ResumenPage() {
             )}
 
             {summary.testsToday.length > 0 && (
-              <span className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-rose-950/40 border border-rose-900/50 text-xs font-bold text-rose-300">
+              <span className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-purple-950/40 border border-purple-900/50 text-xs font-bold text-purple-300">
                 <span>📝</span>
                 <span>{summary.testsToday.length} prueba{summary.testsToday.length === 1 ? '' : 's'} hoy</span>
               </span>
             )}
 
             {summary.homeworkToday.length > 0 && (
-              <span className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-amber-950/40 border border-amber-900/50 text-xs font-bold text-amber-300">
+              <span className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-purple-950/40 border border-purple-900/50 text-xs font-bold text-purple-300">
                 <span>📚</span>
                 <span>{summary.homeworkToday.length} tarea{summary.homeworkToday.length === 1 ? '' : 's'} escolar{summary.homeworkToday.length === 1 ? '' : 'es'}</span>
               </span>
             )}
 
             {summary.todosToday.length > 0 && (
-              <span className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-neutral-900/80 border border-neutral-800 text-xs font-bold text-neutral-300">
+              <span className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-orange-950/40 border border-orange-900/50 text-xs font-bold text-orange-300">
                 <span>📋</span>
                 <span>{summary.todosToday.length} quehacer{summary.todosToday.length === 1 ? '' : 'es'}</span>
               </span>
             )}
 
             {(summary.shoppingSuperCount > 0 || summary.shoppingFeriaCount > 0) && (
-              <span className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-emerald-950/40 border border-emerald-900/50 text-xs font-bold text-emerald-300">
+              <span className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-amber-950/40 border border-amber-900/50 text-xs font-bold text-amber-300">
                 <span>🛒</span>
                 <span>
                   {summary.shoppingSuperCount + summary.shoppingFeriaCount} compras
@@ -380,16 +380,16 @@ export default async function ResumenPage() {
           <div className="grid grid-cols-2 gap-3">
             <Link
               href="/super"
-              className="p-4 rounded-2xl bg-[#1a1a1a] border border-neutral-800/80 hover:border-[#F76911]/50 transition-all flex flex-col justify-between gap-3 no-underline group"
+              className="p-4 rounded-2xl bg-[#1a1a1a] border border-neutral-800/80 hover:border-sky-500/50 transition-all flex flex-col justify-between gap-3 no-underline group"
             >
               <div className="flex items-center justify-between">
                 <span className="text-xl">🏬</span>
-                <span className="text-xs font-black text-[#F76911] bg-[#F76911]/15 px-2 py-0.5 rounded-lg border border-[#F76911]/30">
+                <span className="text-xs font-black text-sky-400 bg-sky-500/15 px-2 py-0.5 rounded-lg border border-sky-500/30">
                   {summary.shoppingSuperCount}
                 </span>
               </div>
               <div>
-                <span className="text-sm font-bold text-white group-hover:text-[#F2A957] transition-colors block">
+                <span className="text-sm font-bold text-white group-hover:text-sky-300 transition-colors block">
                   Supermercado
                 </span>
                 <span className="text-[11px] text-neutral-400">
@@ -400,16 +400,16 @@ export default async function ResumenPage() {
 
             <Link
               href="/feria"
-              className="p-4 rounded-2xl bg-[#1a1a1a] border border-neutral-800/80 hover:border-[#F76911]/50 transition-all flex flex-col justify-between gap-3 no-underline group"
+              className="p-4 rounded-2xl bg-[#1a1a1a] border border-neutral-800/80 hover:border-pink-500/50 transition-all flex flex-col justify-between gap-3 no-underline group"
             >
               <div className="flex items-center justify-between">
                 <span className="text-xl">🥬</span>
-                <span className="text-xs font-black text-[#F2A957] bg-[#F2A957]/15 px-2 py-0.5 rounded-lg border border-[#F2A957]/30">
+                <span className="text-xs font-black text-pink-400 bg-pink-500/15 px-2 py-0.5 rounded-lg border border-pink-500/30">
                   {summary.shoppingFeriaCount}
                 </span>
               </div>
               <div>
-                <span className="text-sm font-bold text-white group-hover:text-[#F2A957] transition-colors block">
+                <span className="text-sm font-bold text-white group-hover:text-pink-300 transition-colors block">
                   Feria Libre
                 </span>
                 <span className="text-[11px] text-neutral-400">

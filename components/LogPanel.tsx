@@ -3,6 +3,7 @@
 
 import { useState, useEffect } from 'react'
 import { createClient } from '@/lib/supabase/client'
+import { getCategoryTheme } from '@/lib/categoryColors'
 
 interface LogItem {
   id: string
@@ -30,15 +31,24 @@ export default function LogPanel({ familyId }: LogPanelProps) {
     switch (entity) {
       case 'medication':
       case 'dose':
-        return { label: '💊 Medicinas', color: 'bg-cyan-950/40 text-cyan-400 border-cyan-900/40' }
+      case 'medicinas':
+        return { label: '💊 Medicinas', color: getCategoryTheme('medicinas').historyBadge }
       case 'school_test':
       case 'school_homework':
       case 'school_schedule':
-        return { label: '🎒 Colegio', color: 'bg-orange-950/40 text-[#F76911] border-orange-900/40' }
+      case 'colegio':
+        return { label: '🎒 Colegio', color: getCategoryTheme('colegio').historyBadge }
+      case 'super':
+      case 'supermercado':
+        return { label: '🛒 Súper', color: getCategoryTheme('super').historyBadge }
       case 'shopping':
-        return { label: '🛒 Compras', color: 'bg-emerald-950/40 text-emerald-400 border-emerald-900/40' }
+      case 'compras':
+        return { label: '🛍️ Compras', color: getCategoryTheme('compras').historyBadge }
+      case 'feria':
+        return { label: '🥬 Feria', color: getCategoryTheme('feria').historyBadge }
       case 'todo':
-        return { label: '✅ Tareas', color: 'bg-amber-950/40 text-amber-400 border-amber-900/40' }
+      case 'tareas':
+        return { label: '✅ Tareas', color: getCategoryTheme('tareas').historyBadge }
       default:
         return { label: '⚙️ General', color: 'bg-neutral-800 text-neutral-300 border-neutral-700' }
     }
@@ -190,10 +200,11 @@ export default function LogPanel({ familyId }: LogPanelProps) {
       // E) Lista de compras (Súper y Feria)
       shopRes.data?.forEach((s: any) => {
         if (!seenEntities.has(`shopping-${s.id}`)) {
-          const area = (s.list || s.location || '').toLowerCase() === 'feria' ? 'Feria' : 'Súper'
+          const isFeria = (s.list || s.location || '').toLowerCase() === 'feria'
+          const area = isFeria ? 'Feria' : 'Súper'
           items.push({
             id: `shop-${s.id}`,
-            entity: 'shopping',
+            entity: isFeria ? 'feria' : 'super',
             action: s.done ? 'toggle' : 'create',
             actor: 'Compras',
             title: `Producto: ${s.name} (${area})`,
