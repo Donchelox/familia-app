@@ -1,7 +1,24 @@
 node_modules
 .next
-.env*.local
-.DS_Store
 .vercel
-.env*
+.DS_Store
 tsconfig.tsbuildinfo
+
+# Environment & secrets
+.env
+.env.*
+!.env.example
+.env*.local
+
+# Supabase & Database dumps
+supabase/.temp/
+*.dump
+*.sql.gz
+*.tar.gz
+
+# Certificates and keys
+*.pem
+*.key
+*.cert
+*.crt
+
