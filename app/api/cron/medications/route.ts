@@ -54,6 +54,28 @@ export async function GET(req: Request) {
   const { data: fams } = await supabase.from('families').select('id, reminder_push').in('id', famIds)
   const pushFamilies = new Set((fams ?? []).filter((f) => f.reminder_push).map((f) => f.id as string))
 
+  // Intervalo configurado por familia (5, 10, 15 o 30 minutos; por defecto 5)
+  const familyIntervals = new Map<string, number>()
+  const { data: adminMembers } = await supabase
+    .from('members')
+    .select('family_id, user_id')
+    .eq('role', 'admin')
+    .in('family_id', famIds)
+
+  if (adminMembers && adminMembers.length > 0) {
+    await Promise.all(
+      adminMembers.map(async (m) => {
+        try {
+          const { data: u } = await supabase.auth.admin.getUserById(m.user_id)
+          const interval = Number(u.user?.user_metadata?.med_reminder_interval)
+          if ([5, 10, 15, 30].includes(interval)) {
+            familyIntervals.set(m.family_id, interval)
+          }
+        } catch {}
+      })
+    )
+  }
+
   // 3. Dosis ya marcadas como tomadas hoy
   const { data: logs } = await supabase.from('dose_logs').select('medication_id, time').eq('day', day).in('medication_id', medIds)
   const taken = new Set((logs ?? []).map((l) => `${l.medication_id}|${String(l.time).slice(0, 5)}`))
@@ -81,7 +103,17 @@ export async function GET(req: Request) {
   await supabase.from('dose_reminders').delete().lt('day', cutoff.toISOString().slice(0, 10))
 
   // 5. Qué avisos tocan ahora
-  const plan = planReminders({ meds, day, isoWeekday: weekday(), nowMs, nowHM: hm, taken, reminders, pushFamilies })
+  const plan = planReminders({
+    meds,
+    day,
+    isoWeekday: weekday(),
+    nowMs,
+    nowHM: hm,
+    taken,
+    reminders,
+    pushFamilies,
+    familyIntervals,
+  })
   if (!plan.length) return NextResponse.json({ ok: true, hm, due: 0, sent: 0 })
 
   // 6. Reclamar cada aviso: solo la ejecución que lo reclama primero lo envía

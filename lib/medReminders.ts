@@ -65,8 +65,9 @@ export function planReminders(opts: {
   taken: Set<string>
   reminders: Map<string, ReminderRow>
   pushFamilies: Set<string>
+  familyIntervals?: Map<string, number>
 }): PlannedReminder[] {
-  const { meds, day, isoWeekday, nowMs, nowHM, taken, reminders, pushFamilies } = opts
+  const { meds, day, isoWeekday, nowMs, nowHM, taken, reminders, pushFamilies, familyIntervals } = opts
   const nowMin = toMin(nowHM)
   const nowIdx = Math.floor(nowMs / 60000) // minuto absoluto: evita que los segundos alarguen el intervalo a 6 min
   const out: PlannedReminder[] = []
@@ -76,6 +77,7 @@ export function planReminders(opts: {
     if (!runsToday(med, day, isoWeekday)) continue
     // "Según necesidad" no es una dosis agendada: solo se avisa una vez, sin insistir
     const repeats = (med.frequency || 'daily') !== 'as_needed'
+    const intervalMin = familyIntervals?.get(med.family_id) || REMINDER_INTERVAL_MIN
 
     for (const rawTime of med.times ?? []) {
       const time = String(rawTime).slice(0, 5)
@@ -97,7 +99,7 @@ export function planReminders(opts: {
       if (!repeats) continue
       const elapsed = nowIdx - Math.floor(Date.parse(rec.first_sent_at) / 60000)
       if (elapsed > REMINDER_WINDOW_MIN) continue // pasaron 2 h desde el primer aviso
-      const slot = Math.floor(elapsed / REMINDER_INTERVAL_MIN)
+      const slot = Math.floor(elapsed / intervalMin)
       if (slot > rec.last_slot) {
         out.push({ med, time, kind: 'repeat', slot, minutesLate: Math.max(late, 0) })
       }

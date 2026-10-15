@@ -32,6 +32,9 @@ export default async function AjustesPage() {
     user?.user_metadata?.med_reminders_enabled ??
     true
 
+  const rawInterval = Number(user?.user_metadata?.med_reminder_interval)
+  const medReminderInterval = [5, 10, 15, 30].includes(rawInterval) ? rawInterval : 5
+
   return (
     <AjustesHubView
       familyId={familyId}
@@ -41,6 +44,7 @@ export default async function AjustesPage() {
       membersCount={membersCount}
       isAdmin={role === 'admin'}
       medRemindersEnabled={medRemindersEnabled}
+      medReminderInterval={medReminderInterval}
     />
   )
 }

@@ -13,6 +13,7 @@ interface AjustesHubViewProps {
   membersCount: number
   isAdmin?: boolean
   medRemindersEnabled?: boolean
+  medReminderInterval?: number
   appVersion?: string
 }
 
@@ -23,6 +24,7 @@ export default function AjustesHubView({
   membersCount,
   isAdmin = false,
   medRemindersEnabled = true,
+  medReminderInterval = 5,
   appVersion = '1.2.0',
 }: AjustesHubViewProps) {
   const [isEditingAccount, setIsEditingAccount] = useState(false)
@@ -153,7 +155,7 @@ export default function AjustesHubView({
                   Preferencias y Recordatorios
                 </span>
                 <span className="text-xs text-neutral-400 font-normal">
-                  Avisos de medicinas, push y resumen matutino
+                  Avisos de medicinas (cada {medReminderInterval} min), push y resumen
                 </span>
               </div>
             </div>

@@ -220,6 +220,8 @@ export async function updatePreferences(formData: FormData) {
   const { supabase, familyId } = await getContext()
   const medReminders = formData.get('medReminders') === 'true'
   const morningSummary = formData.get('morningSummary') === 'true'
+  const rawInterval = Number(formData.get('medReminderInterval'))
+  const medReminderInterval = [5, 10, 15, 30].includes(rawInterval) ? rawInterval : 5
 
   // Guarda en la tabla families (las columnas existentes son reminder_push y reminder_email)
   const { error: famError } = await supabase
@@ -234,13 +236,14 @@ export async function updatePreferences(formData: FormData) {
     console.error('updatePreferences error en families:', famError)
   }
 
-  // Guardamos también en los metadatos del usuario para disponibilidad inmediata
+  // Guardamos también en los metadatos del usuario para disponibilidad inmediata y sincronización con el cron
   await supabase.auth.updateUser({
     data: {
       reminder_push: medReminders,
       reminder_email: morningSummary,
       med_reminders_enabled: medReminders,
       morning_summary_enabled: morningSummary,
+      med_reminder_interval: medReminderInterval,
     },
   })
 
@@ -249,7 +252,7 @@ export async function updatePreferences(formData: FormData) {
     actorName: 'Familiar',
     entity: 'member',
     action: 'update',
-    title: `Preferencias: Avisos de medicinas ${medReminders ? 'activados' : 'desactivados'}, Resumen matutino ${morningSummary ? 'activado' : 'desactivado'}`,
+    title: `Preferencias: Avisos de medicinas ${medReminders ? 'activados' : 'desactivados'} (reintento cada ${medReminderInterval} min), Resumen matutino ${morningSummary ? 'activado' : 'desactivado'}`,
   })
 
   revalidatePath('/ajustes')

@@ -10,14 +10,24 @@ interface PreferenciasViewProps {
   familyId: string
   initialMedReminders?: boolean
   initialMorningSummary?: boolean
+  initialMedReminderInterval?: number
 }
+
+const INTERVAL_OPTIONS = [
+  { value: 5, label: '5 min' },
+  { value: 10, label: '10 min' },
+  { value: 15, label: '15 min' },
+  { value: 30, label: '30 min' },
+]
 
 export default function PreferenciasView({
   initialMedReminders = true,
   initialMorningSummary = true,
+  initialMedReminderInterval = 5,
 }: PreferenciasViewProps) {
   const [medReminders, setMedReminders] = useState<boolean>(initialMedReminders)
   const [morningSummary, setMorningSummary] = useState<boolean>(initialMorningSummary)
+  const [interval, setInterval] = useState<number>(initialMedReminderInterval)
   const [isPending, startTransition] = useTransition()
   const [statusMessage, setStatusMessage] = useState<string>('')
 
@@ -29,6 +39,7 @@ export default function PreferenciasView({
       const fd = new FormData()
       fd.append('medReminders', String(nextVal))
       fd.append('morningSummary', String(morningSummary))
+      fd.append('medReminderInterval', String(interval))
       await updatePreferences(fd)
       setStatusMessage(nextVal ? '✓ Recordatorios de medicinas activados' : '✓ Recordatorios de medicinas pausados')
       setTimeout(() => setStatusMessage(''), 3000)
@@ -43,8 +54,23 @@ export default function PreferenciasView({
       const fd = new FormData()
       fd.append('medReminders', String(medReminders))
       fd.append('morningSummary', String(nextVal))
+      fd.append('medReminderInterval', String(interval))
       await updatePreferences(fd)
       setStatusMessage(nextVal ? '✓ Resumen matutino activado' : '✓ Resumen matutino pausado')
+      setTimeout(() => setStatusMessage(''), 3000)
+    })
+  }
+
+  const handleSelectInterval = (newInterval: number) => {
+    setInterval(newInterval)
+    setStatusMessage(`Guardando recurrencia de ${newInterval} min...`)
+    startTransition(async () => {
+      const fd = new FormData()
+      fd.append('medReminders', String(medReminders))
+      fd.append('morningSummary', String(morningSummary))
+      fd.append('medReminderInterval', String(newInterval))
+      await updatePreferences(fd)
+      setStatusMessage(`✓ Recurrencia actualizada a cada ${newInterval} minutos`)
       setTimeout(() => setStatusMessage(''), 3000)
     })
   }
@@ -74,9 +100,9 @@ export default function PreferenciasView({
 
       {/* 2. MENSAJE DE ESTADO */}
       {statusMessage && (
-        <div className="p-3 rounded-2xl bg-[#1f1a14] border border-[#F76911]/30 text-[#F2A957] text-xs font-semibold flex items-center justify-between">
+        <div className="p-3 rounded-2xl bg-[#1f1a14] border border-[#F76911]/30 text-[#F2A957] text-xs font-semibold flex items-center justify-between shadow-sm">
           <span>{statusMessage}</span>
-          {isPending && <span className="animate-pulse text-[10px]">Guardando...</span>}
+          {isPending && <span className="animate-pulse text-[10px] text-neutral-400">Guardando...</span>}
         </div>
       )}
 
@@ -88,32 +114,66 @@ export default function PreferenciasView({
 
         <div className="p-5 rounded-[24px] bg-[#1a1a1a] border border-neutral-800/80 shadow-md flex flex-col gap-5">
           {/* Recordatorios de Medicinas */}
-          <div className="flex items-center justify-between py-1 border-b border-neutral-800/60 pb-4">
-            <div className="pr-4 flex flex-col">
-              <div className="flex items-center gap-2">
-                <span className="text-sm">💊</span>
-                <p className="text-sm font-bold text-white leading-tight m-0">Recordatorios de Medicinas</p>
+          <div className="flex flex-col gap-3.5 border-b border-neutral-800/60 pb-5">
+            <div className="flex items-center justify-between py-1">
+              <div className="pr-4 flex flex-col">
+                <div className="flex items-center gap-2">
+                  <span className="text-sm">💊</span>
+                  <p className="text-sm font-bold text-white leading-tight m-0">Recordatorios de Medicinas</p>
+                </div>
+                <p className="text-xs text-neutral-400 mt-1 leading-snug m-0">
+                  Avisos push automáticos en cada horario. Si no confirmas la toma, volverá a notificar según la recurrencia elegida (por hasta 2 horas).
+                </p>
               </div>
-              <p className="text-xs text-neutral-400 mt-1 leading-snug m-0">
-                Avisos push automáticos en cada horario. Si no confirmas la dosis, te recordará cada 5 minutos por hasta 2 horas.
-              </p>
+
+              <button
+                type="button"
+                role="switch"
+                aria-checked={medReminders}
+                onClick={handleToggleMedReminders}
+                className={`relative inline-flex h-7 w-12 shrink-0 cursor-pointer rounded-full border-2 border-transparent transition-colors duration-200 ease-in-out focus:outline-none ${
+                  medReminders ? 'bg-[#F76911]' : 'bg-neutral-800'
+                }`}
+              >
+                <span
+                  className={`pointer-events-none inline-block h-6 w-6 transform rounded-full bg-white shadow-lg ring-0 transition duration-200 ease-in-out ${
+                    medReminders ? 'translate-x-5' : 'translate-x-0'
+                  }`}
+                />
+              </button>
             </div>
 
-            <button
-              type="button"
-              role="switch"
-              aria-checked={medReminders}
-              onClick={handleToggleMedReminders}
-              className={`relative inline-flex h-7 w-12 shrink-0 cursor-pointer rounded-full border-2 border-transparent transition-colors duration-200 ease-in-out focus:outline-none ${
-                medReminders ? 'bg-[#F76911]' : 'bg-neutral-800'
-              }`}
-            >
-              <span
-                className={`pointer-events-none inline-block h-6 w-6 transform rounded-full bg-white shadow-lg ring-0 transition duration-200 ease-in-out ${
-                  medReminders ? 'translate-x-5' : 'translate-x-0'
-                }`}
-              />
-            </button>
+            {/* Opciones de Recurrencia (5, 10, 15, 30 minutos) */}
+            {medReminders && (
+              <div className="p-3.5 rounded-2xl bg-[#131313] border border-neutral-800 flex flex-col gap-2.5 animate-in fade-in duration-200">
+                <div className="flex items-center justify-between">
+                  <div className="flex flex-col">
+                    <span className="text-xs font-bold text-white">Recurrencia de reintento</span>
+                    <span className="text-[11px] text-neutral-400">¿Cada cuánto insistir si no se marca tomada?</span>
+                  </div>
+                  <span className="text-[11px] font-black text-[#F76911] bg-[#F76911]/15 px-2 py-0.5 rounded-md border border-[#F76911]/30">
+                    {interval} min
+                  </span>
+                </div>
+
+                <div className="grid grid-cols-4 gap-2">
+                  {INTERVAL_OPTIONS.map((opt) => (
+                    <button
+                      key={opt.value}
+                      type="button"
+                      onClick={() => handleSelectInterval(opt.value)}
+                      className={`py-2 px-1 rounded-xl text-xs font-bold transition-all cursor-pointer border flex items-center justify-center ${
+                        interval === opt.value
+                          ? 'bg-[#F76911] border-[#F76911] text-white shadow-[0_2px_10px_rgba(247,105,17,0.3)]'
+                          : 'bg-[#1a1a1a] border-neutral-800 text-neutral-400 hover:text-white hover:border-neutral-700'
+                      }`}
+                    >
+                      <span>{opt.label}</span>
+                    </button>
+                  ))}
+                </div>
+              </div>
+            )}
           </div>
 
           {/* Resumen Matutino */}
