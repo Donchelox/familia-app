@@ -3,7 +3,7 @@
 import { useEffect } from 'react'
 import { useRouter } from 'next/navigation'
 
-const CORE_ROUTES = ['/', '/meds', '/colegio', '/super', '/feria', '/tareas', '/ajustes']
+const CORE_ROUTES = ['/', '/resumen', '/meds', '/colegio', '/super', '/feria', '/tareas', '/ajustes']
 
 export default function PWARegister() {
   const router = useRouter()
@@ -22,11 +22,33 @@ export default function PWARegister() {
       return
     }
 
+    // En desarrollo local (localhost), desregistrar Service Worker para no romper CSS ni HMR
+    if (
+      window.location.hostname === 'localhost' ||
+      window.location.hostname === '127.0.0.1' ||
+      window.location.hostname.endsWith('.local')
+    ) {
+      navigator.serviceWorker.getRegistrations().then((regs) => {
+        for (const reg of regs) {
+          reg.unregister()
+        }
+      })
+      if (typeof caches !== 'undefined') {
+        caches.keys().then((keys) => keys.forEach((k) => caches.delete(k)))
+      }
+      return
+    }
+
     const registerSW = async () => {
       try {
         const registration = await navigator.serviceWorker.register('/sw.js', {
           scope: '/',
         })
+
+        // Forzar actualización inmediata del Service Worker si hay nueva versión
+        try {
+          await registration.update()
+        } catch {}
 
         // Comprobar actualizaciones en cada visita
         registration.addEventListener('updatefound', () => {
@@ -52,6 +74,15 @@ export default function PWARegister() {
         console.error('[PWA] Error registrando el Service Worker:', err)
       }
     }
+
+    // Escuchar cambio de controlador para refrescar con los nuevos estilos limpios
+    let refreshing = false
+    navigator.serviceWorker.addEventListener('controllerchange', () => {
+      if (!refreshing) {
+        refreshing = true
+        window.location.reload()
+      }
+    })
 
     // Registrar cuando la página esté lista
     if (document.readyState === 'complete') {

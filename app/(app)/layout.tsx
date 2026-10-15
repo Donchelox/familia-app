@@ -1,5 +1,4 @@
 import { Suspense } from 'react'
-import '@/app/globals.css'
 import Nav from '@/components/Nav' // Tu componente de navegación original intacto
 import PreventContextMenu from '@/components/PreventContextMenu'
 import PageProgressBar from '@/components/PageProgressBar'

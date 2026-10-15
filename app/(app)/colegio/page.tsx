@@ -8,6 +8,7 @@ import { useRouter } from 'next/navigation'
 import { createClient } from '@/lib/supabase/client'
 import { useActionParam } from '@/lib/useActionParam'
 import { translateErrorMessage } from '@/lib/formatErrors'
+import { isSchoolTestActive } from '@/lib/dates'
 
 interface SchoolScheduleBlock {
   id: string
@@ -201,7 +202,16 @@ export default function ColegioPage() {
       setSchedule(schedRes.data)
     }
 
-    setTests(testsRes.data ?? [])
+    const rawTests: SchoolTest[] = testsRes.data ?? []
+    const activeTests = rawTests.filter((t) => isSchoolTestActive(t.test_date))
+    setTests(activeTests)
+
+    // Borrado automático de pruebas vencidas (pasadas las 20:00 hrs del día de la prueba o días posteriores)
+    const expiredTestIds = rawTests.filter((t) => !isSchoolTestActive(t.test_date)).map((t) => t.id)
+    if (expiredTestIds.length > 0 && currentFamId) {
+      supabase.from('school_tests').delete().in('id', expiredTestIds).then(() => {})
+    }
+
     setHomework(hwRes.data ?? [])
     setLoading(false)
   }

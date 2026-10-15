@@ -3,7 +3,7 @@
  * Soporte Offline-First (PWA), Caching de App Shell, Background Sync y Notificaciones Web Push
  */
 
-const CACHE_VERSION = 'casa-pwa-v1.4'
+const CACHE_VERSION = 'casa-pwa-v2.1'
 const STATIC_CACHE = `${CACHE_VERSION}-static`
 const DYNAMIC_CACHE = `${CACHE_VERSION}-dynamic`
 const APP_SHELL_CACHE = `${CACHE_VERSION}-shell`
@@ -11,6 +11,7 @@ const APP_SHELL_CACHE = `${CACHE_VERSION}-shell`
 // Rutas esenciales que componen el App Shell completo de Casa App
 const APP_SHELL_URLS = [
   '/',
+  '/resumen',
   '/meds',
   '/colegio',
   '/super',
@@ -52,7 +53,7 @@ self.addEventListener('activate', (event) => {
       return Promise.all(
         keys.map((key) => {
           if (!key.startsWith(CACHE_VERSION)) {
-            console.log(`[SW] Eliminando caché obsoleta: ${key}`)
+            console.log(`[SW] Purgando caché obsoleta: ${key}`)
             return caches.delete(key)
           }
         })
@@ -83,7 +84,6 @@ self.addEventListener('fetch', (event) => {
     Boolean(request.headers.get('Accept')?.includes('text/x-component'))
 
   // ESTRATEGIA A: Rutas de Navegación HTML Y Peticiones RSC de Next.js
-  // (Crucial: Next.js App Router navega pidiendo datos RSC mediante fetch soft-navigation)
   if (isNavigation || isRSC) {
     event.respondWith(
       fetch(request)
@@ -91,30 +91,32 @@ self.addEventListener('fetch', (event) => {
           if (response && response.status === 200) {
             const responseClone = response.clone()
             caches.open(APP_SHELL_CACHE).then((cache) => {
-              // Cachear tanto con la URL exacta como con el pathname limpio
+              // Cachear la petición exacta
               cache.put(request, responseClone)
-              cache.put(url.pathname, response.clone())
+              // SOLO almacenar url.pathname si es navegación HTML real (NUNCA si es payload RSC)
+              if (isNavigation) {
+                cache.put(url.pathname, response.clone())
+              }
             })
           }
           return response
         })
         .catch(async () => {
           // Si estamos offline o la red falla, resolver desde Caché local:
-          // 1. Intentar coincidencia exacta de la petición (incluyendo querystring de RSC)
+          // 1. Coincidencia exacta de la petición (incluyendo querystring de RSC)
           const exactMatch = await caches.match(request)
           if (exactMatch) return exactMatch
 
-          // 2. Intentar coincidencia por el pathname limpio (ej. /meds, /super)
-          const pathMatch = await caches.match(url.pathname)
-          if (pathMatch) return pathMatch
-
-          // 3. Fallback a la raíz '/' si es navegación principal
+          // 2. Coincidencia por pathname limpio si es navegación
           if (isNavigation) {
+            const pathMatch = await caches.match(url.pathname)
+            if (pathMatch) return pathMatch
+
             const rootShell = await caches.match('/')
             if (rootShell) return rootShell
           }
 
-          // 4. Fallback si no hay nada guardado aún
+          // 3. Fallback genérico si no hay nada guardado aún
           return new Response(
             '<!DOCTYPE html><html><head><meta charset="utf-8"><title>Casa - Offline</title></head><body style="background:#131313;color:#fff;font-family:sans-serif;padding:24px;text-align:center;"><h2>Modo sin conexión</h2><p>Página en espera de sincronización local.</p></body></html>',
             { headers: { 'Content-Type': 'text/html; charset=utf-8' } }
@@ -124,44 +126,59 @@ self.addEventListener('fetch', (event) => {
     return
   }
 
-  // ESTRATEGIA B: Archivos estáticos de Next.js (_next/static/)
-  // Cache-First (tienen hashes inmutables de contenido)
-  if (url.pathname.startsWith('/_next/static/')) {
+  // ESTRATEGIA B: Archivos estáticos de Next.js (_next/static/) y Estilos CSS
+  // Network-First con fallback a caché para garantizar que nunca se cargue CSS desactualizado o roto
+  if (url.pathname.startsWith('/_next/static/') || request.destination === 'style') {
     event.respondWith(
-      caches.match(request).then((cachedResponse) => {
-        if (cachedResponse) return cachedResponse
-        return fetch(request).then((response) => {
+      fetch(request)
+        .then((response) => {
           if (response && response.status === 200) {
             const clone = response.clone()
             caches.open(STATIC_CACHE).then((cache) => cache.put(request, clone))
           }
           return response
         })
-      })
+        .catch(async () => {
+          const cached = await caches.match(request)
+          if (cached) return cached
+
+          // Si es CSS y no está la clave exacta, buscar cualquier CSS disponible en caché estática
+          if (request.destination === 'style' || url.pathname.endsWith('.css')) {
+            const staticCache = await caches.open(STATIC_CACHE)
+            const keys = await staticCache.keys()
+            const cssKey = keys.find((k) => k.url.includes('.css'))
+            if (cssKey) {
+              const fallbackCss = await staticCache.match(cssKey)
+              if (fallbackCss) return fallbackCss
+            }
+          }
+
+          return new Response('', { headers: { 'Content-Type': 'text/css' } })
+        })
     )
     return
   }
 
-  // ESTRATEGIA C: Imágenes estáticas, fuentes, css e iconos
-  // Stale-While-Revalidate
+  // ESTRATEGIA C: Imágenes estáticas, fuentes e iconos
+  // Stale-While-Revalidate seguro sin devolver null
   if (
     request.destination === 'image' ||
     request.destination === 'font' ||
-    request.destination === 'style' ||
-    request.destination === 'script' ||
     url.pathname.endsWith('.webp') ||
     url.pathname.endsWith('.png') ||
     url.pathname.endsWith('.webmanifest')
   ) {
     event.respondWith(
       caches.match(request).then((cachedResponse) => {
-        const fetchPromise = fetch(request).then((networkResponse) => {
-          if (networkResponse && networkResponse.status === 200) {
-            const clone = networkResponse.clone()
-            caches.open(DYNAMIC_CACHE).then((cache) => cache.put(request, clone))
-          }
-          return networkResponse
-        }).catch(() => null)
+        const fetchPromise = fetch(request)
+          .then((networkResponse) => {
+            if (networkResponse && networkResponse.status === 200) {
+              const clone = networkResponse.clone()
+              caches.open(DYNAMIC_CACHE).then((cache) => cache.put(request, clone))
+            }
+            return networkResponse
+          })
+          .catch(() => cachedResponse || new Response(''))
 
         return cachedResponse || fetchPromise
       })

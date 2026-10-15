@@ -4,6 +4,8 @@ import { createClient } from '@supabase/supabase-js'
 import webpush from 'web-push'
 import { nowHHMM, todayStr, weekday } from '@/lib/dates'
 import { planReminders, type MedRow, type ReminderRow } from '@/lib/medReminders'
+import { dispatchMorningSummary } from '@/lib/morningSummary'
+import { runModularNotificationsCron } from '@/lib/modularNotifications'
 
 export const dynamic = 'force-dynamic'
 export const runtime = 'nodejs'
@@ -36,6 +38,20 @@ export async function GET(req: Request) {
   const hm = nowHHMM() // hora de Chile, HH:MM
   const day = todayStr()
   const nowMs = Date.now()
+
+  // Resumen Matutino: Si coincide la hora configurada (07:00 AM por defecto), despachar
+  try {
+    await dispatchMorningSummary(supabase, hm, day)
+  } catch (mErr) {
+    console.error('Error al despachar resumen matutino en cron meds:', mErr)
+  }
+
+  // Notificaciones Modulares: Pruebas/Tareas colegio, Feria (jue/dom 7am), Supermercado y limpieza de pruebas 8pm
+  try {
+    await runModularNotificationsCron(supabase, hm, day)
+  } catch (modErr) {
+    console.error('Error en runModularNotificationsCron:', modErr)
+  }
 
   // 1. Medicamentos (se filtran por hora, frecuencia y fecha de término en planReminders)
   const { data: medsData, error: medsErr } = await supabase

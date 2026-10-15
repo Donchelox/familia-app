@@ -222,6 +222,25 @@ export async function updatePreferences(formData: FormData) {
   const morningSummary = formData.get('morningSummary') === 'true'
   const rawInterval = Number(formData.get('medReminderInterval'))
   const medReminderInterval = [5, 10, 15, 30].includes(rawInterval) ? rawInterval : 5
+  const rawSummaryTime = (formData.get('morningSummaryTime') as string)?.trim()
+  const morningSummaryTime = /^([01]\d|2[0-3]):([0-5]\d)$/.test(rawSummaryTime) ? rawSummaryTime : '07:00'
+
+  // Nuevas notificaciones modulares: Colegio, Feria y Supermercado
+  const schoolReminders = formData.get('schoolReminders') !== 'false'
+  const rawSchoolTime = (formData.get('schoolReminderTime') as string)?.trim()
+  const schoolReminderTime = /^([01]\d|2[0-3]):([0-5]\d)$/.test(rawSchoolTime) ? rawSchoolTime : '07:30'
+
+  const feriaReminders = formData.get('feriaReminders') !== 'false'
+  const rawFeriaDays = (formData.get('feriaDays') as string)?.trim()
+  const feriaDays = rawFeriaDays
+    ? rawFeriaDays.split(',').map((d) => d.trim()).filter(Boolean)
+    : ['Jueves', 'Domingo']
+  const rawFeriaTime = (formData.get('feriaTime') as string)?.trim()
+  const feriaTime = /^([01]\d|2[0-3]):([0-5]\d)$/.test(rawFeriaTime) ? rawFeriaTime : '07:00'
+
+  const superReminders = formData.get('superReminders') !== 'false'
+  const rawSuperTime = (formData.get('superTime') as string)?.trim()
+  const superTime = /^([01]\d|2[0-3]):([0-5]\d)$/.test(rawSuperTime) ? rawSuperTime : '18:00'
 
   // Guarda en la tabla families (las columnas existentes son reminder_push y reminder_email)
   const { error: famError } = await supabase
@@ -243,7 +262,16 @@ export async function updatePreferences(formData: FormData) {
       reminder_email: morningSummary,
       med_reminders_enabled: medReminders,
       morning_summary_enabled: morningSummary,
+      morning_summary_time: morningSummaryTime,
       med_reminder_interval: medReminderInterval,
+      // Modulares
+      school_reminders_enabled: schoolReminders,
+      school_reminder_time: schoolReminderTime,
+      feria_reminders_enabled: feriaReminders,
+      feria_days: feriaDays,
+      feria_time: feriaTime,
+      super_reminders_enabled: superReminders,
+      super_time: superTime,
     },
   })
 
@@ -252,7 +280,7 @@ export async function updatePreferences(formData: FormData) {
     actorName: 'Familiar',
     entity: 'member',
     action: 'update',
-    title: `Preferencias: Avisos de medicinas ${medReminders ? 'activados' : 'desactivados'} (reintento cada ${medReminderInterval} min), Resumen matutino ${morningSummary ? 'activado' : 'desactivado'}`,
+    title: `Preferencias: Medicinas (${medReminderInterval}m), Resumen (${morningSummaryTime} hrs), Feria (${feriaDays.join('/')} a las ${feriaTime} hrs), Colegio (${schoolReminderTime} hrs)`,
   })
 
   revalidatePath('/ajustes')
