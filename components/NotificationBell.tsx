@@ -26,9 +26,9 @@ export default function NotificationBell() {
     <Link
       href="/notificaciones"
       aria-label="Ver historial de notificaciones"
-      className="relative p-2.5 rounded-full bg-[#1e1e1e] border border-neutral-800 text-white hover:text-white transition-colors no-underline"
+      className="relative p-2.5 rounded-full bg-[#1e1e1e] border border-neutral-800 text-white hover:bg-neutral-800/80 hover:border-neutral-700 active:scale-90 transition-all duration-200 no-underline group cursor-pointer shadow-sm"
     >
-      <svg className="w-5 h-5 stroke-white stroke-2 fill-none" viewBox="0 0 24 24">
+      <svg className="w-5 h-5 stroke-white stroke-2 fill-none group-hover:rotate-12 transition-transform duration-200" viewBox="0 0 24 24">
         <path
           strokeLinecap="round"
           strokeLinejoin="round"
@@ -36,7 +36,7 @@ export default function NotificationBell() {
         />
       </svg>
       {unreadCount > 0 && (
-        <span className="absolute -top-1 -right-1 min-w-[18px] h-[18px] px-1 bg-[#F76911] text-white text-[10px] font-black rounded-full flex items-center justify-center ring-2 ring-[#131313]">
+        <span className="absolute -top-1 -right-1 min-w-[18px] h-[18px] px-1 bg-[#F76911] text-white text-[10px] font-black rounded-full flex items-center justify-center ring-2 ring-[#131313] animate-pulse">
           {unreadCount > 9 ? '9+' : unreadCount}
         </span>
       )}

@@ -147,7 +147,7 @@ export default function ShoppingView({
                       type="submit"
                       disabled={!canEdit}
                       aria-label={`Marcar ${item.name} como comprado`}
-                      className="w-6 h-6 rounded-lg border-2 border-neutral-700 bg-[#171717] hover:border-[#F76911] flex items-center justify-center transition-all cursor-pointer"
+                      className="w-6 h-6 rounded-lg border-2 border-neutral-700 bg-[#171717] hover:border-[#F76911] hover:scale-110 active:scale-90 flex items-center justify-center transition-all duration-150 cursor-pointer"
                     />
                   </form>
                   <div className="flex flex-col">
@@ -163,7 +163,7 @@ export default function ShoppingView({
                   <button
                     type="button"
                     onClick={() => openEdit(item)}
-                    className="text-sm font-bold text-[#F76911] hover:text-[#F2A957] transition-colors p-1"
+                    className="text-sm font-bold text-[#F76911] hover:text-[#F2A957] hover:scale-105 active:scale-95 transition-all duration-150 p-1 cursor-pointer"
                   >
                     Editar
                   </button>
@@ -197,7 +197,7 @@ export default function ShoppingView({
                       type="submit"
                       disabled={!canEdit}
                       aria-label={`Restaurar ${item.name}`}
-                      className="w-5 h-5 rounded-md bg-[#F76911] flex items-center justify-center active:scale-90 transition-transform cursor-pointer"
+                      className="w-5 h-5 rounded-md bg-[#F76911] flex items-center justify-center hover:scale-110 active:scale-90 transition-all duration-150 cursor-pointer"
                     >
                       <svg className="w-3.5 h-3.5 stroke-white stroke-[3] fill-none" viewBox="0 0 24 24">
                         <path strokeLinecap="round" strokeLinejoin="round" d="M5 13l4 4L19 7" />
@@ -213,7 +213,7 @@ export default function ShoppingView({
                   <button
                     type="button"
                     onClick={() => openEdit(item)}
-                    className="text-xs font-semibold text-neutral-400 hover:text-[#F76911] transition-colors p-1"
+                    className="text-xs font-semibold text-neutral-400 hover:text-[#F76911] hover:scale-105 active:scale-95 transition-all duration-150 p-1 cursor-pointer"
                   >
                     Editar
                   </button>
@@ -230,7 +230,7 @@ export default function ShoppingView({
           type="button"
           onClick={openAdd}
           style={cardGradientStyle}
-          className="fixed bottom-6 right-5 sm:right-[calc(50%-180px)] px-6 py-3 rounded-full font-bold text-sm text-white shadow-[0_6px_20px_rgba(247,105,17,0.4)] flex items-center gap-2 active:scale-95 transition-transform z-30 cursor-pointer"
+          className="fixed bottom-6 right-5 sm:right-[calc(50%-180px)] px-6 py-3 rounded-full font-bold text-sm text-white shadow-[0_6px_20px_rgba(247,105,17,0.4)] hover:shadow-[0_8px_25px_rgba(247,105,17,0.6)] flex items-center gap-2 hover:scale-105 active:scale-90 transition-all duration-200 z-30 cursor-pointer"
         >
           <span className="text-lg leading-none">+</span>
           <span>Añadir</span>

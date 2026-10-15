@@ -165,7 +165,7 @@ export default function IntegrantesView({
                   <button
                     type="button"
                     onClick={() => openEditMember(member)}
-                    className="text-xs font-bold px-3 py-1.5 rounded-xl bg-neutral-900 border border-neutral-800 text-[#F76911] hover:text-[#F2A957] hover:border-neutral-700 transition-colors cursor-pointer"
+                    className="text-xs font-bold px-3 py-1.5 rounded-xl bg-neutral-900 border border-neutral-800 text-[#F76911] hover:text-[#F2A957] hover:border-neutral-700 hover:scale-105 active:scale-95 transition-all duration-150 cursor-pointer"
                   >
                     Editar
                   </button>
@@ -181,7 +181,7 @@ export default function IntegrantesView({
             type="button"
             onClick={openAddMember}
             style={cardGradientStyle}
-            className="w-full py-4 mt-1 rounded-[20px] font-black text-sm text-white shadow-[0_4px_16px_rgba(247,105,17,0.3)] flex items-center justify-center gap-2 active:scale-[0.98] transition-transform cursor-pointer"
+            className="w-full py-4 mt-1 rounded-[20px] font-black text-sm text-white shadow-[0_4px_16px_rgba(247,105,17,0.3)] flex items-center justify-center gap-2 hover:scale-[1.01] hover:shadow-[0_6px_22px_rgba(247,105,17,0.5)] active:scale-[0.98] transition-all duration-150 cursor-pointer"
           >
             <span className="text-lg leading-none">+</span>
             <span>Añadir integrante</span>
@@ -216,7 +216,7 @@ export default function IntegrantesView({
                   <button
                     type="button"
                     onClick={() => handleCopyInviteLink(inv.email)}
-                    className="text-xs font-bold px-3 py-1.5 rounded-xl bg-neutral-900 border border-neutral-800 text-neutral-300 hover:text-white transition-colors cursor-pointer"
+                    className="text-xs font-bold px-3 py-1.5 rounded-xl bg-neutral-900 border border-neutral-800 text-neutral-300 hover:text-white hover:scale-105 active:scale-95 transition-all duration-150 cursor-pointer shadow-sm"
                   >
                     {copiedInvite === inv.email ? '✓ Copiado' : '🔗 Copiar link'}
                   </button>
@@ -226,7 +226,7 @@ export default function IntegrantesView({
                       <input type="hidden" name="id" value={inv.id} />
                       <button
                         type="submit"
-                        className="text-xs font-bold px-2 py-1.5 rounded-xl text-red-400 hover:text-red-300 transition-colors cursor-pointer"
+                        className="text-xs font-bold px-2 py-1.5 rounded-xl text-red-400 hover:text-red-300 hover:scale-110 active:scale-90 transition-all duration-150 cursor-pointer"
                         title="Cancelar invitación"
                       >
                         ✕
@@ -320,7 +320,7 @@ export default function IntegrantesView({
                       key={t.id}
                       type="button"
                       onClick={() => setMemberType(t.id)}
-                      className={`py-2.5 px-2 rounded-xl text-xs font-bold flex flex-col items-center gap-1 border transition-all cursor-pointer ${
+                      className={`py-2.5 px-2 rounded-xl text-xs font-bold flex flex-col items-center gap-1 border transition-all duration-150 hover:scale-105 active:scale-95 cursor-pointer ${
                         memberType === t.id
                           ? 'bg-[#F76911]/20 border-[#F76911] text-white shadow-sm'
                           : 'bg-[#131313] border-neutral-800 text-neutral-400 hover:text-white'

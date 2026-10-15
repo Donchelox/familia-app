@@ -348,7 +348,7 @@ export default function TareasPage() {
               key={f}
               type="button"
               onClick={() => setSelectedFilter(f)}
-              className={`px-3.5 py-1.5 rounded-xl text-xs font-bold whitespace-nowrap transition-all cursor-pointer ${
+              className={`px-3.5 py-1.5 rounded-xl text-xs font-bold whitespace-nowrap transition-all duration-150 hover:scale-105 active:scale-95 cursor-pointer ${
                 selectedFilter === f
                   ? 'bg-[#F76911] text-white shadow-md'
                   : 'bg-[#131313] text-neutral-400 border border-neutral-800 hover:text-white'
@@ -410,14 +410,14 @@ export default function TareasPage() {
                       <button
                         type="button"
                         onClick={() => openEdit(t)}
-                        className="px-2.5 py-1.5 rounded-xl bg-neutral-800/60 hover:bg-neutral-800 border border-neutral-700/50 text-[#F76911] text-xs font-bold transition-all active:scale-95 cursor-pointer"
+                        className="px-2.5 py-1.5 rounded-xl bg-neutral-800/60 hover:bg-neutral-800 border border-neutral-700/50 text-[#F76911] text-xs font-bold transition-all duration-150 hover:scale-105 active:scale-95 cursor-pointer"
                       >
                         Editar
                       </button>
                       <button
                         type="button"
                         onClick={() => toggleDone(t)}
-                        className="w-10 h-10 rounded-2xl border border-neutral-700 hover:border-[#F76911] flex items-center justify-center cursor-pointer transition-all active:scale-95"
+                        className="w-10 h-10 rounded-2xl border border-neutral-700 hover:border-[#F76911] hover:scale-110 active:scale-90 flex items-center justify-center cursor-pointer transition-all duration-150"
                         title="Marcar como completada"
                       />
                     </div>
@@ -460,7 +460,7 @@ export default function TareasPage() {
                     <button
                       type="button"
                       onClick={() => openEdit(t)}
-                      className="px-2.5 py-1.5 rounded-xl bg-neutral-800/40 hover:bg-neutral-800 border border-neutral-700/30 text-neutral-400 text-xs font-bold transition-all active:scale-95 cursor-pointer"
+                      className="px-2.5 py-1.5 rounded-xl bg-neutral-800/40 hover:bg-neutral-800 border border-neutral-700/30 text-neutral-400 text-xs font-bold transition-all duration-150 hover:scale-105 active:scale-95 cursor-pointer"
                     >
                       Editar
                     </button>
@@ -468,7 +468,7 @@ export default function TareasPage() {
                       type="button"
                       onClick={() => toggleDone(t)}
                       style={orangeGradient}
-                      className="w-10 h-10 rounded-2xl flex items-center justify-center text-white shadow-md cursor-pointer transition-all active:scale-95"
+                      className="w-10 h-10 rounded-2xl flex items-center justify-center text-white shadow-md cursor-pointer hover:scale-110 active:scale-90 transition-all duration-150"
                       title="Marcar como pendiente"
                     >
                       <svg className="w-5 h-5 stroke-current stroke-2 fill-none" viewBox="0 0 24 24">

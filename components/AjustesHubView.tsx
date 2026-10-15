@@ -97,7 +97,7 @@ export default function AjustesHubView({
         <button
           type="button"
           onClick={openAccountEdit}
-          className="text-xs font-bold px-3 py-1.5 rounded-xl bg-neutral-900 border border-neutral-800 text-[#F76911] hover:text-[#F2A957] hover:border-neutral-700 transition-colors cursor-pointer"
+          className="text-xs font-bold px-3 py-1.5 rounded-xl bg-neutral-900 border border-neutral-800 text-[#F76911] hover:text-[#F2A957] hover:border-neutral-700 hover:scale-105 active:scale-95 transition-all duration-150 cursor-pointer"
         >
           Editar
         </button>
@@ -112,10 +112,10 @@ export default function AjustesHubView({
         <div className="rounded-[24px] bg-[#1a1a1a] border border-neutral-800/80 overflow-hidden shadow-sm">
           <Link
             href="/ajustes/integrantes"
-            className="flex items-center justify-between p-4 hover:bg-neutral-800/40 transition-colors no-underline text-white group"
+            className="flex items-center justify-between p-4 hover:bg-neutral-800/40 hover:translate-x-1 active:scale-[0.99] transition-all duration-150 no-underline text-white group cursor-pointer"
           >
             <div className="flex items-center gap-3.5">
-              <div className="w-10 h-10 rounded-2xl bg-orange-950/40 border border-orange-900/40 text-[#F76911] flex items-center justify-center text-lg shrink-0">
+              <div className="w-10 h-10 rounded-2xl bg-orange-950/40 border border-orange-900/40 text-[#F76911] flex items-center justify-center text-lg shrink-0 group-hover:scale-110 transition-transform duration-200">
                 👥
               </div>
               <div className="flex flex-col">
@@ -132,7 +132,7 @@ export default function AjustesHubView({
               <span className="text-xs font-semibold px-2 py-0.5 rounded-full bg-neutral-900 text-neutral-300 border border-neutral-800">
                 {membersCount} {membersCount === 1 ? 'miembro' : 'miembros'}
               </span>
-              <svg className="w-5 h-5 text-neutral-500 group-hover:text-white transition-colors" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2.5}>
+              <svg className="w-5 h-5 text-neutral-500 group-hover:text-white group-hover:translate-x-1 transition-all duration-150" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2.5}>
                 <path strokeLinecap="round" strokeLinejoin="round" d="M9 5l7 7-7 7" />
               </svg>
             </div>
@@ -150,10 +150,10 @@ export default function AjustesHubView({
           {/* Subpágina: Preferencias */}
           <Link
             href="/ajustes/preferencias"
-            className="flex items-center justify-between p-4 hover:bg-neutral-800/40 transition-colors no-underline text-white group"
+            className="flex items-center justify-between p-4 hover:bg-neutral-800/40 hover:translate-x-1 active:scale-[0.99] transition-all duration-150 no-underline text-white group cursor-pointer"
           >
             <div className="flex items-center gap-3.5">
-              <div className="w-10 h-10 rounded-2xl bg-amber-950/40 border border-amber-900/40 text-[#F2A957] flex items-center justify-center text-lg shrink-0">
+              <div className="w-10 h-10 rounded-2xl bg-amber-950/40 border border-amber-900/40 text-[#F2A957] flex items-center justify-center text-lg shrink-0 group-hover:scale-110 transition-transform duration-200">
                 🔔
               </div>
               <div className="flex flex-col">
@@ -170,7 +170,7 @@ export default function AjustesHubView({
               <span className="text-xs font-semibold px-2 py-0.5 rounded-full bg-neutral-900 text-emerald-400 border border-emerald-900/40">
                 {medRemindersEnabled ? 'Activos' : 'Pausados'}
               </span>
-              <svg className="w-5 h-5 text-neutral-500 group-hover:text-white transition-colors" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2.5}>
+              <svg className="w-5 h-5 text-neutral-500 group-hover:text-white group-hover:translate-x-1 transition-all duration-150" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2.5}>
                 <path strokeLinecap="round" strokeLinejoin="round" d="M9 5l7 7-7 7" />
               </svg>
             </div>
@@ -179,10 +179,10 @@ export default function AjustesHubView({
           {/* Subpágina: Historial y Auditoría */}
           <Link
             href="/ajustes/historial"
-            className="flex items-center justify-between p-4 hover:bg-neutral-800/40 transition-colors no-underline text-white group"
+            className="flex items-center justify-between p-4 hover:bg-neutral-800/40 hover:translate-x-1 active:scale-[0.99] transition-all duration-150 no-underline text-white group cursor-pointer"
           >
             <div className="flex items-center gap-3.5">
-              <div className="w-10 h-10 rounded-2xl bg-cyan-950/40 border border-cyan-900/40 text-cyan-400 flex items-center justify-center text-lg shrink-0">
+              <div className="w-10 h-10 rounded-2xl bg-cyan-950/40 border border-cyan-900/40 text-cyan-400 flex items-center justify-center text-lg shrink-0 group-hover:scale-110 transition-transform duration-200">
                 📋
               </div>
               <div className="flex flex-col">
@@ -199,7 +199,7 @@ export default function AjustesHubView({
               <span className="text-xs font-semibold px-2 py-0.5 rounded-full bg-neutral-900 text-neutral-400 border border-neutral-800">
                 Ver registro
               </span>
-              <svg className="w-5 h-5 text-neutral-500 group-hover:text-white transition-colors" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2.5}>
+              <svg className="w-5 h-5 text-neutral-500 group-hover:text-white group-hover:translate-x-1 transition-all duration-150" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2.5}>
                 <path strokeLinecap="round" strokeLinejoin="round" d="M9 5l7 7-7 7" />
               </svg>
             </div>
@@ -212,7 +212,7 @@ export default function AjustesHubView({
         <form action={signOut}>
           <button
             type="submit"
-            className="w-full py-3.5 rounded-2xl bg-[#201212] border border-red-900/40 text-red-400 hover:text-red-300 hover:bg-[#2c1616] font-bold text-sm transition-colors active:scale-[0.98] cursor-pointer"
+            className="w-full py-3.5 rounded-2xl bg-[#201212] border border-red-900/40 text-red-400 hover:text-red-300 hover:bg-[#2c1616] hover:scale-[1.01] active:scale-[0.98] font-bold text-sm transition-all duration-150 cursor-pointer shadow-sm"
           >
             Cerrar sesión
           </button>
@@ -224,7 +224,7 @@ export default function AjustesHubView({
         <button
           type="button"
           onClick={() => setShowReleaseModal(true)}
-          className="inline-flex items-center gap-2 px-3.5 py-1.5 rounded-full bg-neutral-900 border border-neutral-800 hover:border-neutral-700 text-neutral-300 hover:text-white transition-all cursor-pointer group shadow-sm active:scale-95"
+          className="inline-flex items-center gap-2 px-3.5 py-1.5 rounded-full bg-neutral-900 border border-neutral-800 hover:border-neutral-700 text-neutral-300 hover:text-white hover:scale-105 active:scale-95 transition-all duration-150 cursor-pointer group shadow-sm"
         >
           <span className="w-2 h-2 rounded-full bg-emerald-500 animate-pulse shrink-0" />
           <span className="text-xs font-bold tracking-wide">Casa APP · v{appVersion}</span>

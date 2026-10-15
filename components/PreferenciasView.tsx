@@ -131,7 +131,7 @@ export default function PreferenciasView({
                 role="switch"
                 aria-checked={medReminders}
                 onClick={handleToggleMedReminders}
-                className={`relative inline-flex h-7 w-12 shrink-0 cursor-pointer rounded-full border-2 border-transparent transition-colors duration-200 ease-in-out focus:outline-none ${
+                className={`relative inline-flex h-7 w-12 shrink-0 cursor-pointer rounded-full border-2 border-transparent transition-all duration-200 ease-in-out hover:scale-105 active:scale-90 focus:outline-none ${
                   medReminders ? 'bg-[#F76911]' : 'bg-neutral-800'
                 }`}
               >
@@ -162,7 +162,7 @@ export default function PreferenciasView({
                       key={opt.value}
                       type="button"
                       onClick={() => handleSelectInterval(opt.value)}
-                      className={`py-2 px-1 rounded-xl text-xs font-bold transition-all cursor-pointer border flex items-center justify-center ${
+                      className={`py-2 px-1 rounded-xl text-xs font-bold transition-all duration-150 hover:scale-105 active:scale-95 cursor-pointer border flex items-center justify-center ${
                         interval === opt.value
                           ? 'bg-[#F76911] border-[#F76911] text-white shadow-[0_2px_10px_rgba(247,105,17,0.3)]'
                           : 'bg-[#1a1a1a] border-neutral-800 text-neutral-400 hover:text-white hover:border-neutral-700'
@@ -193,7 +193,7 @@ export default function PreferenciasView({
               role="switch"
               aria-checked={morningSummary}
               onClick={handleToggleMorningSummary}
-              className={`relative inline-flex h-7 w-12 shrink-0 cursor-pointer rounded-full border-2 border-transparent transition-colors duration-200 ease-in-out focus:outline-none ${
+              className={`relative inline-flex h-7 w-12 shrink-0 cursor-pointer rounded-full border-2 border-transparent transition-all duration-200 ease-in-out hover:scale-105 active:scale-90 focus:outline-none ${
                 morningSummary ? 'bg-[#F76911]' : 'bg-neutral-800'
               }`}
             >

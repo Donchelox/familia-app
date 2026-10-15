@@ -377,7 +377,7 @@ export default function MedsClientView({
             key={p}
             type="button"
             onClick={() => setSelectedPerson(p)}
-            className={`px-4 py-2 rounded-2xl text-xs font-bold whitespace-nowrap transition-all cursor-pointer ${
+            className={`px-4 py-2 rounded-2xl text-xs font-bold whitespace-nowrap transition-all duration-150 hover:scale-105 active:scale-95 cursor-pointer ${
               selectedPerson.toLowerCase() === p.toLowerCase()
                 ? 'bg-[#F76911] text-white shadow-[0_4px_12px_rgba(247,105,17,0.3)]'
                 : 'bg-[#1a1a1a] text-neutral-400 border border-neutral-800/80 hover:text-white'
@@ -445,7 +445,7 @@ export default function MedsClientView({
                 <button
                   type="button"
                   onClick={() => openEditModal(dose.med)}
-                  className="px-2.5 py-1.5 rounded-xl bg-neutral-800/60 hover:bg-neutral-800 border border-neutral-700/50 text-[#F76911] text-xs font-bold transition-all active:scale-95 cursor-pointer flex items-center gap-1"
+                  className="px-2.5 py-1.5 rounded-xl bg-neutral-800/60 hover:bg-neutral-800 border border-neutral-700/50 text-[#F76911] text-xs font-bold transition-all duration-150 hover:scale-105 active:scale-95 cursor-pointer flex items-center gap-1"
                   title="Modificar recordatorio"
                 >
                   <svg className="w-3.5 h-3.5 stroke-current stroke-2 fill-none" viewBox="0 0 24 24">
@@ -459,7 +459,7 @@ export default function MedsClientView({
                   disabled={loadingAction === dose.key}
                   onClick={() => toggleDose(dose.medId, dose.time, dose.isTaken)}
                   style={dose.isTaken ? undefined : orangeGradient}
-                  className={`w-10 h-10 rounded-2xl flex items-center justify-center shrink-0 cursor-pointer active:scale-95 transition-all ${
+                  className={`w-10 h-10 rounded-2xl flex items-center justify-center shrink-0 cursor-pointer hover:scale-110 active:scale-90 transition-all duration-150 ${
                     dose.isTaken
                       ? 'bg-neutral-800 text-neutral-400 hover:text-white'
                       : 'text-white shadow-[0_4px_12px_rgba(247,105,17,0.3)]'

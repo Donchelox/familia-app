@@ -191,7 +191,7 @@ export default function HistorialView({
         <button
           type="button"
           onClick={copyToClipboard}
-          className="py-2.5 px-2 rounded-2xl bg-[#1a1a1a] border border-neutral-800 hover:border-neutral-700 text-neutral-200 text-xs font-bold transition-all active:scale-95 flex items-center justify-center gap-1.5 cursor-pointer shadow-sm"
+          className="py-2.5 px-2 rounded-2xl bg-[#1a1a1a] border border-neutral-800 hover:border-neutral-700 hover:bg-neutral-800/80 hover:scale-105 active:scale-95 text-neutral-200 text-xs font-bold transition-all duration-150 flex items-center justify-center gap-1.5 cursor-pointer shadow-sm"
         >
           <span>{copied ? '✓ Copiado' : '📋 Copiar para IA'}</span>
         </button>
@@ -199,7 +199,7 @@ export default function HistorialView({
         <button
           type="button"
           onClick={() => downloadFile('txt')}
-          className="py-2.5 px-2 rounded-2xl bg-[#1a1a1a] border border-neutral-800 hover:border-neutral-700 text-neutral-200 text-xs font-bold transition-all active:scale-95 flex items-center justify-center gap-1.5 cursor-pointer shadow-sm"
+          className="py-2.5 px-2 rounded-2xl bg-[#1a1a1a] border border-neutral-800 hover:border-neutral-700 hover:bg-neutral-800/80 hover:scale-105 active:scale-95 text-neutral-200 text-xs font-bold transition-all duration-150 flex items-center justify-center gap-1.5 cursor-pointer shadow-sm"
         >
           <span>📥 Texto (.txt)</span>
         </button>
@@ -207,7 +207,7 @@ export default function HistorialView({
         <button
           type="button"
           onClick={() => downloadFile('json')}
-          className="py-2.5 px-2 rounded-2xl bg-[#1a1a1a] border border-neutral-800 hover:border-neutral-700 text-neutral-200 text-xs font-bold transition-all active:scale-95 flex items-center justify-center gap-1.5 cursor-pointer shadow-sm"
+          className="py-2.5 px-2 rounded-2xl bg-[#1a1a1a] border border-neutral-800 hover:border-neutral-700 hover:bg-neutral-800/80 hover:scale-105 active:scale-95 text-neutral-200 text-xs font-bold transition-all duration-150 flex items-center justify-center gap-1.5 cursor-pointer shadow-sm"
         >
           <span>⚙️ JSON</span>
         </button>
@@ -229,7 +229,7 @@ export default function HistorialView({
           <button
             type="button"
             onClick={() => setSearchQuery('')}
-            className="absolute right-3.5 top-3 text-neutral-400 hover:text-white text-xs cursor-pointer"
+            className="absolute right-3.5 top-3 text-neutral-400 hover:text-white hover:scale-110 active:scale-90 transition-all duration-150 text-xs cursor-pointer"
           >
             ✕
           </button>
@@ -251,7 +251,7 @@ export default function HistorialView({
             key={chip.id}
             type="button"
             onClick={() => setSelectedModule(chip.id)}
-            className={`px-3 py-1.5 rounded-xl text-xs font-bold shrink-0 transition-all cursor-pointer ${
+            className={`px-3 py-1.5 rounded-xl text-xs font-bold shrink-0 transition-all duration-150 hover:scale-105 active:scale-95 cursor-pointer ${
               selectedModule === chip.id
                 ? 'bg-[#F76911] text-white shadow'
                 : 'bg-[#1a1a1a] border border-neutral-800 text-neutral-400 hover:text-white'
@@ -279,7 +279,7 @@ export default function HistorialView({
             >
               <button
                 type="submit"
-                className="text-xs font-bold text-red-400 hover:text-red-300 hover:underline cursor-pointer"
+                className="text-xs font-bold text-red-400 hover:text-red-300 hover:scale-105 active:scale-95 transition-all duration-150 cursor-pointer"
               >
                 Vaciar historial
               </button>
