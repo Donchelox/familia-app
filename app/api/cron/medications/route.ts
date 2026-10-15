@@ -80,11 +80,11 @@ export async function GET(req: Request) {
   if (!meds.length) return NextResponse.json({ ok: true, hm, due: 0, sent: 0 })
   const medIds = meds.map((m) => m.id)
 
-  // 2. Consulta de familias e intervalos desde la tabla families (3.3)
+  // 2. Consulta de familias e intervalos (tolerante a esquema con fallback a metadatos de admin)
   const famIds = [...new Set(meds.map((m) => m.family_id))]
   const { data: fams, error: famsErr } = await supabase
     .from('families')
-    .select('id, reminder_push, med_reminder_interval, reminder_push_detail')
+    .select('*')
     .in('id', famIds)
   if (famsErr) {
     console.error('cron families query error:', famsErr.message)
@@ -96,11 +96,46 @@ export async function GET(req: Request) {
   const familyDetailMap = new Map<string, boolean>()
 
   for (const f of fams ?? []) {
-    const interval = Number(f.med_reminder_interval)
+    const rawInterval = (f as any).med_reminder_interval
+    const interval = Number(rawInterval)
     if ([5, 10, 15, 30].includes(interval)) {
       familyIntervals.set(f.id, interval)
     }
-    familyDetailMap.set(f.id, Boolean(f.reminder_push_detail))
+    if ((f as any).reminder_push_detail !== undefined) {
+      familyDetailMap.set(f.id, Boolean((f as any).reminder_push_detail))
+    }
+  }
+
+  // Fallback: si alguna familia no tiene el intervalo o privacidad en la tabla families, consultar metadata del admin
+  const missingIntervalFams = famIds.filter((id) => !familyIntervals.has(id))
+  if (missingIntervalFams.length > 0) {
+    try {
+      const { data: adminMembers } = await supabase
+        .from('members')
+        .select('family_id, user_id')
+        .eq('role', 'admin')
+        .in('family_id', missingIntervalFams)
+
+      if (adminMembers && adminMembers.length > 0) {
+        await Promise.all(
+          adminMembers.map(async (m) => {
+            try {
+              const { data: u } = await supabase.auth.admin.getUserById(m.user_id)
+              const meta = u.user?.user_metadata
+              const metaInterval = Number(meta?.med_reminder_interval)
+              if ([5, 10, 15, 30].includes(metaInterval)) {
+                familyIntervals.set(m.family_id, metaInterval)
+              }
+              if (meta?.reminder_push_detail !== undefined && !familyDetailMap.has(m.family_id)) {
+                familyDetailMap.set(m.family_id, Boolean(meta.reminder_push_detail))
+              }
+            } catch {}
+          })
+        )
+      }
+    } catch (adminErr) {
+      console.warn('cron admin fallback warning:', adminErr)
+    }
   }
 
   // 3.4 Salir temprano si ninguna familia tiene reminder_push antes de consultar dose_logs y dose_reminders
@@ -246,17 +281,17 @@ export async function GET(req: Request) {
             sent++
           })
           .catch(async (err: any) => {
-            // 3.6 Eliminar si 404, 410 o si no tiene statusCode (clave criptográfica inválida)
+            // Eliminar SOLO si el endpoint expiró o fue desregistrado en el servicio push (404 Not Found o 410 Gone)
             const status = err?.statusCode
-            if (status === 404 || status === 410 || !status) {
-              console.error(`Suscripción push inválida (status: ${status ?? 'sin status'}), eliminando suscripción ID:`, sub.id)
+            if (status === 404 || status === 410) {
+              console.error(`Suscripción push caducada (status: ${status}), eliminando suscripción ID:`, sub.id)
               try {
                 await supabase.from('push_subscriptions').delete().eq('id', sub.id)
               } catch (delErr: any) {
                 console.error('Error eliminando suscripción push caducada:', delErr?.message)
               }
             } else {
-              console.error('Error enviando push status:', status)
+              console.error('Error enviando push:', status ?? err?.message)
             }
           })
       )

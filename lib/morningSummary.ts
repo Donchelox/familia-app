@@ -5,6 +5,7 @@ import {
   weekday,
   isSchoolTestActive,
   isMedicationScheduledForDay,
+  isTimeDueToday,
 } from '@/lib/dates'
 
 export interface SummaryMedItem {
@@ -337,7 +338,7 @@ export async function dispatchMorningSummary(
   const dueFamilies: string[] = []
   for (const [famId, conf] of familyTimes.entries()) {
     if (!conf.enabled) continue
-    if (force || conf.time === currentHHMM) {
+    if (force || isTimeDueToday(conf.time, currentHHMM, 120)) {
       dueFamilies.push(famId)
     }
   }

@@ -1,5 +1,5 @@
 import { SupabaseClient } from '@supabase/supabase-js'
-import { nowHHMM, todayStr, weekday, isSchoolTestActive } from '@/lib/dates'
+import { nowHHMM, todayStr, weekday, isSchoolTestActive, isTimeDueToday } from '@/lib/dates'
 
 const WEEKDAY_NAMES = [
   '',
@@ -140,7 +140,7 @@ export async function dispatchSchoolReminders(
   webpush: any
 ): Promise<number> {
   const eligibleFamilies = Array.from(prefsMap.values()).filter(
-    (p) => p.schoolEnabled && p.schoolTime === currentHM
+    (p) => p.schoolEnabled && isTimeDueToday(p.schoolTime, currentHM, 120)
   )
   if (eligibleFamilies.length === 0) return 0
 
@@ -263,8 +263,8 @@ export async function dispatchFeriaReminders(
   const eligibleFamilies = Array.from(prefsMap.values()).filter(
     (p) =>
       p.feriaEnabled &&
-      p.feriaTime === currentHM &&
-      p.feriaDays.includes(currentWeekdayName)
+      p.feriaDays.includes(currentWeekdayName) &&
+      isTimeDueToday(p.feriaTime, currentHM, 120)
   )
   if (eligibleFamilies.length === 0) return 0
 
@@ -366,7 +366,7 @@ export async function dispatchSuperReminders(
   webpush: any
 ): Promise<number> {
   const eligibleFamilies = Array.from(prefsMap.values()).filter(
-    (p) => p.superEnabled && p.superTime === currentHM
+    (p) => p.superEnabled && isTimeDueToday(p.superTime, currentHM, 120)
   )
   if (eligibleFamilies.length === 0) return 0
 

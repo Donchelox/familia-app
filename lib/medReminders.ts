@@ -86,8 +86,8 @@ export function planReminders(opts: {
       const rec = reminders.get(key)
 
       if (!rec) {
-        // Primer aviso: a la hora programada (con un margen por si el cron se atrasó)
-        if (late >= 0 && late <= START_GRACE_MIN) {
+        // Primer aviso: a la hora programada o dentro de la ventana activa (hasta 120 min) si el cron se atrasó
+        if (late >= 0 && late <= REMINDER_WINDOW_MIN) {
           out.push({ med, time, kind: 'first', slot: 0, minutesLate: late })
         }
         continue

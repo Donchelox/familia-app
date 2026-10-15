@@ -84,3 +84,18 @@ export function isMedicationScheduledForDay(
   // 6. 'daily', 'every_8h', 'every_12h', etc.: corresponden todos los días
   return true
 }
+
+/**
+ * Determina si una hora programada ya venció hoy dentro de una ventana de gracia dada (por defecto 120 min).
+ * Permite que los avisos no se pierdan si el cron se retrasa unos minutos o corre cada 5-15 min.
+ */
+export function isTimeDueToday(targetHM: string, currentHM?: string, maxWindowMin: number = 120): boolean {
+  const current = currentHM || nowHHMM()
+  const [th, tm] = targetHM.split(':').map(Number)
+  const [ch, cm] = current.split(':').map(Number)
+  if (isNaN(th) || isNaN(tm) || isNaN(ch) || isNaN(cm)) return false
+  const targetMin = th * 60 + tm
+  const currentMin = ch * 60 + cm
+  const diff = currentMin - targetMin
+  return diff >= 0 && diff <= maxWindowMin
+}

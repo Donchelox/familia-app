@@ -284,7 +284,15 @@ export async function updatePreferences(formData: FormData) {
       .eq('id', familyId)
 
     if (famError) {
-      console.error('updatePreferences error en families:', famError.message)
+      console.warn('updatePreferences families fallback warning:', famError.message)
+      // Si las columnas extendidas aún no existen en la BD, guarda al menos los flags base
+      await supabase
+        .from('families')
+        .update({
+          reminder_push: medReminders,
+          reminder_email: morningSummary,
+        })
+        .eq('id', familyId)
     }
   }
 
@@ -294,6 +302,7 @@ export async function updatePreferences(formData: FormData) {
       reminder_push: medReminders,
       reminder_email: morningSummary,
       med_reminders_enabled: medReminders,
+      reminder_push_detail: reminderPushDetail,
       morning_summary_enabled: morningSummary,
       morning_summary_time: morningSummaryTime,
       med_reminder_interval: medReminderInterval,

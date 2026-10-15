@@ -2,7 +2,7 @@ import { NextResponse } from 'next/server'
 import { timingSafeEqual } from 'crypto'
 import { createClient } from '@supabase/supabase-js'
 import webpush from 'web-push'
-import { nowHHMM, todayStr } from '@/lib/dates'
+import { nowHHMM, todayStr, isTimeDueToday } from '@/lib/dates'
 import { fetchMorningSummary, buildMorningSummaryPushPayload } from '@/lib/morningSummary'
 
 export const dynamic = 'force-dynamic'
@@ -102,7 +102,7 @@ export async function GET(req: Request) {
   const dueFamilies: string[] = []
   for (const [famId, conf] of familyTimes.entries()) {
     if (!conf.enabled) continue
-    if (isForce || conf.time === hm) {
+    if (isForce || isTimeDueToday(conf.time, hm, 120)) {
       dueFamilies.push(famId)
     }
   }
@@ -159,8 +159,8 @@ export async function GET(req: Request) {
           })
           .catch(async (err: any) => {
             const status = err?.statusCode
-            if (status === 404 || status === 410 || !status) {
-              console.error(`Suscripción push inválida en resumen matutino (status: ${status ?? 'sin status'}), eliminando suscripción ID:`, sub.id)
+            if (status === 404 || status === 410) {
+              console.error(`Suscripción push caducada en resumen matutino (status: ${status}), eliminando suscripción ID:`, sub.id)
               try {
                 await supabase.from('push_subscriptions').delete().eq('id', sub.id)
               } catch {}
