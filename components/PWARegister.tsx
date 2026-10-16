@@ -111,14 +111,29 @@ export default function PWARegister() {
       }
     }
 
-    // Escuchar cambio de controlador
+    // Escuchar cambio de controlador y aviso de purga de caché
     let refreshing = false
-    navigator.serviceWorker.addEventListener('controllerchange', () => {
+    const handleReload = () => {
       if (!refreshing) {
         refreshing = true
         window.location.reload()
       }
-    })
+    }
+
+    navigator.serviceWorker.addEventListener('controllerchange', handleReload)
+
+    const handleMessage = (event: MessageEvent) => {
+      if (event.data?.type === 'CACHE_PURGED_UPDATE') {
+        handleReload()
+      }
+    }
+    navigator.serviceWorker.addEventListener('message', handleMessage)
+
+    const cleanupListeners = () => {
+      navigator.serviceWorker.removeEventListener('controllerchange', handleReload)
+      navigator.serviceWorker.removeEventListener('message', handleMessage)
+      window.removeEventListener('online', handleOnline)
+    }
 
     if (document.readyState === 'complete') {
       registerSW()
@@ -126,12 +141,12 @@ export default function PWARegister() {
       window.addEventListener('load', registerSW)
       return () => {
         window.removeEventListener('load', registerSW)
-        window.removeEventListener('online', handleOnline)
+        cleanupListeners()
       }
     }
 
     return () => {
-      window.removeEventListener('online', handleOnline)
+      cleanupListeners()
     }
   }, [router])
 
