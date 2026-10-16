@@ -14,7 +14,11 @@ export function AddMemberForm() {
   return (
     <form
       action={async (formData) => {
-        await addFamilyMember(formData)
+        const res = await addFamilyMember(formData)
+        if (res && !res.ok) {
+          alert(res.error)
+          return
+        }
         const form = document.getElementById('add-member-form') as HTMLFormElement
         form?.reset()
         setRole('hijo')

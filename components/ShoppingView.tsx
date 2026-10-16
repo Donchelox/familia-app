@@ -140,7 +140,12 @@ export default function ShoppingView({
               >
                 {/* Checkbox y Texto */}
                 <div className="flex items-center gap-3.5 flex-1 pr-3">
-                  <form action={toggleShoppingItem}>
+                  <form
+                    action={async (fd) => {
+                      const res = await toggleShoppingItem(fd)
+                      if (res && !res.ok) alert(res.error)
+                    }}
+                  >
                     <input type="hidden" name="id" value={item.id} />
                     <input type="hidden" name="done" value="false" />
                     <button
@@ -190,7 +195,12 @@ export default function ShoppingView({
                 className="py-2 px-2 flex items-center justify-between border-b border-neutral-800/30 last:border-0 opacity-70 hover:opacity-100 transition-opacity"
               >
                 <div className="flex items-center gap-3 flex-1 pr-2">
-                  <form action={toggleShoppingItem}>
+                  <form
+                    action={async (fd) => {
+                      const res = await toggleShoppingItem(fd)
+                      if (res && !res.ok) alert(res.error)
+                    }}
+                  >
                     <input type="hidden" name="id" value={item.id} />
                     <input type="hidden" name="done" value="true" />
                     <button
@@ -271,10 +281,13 @@ export default function ShoppingView({
 
             <form
               action={async (formData) => {
-                if (activeItem === 'add') {
-                  await addShoppingItem(formData)
-                } else {
-                  await updateShoppingItem(formData)
+                const res =
+                  activeItem === 'add'
+                    ? await addShoppingItem(formData)
+                    : await updateShoppingItem(formData)
+                if (res && !res.ok) {
+                  alert(res.error)
+                  return
                 }
                 closeSheet()
               }}
@@ -315,7 +328,11 @@ export default function ShoppingView({
             {activeItem !== 'add' && (
               <form
                 action={async (formData) => {
-                  await deleteShoppingItem(formData)
+                  const res = await deleteShoppingItem(formData)
+                  if (res && !res.ok) {
+                    alert(res.error)
+                    return
+                  }
                   closeSheet()
                 }}
                 className="pt-1 border-t border-neutral-800/60"

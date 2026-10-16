@@ -8,6 +8,7 @@ import { getContext } from '@/lib/family'
 import { translateErrorMessage } from '@/lib/formatErrors'
 import { recordActivity } from '@/lib/audit'
 
+import type { ActionResult } from '@/lib/util'
 import {
   UpdateAccountSchema,
   FamilyMemberSchema,
@@ -16,7 +17,7 @@ import {
   UUID_SCHEMA,
 } from '@/lib/validations/schemas'
 
-export type MemberActionResult = { ok: boolean; message?: string; error?: string }
+export type MemberActionResult = ActionResult
 
 /** Envía el correo de invitación. Si la persona ya tiene cuenta, le manda un código de acceso. */
 async function sendInviteEmail(email: string): Promise<string | null> {
@@ -43,7 +44,7 @@ async function sendInviteEmail(email: string): Promise<string | null> {
   return translateErrorMessage(error)
 }
 
-export async function updateAccount(formData: FormData) {
+export async function updateAccount(formData: FormData): Promise<ActionResult> {
   const { supabase, familyId, role: myRole } = await getContext()
 
   const parsed = UpdateAccountSchema.safeParse({
@@ -51,7 +52,7 @@ export async function updateAccount(formData: FormData) {
     familyName: formData.get('familyName') || undefined,
     email: formData.get('email') || undefined,
   })
-  if (!parsed.success) return
+  if (!parsed.success) return { ok: false, error: 'Datos de cuenta inválidos' }
 
   const { fullName, familyName, email } = parsed.data
 
@@ -73,19 +74,22 @@ export async function updateAccount(formData: FormData) {
   }
 
   if (Object.keys(authUpdatePayload.data).length > 0 || authUpdatePayload.email) {
-    await supabase.auth.updateUser(authUpdatePayload)
+    const { error: userErr } = await supabase.auth.updateUser(authUpdatePayload)
+    if (userErr) return { ok: false, error: translateErrorMessage(userErr) }
   }
 
   // 2. Solo el administrador puede actualizar el nombre de la familia en la tabla `families`
   if (familyName && familyId && myRole === 'admin') {
-    await supabase
+    const { error: famErr } = await supabase
       .from('families')
       .update({ name: familyName })
       .eq('id', familyId)
+    if (famErr) return { ok: false, error: translateErrorMessage(famErr) }
   }
 
   revalidatePath('/ajustes')
   revalidatePath('/')
+  return { ok: true }
 }
 
 export async function addFamilyMember(formData: FormData): Promise<MemberActionResult> {
@@ -196,12 +200,12 @@ export async function updateFamilyMember(formData: FormData): Promise<MemberActi
   return { ok: true }
 }
 
-export async function deleteFamilyMember(formData: FormData) {
+export async function deleteFamilyMember(formData: FormData): Promise<ActionResult> {
   const { supabase, familyId, role: myRole } = await getContext()
-  if (myRole !== 'admin') return
+  if (myRole !== 'admin') return { ok: false, error: 'Solo el administrador puede eliminar integrantes.' }
 
   const parsed = UUID_SCHEMA.safeParse(formData.get('memberId'))
-  if (!parsed.success) return
+  if (!parsed.success) return { ok: false, error: 'ID de integrante inválido.' }
   const memberId = parsed.data
 
   const { data: member } = await supabase
@@ -211,11 +215,15 @@ export async function deleteFamilyMember(formData: FormData) {
     .eq('family_id', familyId)
     .maybeSingle()
 
-  await supabase
+  const { error } = await supabase
     .from('family_members')
     .delete()
     .eq('id', memberId)
     .eq('family_id', familyId)
+
+  if (error) {
+    return { ok: false, error: 'No se pudo eliminar el integrante.' }
+  }
 
   await recordActivity(supabase, {
     familyId,
@@ -228,6 +236,7 @@ export async function deleteFamilyMember(formData: FormData) {
   revalidatePath('/ajustes')
   revalidatePath('/ajustes/integrantes')
   revalidatePath('/')
+  return { ok: true }
 }
 
 export async function signOut() {

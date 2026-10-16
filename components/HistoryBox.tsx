@@ -5,8 +5,8 @@ export default function HistoryBox({ title, rows, canEdit, restore, clear, hidde
   title: string
   rows: Row[]
   canEdit: boolean
-  restore: (fd: FormData) => void | Promise<void>
-  clear: (fd: FormData) => void | Promise<void>
+  restore: (fd: FormData) => unknown | Promise<unknown>
+  clear: (fd: FormData) => unknown | Promise<unknown>
   hidden?: Record<string, string>
 }) {
   if (!rows.length) return null
@@ -19,7 +19,7 @@ export default function HistoryBox({ title, rows, canEdit, restore, clear, hidde
           <li key={r.id}>
             <span className="t">{r.label}</span>
             {canEdit && (
-              <form action={restore}>
+              <form action={async (fd) => { await restore(fd) }}>
                 <input type="hidden" name="id" value={r.id} />
                 {fields}
                 <button className="btn ghost sm" aria-label={`Volver a la lista: ${r.label}`}>Restaurar</button>
@@ -28,7 +28,7 @@ export default function HistoryBox({ title, rows, canEdit, restore, clear, hidde
           </li>
         ))}
       </ul>
-      {canEdit && <form action={clear}>{fields}<button className="btn danger sm">Vaciar historial</button></form>}
+      {canEdit && <form action={async (fd) => { await clear(fd) }}>{fields}<button className="btn danger sm">Vaciar historial</button></form>}
     </details>
   )
 }

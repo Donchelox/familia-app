@@ -32,7 +32,7 @@ export default async function ScheduleAdmin({ ctx }: { ctx: Ctx }) {
                   <li key={x.id}>
                     <span className="time">{x.start_block}{x.length > 1 ? `–${x.start_block + x.length - 1}` : ''}</span>
                     <span className="t">{x.subject}</span>
-                    <form action={deleteBlock}>
+                    <form action={async (fd) => { 'use server'; await deleteBlock(fd) }}>
                       <input type="hidden" name="id" value={x.id} />
                       <button className="btn danger" aria-label={`Eliminar ${x.subject} del ${n}`}>Eliminar</button>
                     </form>
@@ -45,7 +45,7 @@ export default async function ScheduleAdmin({ ctx }: { ctx: Ctx }) {
       })}
       <details className="hist">
         <summary>Añadir clase</summary>
-        <form action={addBlock} className="stack">
+        <form action={async (fd) => { 'use server'; await addBlock(fd) }} className="stack">
           <div className="grid2">
             <div>
               <label htmlFor="b-day">Día</label>
@@ -71,7 +71,7 @@ export default async function ScheduleAdmin({ ctx }: { ctx: Ctx }) {
       </details>
       <details className="hist">
         <summary>Horas de cada bloque (opcional)</summary>
-        <form action={saveSlots} className="stack">
+        <form action={async (fd) => { 'use server'; await saveSlots(fd) }} className="stack">
           <div className="grid2">
             {Array.from({ length: maxP }, (_, i) => (
               <div key={i}>

@@ -2,7 +2,7 @@
 
 import { getContext } from '@/lib/family'
 import { logActivity } from '@/lib/log'
-import { str, refresh } from '@/lib/util'
+import { str, refresh, type ActionResult } from '@/lib/util'
 import { recordActivity } from '@/lib/audit'
 import {
   AddTestSchema,
@@ -22,20 +22,22 @@ function getActorName(ctx: any): string {
 }
 
 /* Pruebas y tareas (admin y editores) */
-export async function addTest(fd: FormData) {
+export async function addTest(fd: FormData): Promise<ActionResult> {
   const ctx = await getContext()
-  if (ctx.role === 'viewer') return
+  if (ctx.role === 'viewer') return { ok: false, error: 'Sin permiso de edición' }
 
   const parsed = AddTestSchema.safeParse({
     subject: fd.get('subject'),
     topic: fd.get('topic') || null,
     date: fd.get('date'),
   })
-  if (!parsed.success) return
+  if (!parsed.success) {
+    return { ok: false, error: parsed.error.issues[0]?.message || 'Datos de la prueba inválidos' }
+  }
 
   const { subject, topic, date: testDate } = parsed.data
 
-  const { data: inserted } = await ctx.supabase
+  const { data: inserted, error } = await ctx.supabase
     .from('school_tests')
     .insert({
       family_id: ctx.familyId,
@@ -45,6 +47,10 @@ export async function addTest(fd: FormData) {
     })
     .select('id')
     .maybeSingle()
+
+  if (error) {
+    return { ok: false, error: 'No se pudo guardar la prueba escolar' }
+  }
 
   await logActivity(ctx, 'Colegio', 'prueba añadida', subject)
 
@@ -60,14 +66,15 @@ export async function addTest(fd: FormData) {
   })
 
   refresh()
+  return { ok: true }
 }
 
-export async function deleteTest(fd: FormData) {
+export async function deleteTest(fd: FormData): Promise<ActionResult> {
   const ctx = await getContext()
-  if (ctx.role === 'viewer') return
+  if (ctx.role === 'viewer') return { ok: false, error: 'Sin permiso de edición' }
 
   const parsed = UUID_SCHEMA.safeParse(fd.get('id'))
-  if (!parsed.success) return
+  if (!parsed.success) return { ok: false, error: 'ID de prueba inválido' }
   const id = parsed.data
 
   const { data: t } = await ctx.supabase
@@ -77,13 +84,17 @@ export async function deleteTest(fd: FormData) {
     .eq('family_id', ctx.familyId)
     .maybeSingle()
 
-  if (!t) return
+  if (!t) return { ok: false, error: 'Prueba no encontrada' }
 
-  await ctx.supabase
+  const { error } = await ctx.supabase
     .from('school_tests')
     .delete()
     .eq('id', id)
     .eq('family_id', ctx.familyId)
+
+  if (error) {
+    return { ok: false, error: 'No se pudo eliminar la prueba' }
+  }
 
   await logActivity(ctx, 'Colegio', 'prueba eliminada', t.subject)
 
@@ -98,22 +109,25 @@ export async function deleteTest(fd: FormData) {
   })
 
   refresh()
+  return { ok: true }
 }
 
-export async function addHomework(fd: FormData) {
+export async function addHomework(fd: FormData): Promise<ActionResult> {
   const ctx = await getContext()
-  if (ctx.role === 'viewer') return
+  if (ctx.role === 'viewer') return { ok: false, error: 'Sin permiso de edición' }
 
   const parsed = AddHomeworkSchema.safeParse({
     subject: fd.get('subject'),
     task: fd.get('task'),
     due: fd.get('due'),
   })
-  if (!parsed.success) return
+  if (!parsed.success) {
+    return { ok: false, error: parsed.error.issues[0]?.message || 'Datos de la tarea inválidos' }
+  }
 
   const { subject, task, due } = parsed.data
 
-  const { data: inserted } = await ctx.supabase
+  const { data: inserted, error } = await ctx.supabase
     .from('school_homework')
     .insert({
       family_id: ctx.familyId,
@@ -123,6 +137,10 @@ export async function addHomework(fd: FormData) {
     })
     .select('id')
     .maybeSingle()
+
+  if (error) {
+    return { ok: false, error: 'No se pudo guardar la tarea escolar' }
+  }
 
   await logActivity(ctx, 'Colegio', 'tarea añadida', `${subject} · ${task}`)
 
@@ -138,14 +156,15 @@ export async function addHomework(fd: FormData) {
   })
 
   refresh()
+  return { ok: true }
 }
 
-export async function toggleHomework(fd: FormData) {
+export async function toggleHomework(fd: FormData): Promise<ActionResult> {
   const ctx = await getContext()
-  if (ctx.role === 'viewer') return
+  if (ctx.role === 'viewer') return { ok: false, error: 'Sin permiso de edición' }
 
   const parsed = UUID_SCHEMA.safeParse(fd.get('id'))
-  if (!parsed.success) return
+  if (!parsed.success) return { ok: false, error: 'ID de tarea inválido' }
   const id = parsed.data
 
   const { data: h } = await ctx.supabase
@@ -155,14 +174,18 @@ export async function toggleHomework(fd: FormData) {
     .eq('family_id', ctx.familyId)
     .maybeSingle()
 
-  if (!h) return
+  if (!h) return { ok: false, error: 'Tarea escolar no encontrada' }
 
   const nextDone = !h.done
-  await ctx.supabase
+  const { error } = await ctx.supabase
     .from('school_homework')
     .update({ done: nextDone, done_at: nextDone ? new Date().toISOString() : null })
     .eq('id', id)
     .eq('family_id', ctx.familyId)
+
+  if (error) {
+    return { ok: false, error: 'No se pudo actualizar la tarea escolar' }
+  }
 
   await logActivity(ctx, 'Colegio', nextDone ? 'tarea hecha' : 'tarea restaurada', `${h.subject} · ${h.task}`)
 
@@ -177,14 +200,15 @@ export async function toggleHomework(fd: FormData) {
   })
 
   refresh()
+  return { ok: true }
 }
 
-export async function deleteHomework(fd: FormData) {
+export async function deleteHomework(fd: FormData): Promise<ActionResult> {
   const ctx = await getContext()
-  if (ctx.role === 'viewer') return
+  if (ctx.role === 'viewer') return { ok: false, error: 'Sin permiso de edición' }
 
   const parsed = UUID_SCHEMA.safeParse(fd.get('id'))
-  if (!parsed.success) return
+  if (!parsed.success) return { ok: false, error: 'ID de tarea inválido' }
   const id = parsed.data
 
   const { data: h } = await ctx.supabase
@@ -194,13 +218,17 @@ export async function deleteHomework(fd: FormData) {
     .eq('family_id', ctx.familyId)
     .maybeSingle()
 
-  if (!h) return
+  if (!h) return { ok: false, error: 'Tarea escolar no encontrada' }
 
-  await ctx.supabase
+  const { error } = await ctx.supabase
     .from('school_homework')
     .delete()
     .eq('id', id)
     .eq('family_id', ctx.familyId)
+
+  if (error) {
+    return { ok: false, error: 'No se pudo eliminar la tarea escolar' }
+  }
 
   await logActivity(ctx, 'Colegio', 'tarea eliminada', `${h.subject} · ${h.task}`)
 
@@ -210,22 +238,26 @@ export async function deleteHomework(fd: FormData) {
     entity: 'school_homework',
     entityId: id,
     action: 'delete',
-    title: `Tarea escolar eliminada: ${h.subject} · ${h.task}`,
-    details: { subject: h.subject, task: h.task },
+    title: `Tarea eliminada: ${h.subject} · ${h.task}`,
   })
 
   refresh()
+  return { ok: true }
 }
 
-export async function clearHomework() {
+export async function clearCompletedHomework(): Promise<ActionResult> {
   const ctx = await getContext()
-  if (ctx.role === 'viewer') return
+  if (ctx.role === 'viewer') return { ok: false, error: 'Sin permiso de edición' }
 
-  await ctx.supabase
+  const { error } = await ctx.supabase
     .from('school_homework')
     .delete()
     .eq('family_id', ctx.familyId)
     .eq('done', true)
+
+  if (error) {
+    return { ok: false, error: 'No se pudieron limpiar las tareas completadas' }
+  }
 
   await logActivity(ctx, 'Colegio', 'historial vaciado')
 
@@ -238,12 +270,13 @@ export async function clearHomework() {
   })
 
   refresh()
+  return { ok: true }
 }
 
 /* Horario de clases (solo administradores; lo exige RLS) */
-export async function addBlock(fd: FormData) {
+export async function addBlock(fd: FormData): Promise<ActionResult> {
   const ctx = await getContext()
-  if (ctx.role !== 'admin') return
+  if (ctx.role !== 'admin') return { ok: false, error: 'Solo el administrador puede modificar el horario escolar.' }
 
   const parsed = AddSchoolBlockSchema.safeParse({
     day: fd.get('day'),
@@ -251,11 +284,13 @@ export async function addBlock(fd: FormData) {
     length: fd.get('length'),
     subject: fd.get('subject'),
   })
-  if (!parsed.success) return
+  if (!parsed.success) {
+    return { ok: false, error: parsed.error.issues[0]?.message || 'Datos del bloque inválidos' }
+  }
 
   const { day, start: startBlock, length, subject } = parsed.data
 
-  const { data: inserted } = await ctx.supabase
+  const { data: inserted, error } = await ctx.supabase
     .from('school_blocks')
     .insert({
       family_id: ctx.familyId,
@@ -266,6 +301,10 @@ export async function addBlock(fd: FormData) {
     })
     .select('id')
     .maybeSingle()
+
+  if (error) {
+    return { ok: false, error: 'No se pudo guardar el bloque de clase' }
+  }
 
   await recordActivity(ctx.supabase, {
     familyId: ctx.familyId,
@@ -279,37 +318,45 @@ export async function addBlock(fd: FormData) {
   })
 
   refresh()
+  return { ok: true }
 }
 
-export async function deleteBlock(fd: FormData) {
+export async function deleteBlock(fd: FormData): Promise<ActionResult> {
   const ctx = await getContext()
-  if (ctx.role !== 'admin') return
+  if (ctx.role !== 'admin') return { ok: false, error: 'Solo el administrador puede eliminar bloques de clase.' }
 
   const parsed = UUID_SCHEMA.safeParse(fd.get('id'))
-  if (!parsed.success) return
+  if (!parsed.success) return { ok: false, error: 'ID de bloque inválido' }
   const id = parsed.data
 
-  await ctx.supabase
+  const { error } = await ctx.supabase
     .from('school_blocks')
     .delete()
     .eq('family_id', ctx.familyId)
     .eq('id', id)
 
+  if (error) {
+    return { ok: false, error: 'No se pudo eliminar el bloque' }
+  }
+
   refresh()
+  return { ok: true }
 }
 
-export async function saveSlots(fd: FormData) {
+export async function saveSlots(fd: FormData): Promise<ActionResult> {
   const ctx = await getContext()
-  if (ctx.role !== 'admin') return
+  if (ctx.role !== 'admin') return { ok: false, error: 'Solo el administrador puede configurar los bloques horarios.' }
 
   for (let b = 1; b <= 12; b++) {
     const rawVal = str(fd, `slot_${b}`)
     if (rawVal && TIME_SCHEMA.safeParse(rawVal).success) {
-      await ctx.supabase.from('school_slots').upsert({ family_id: ctx.familyId, block: b, starts_at: rawVal })
+      const { error } = await ctx.supabase.from('school_slots').upsert({ family_id: ctx.familyId, block: b, starts_at: rawVal })
+      if (error) return { ok: false, error: 'No se pudieron guardar las horas de los bloques.' }
     } else if (!rawVal) {
       await ctx.supabase.from('school_slots').delete().eq('family_id', ctx.familyId).eq('block', b)
     }
   }
 
   refresh()
+  return { ok: true }
 }

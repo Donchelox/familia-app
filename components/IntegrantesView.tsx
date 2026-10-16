@@ -222,7 +222,14 @@ export default function IntegrantesView({
                   </button>
 
                   {isAdmin && (
-                    <form action={cancelInvite}>
+                    <form
+                      action={async (fd) => {
+                        const res = await cancelInvite(fd)
+                        if (res && !res.ok) {
+                          setNotice(res.error)
+                        }
+                      }}
+                    >
                       <input type="hidden" name="id" value={inv.id} />
                       <button
                         type="submit"
@@ -274,11 +281,11 @@ export default function IntegrantesView({
                   sheet.type === 'add_member'
                     ? await addFamilyMember(formData)
                     : await updateFamilyMember(formData)
-                if (res?.error) {
+                if (!res.ok) {
                   setMemberError(res.error)
                   return
                 }
-                if (res?.message) {
+                if (res.message) {
                   setNotice(res.message)
                 }
                 closeSheet()

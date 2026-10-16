@@ -276,7 +276,11 @@ export default function HistorialView({
             <form
               action={async () => {
                 if (!confirm('¿Seguro que deseas vaciar todo el registro de auditoría de la familia?')) return
-                await clearLog()
+                const res = await clearLog()
+                if (res && !res.ok) {
+                  alert(res.error)
+                  return
+                }
                 setLogs([])
               }}
             >

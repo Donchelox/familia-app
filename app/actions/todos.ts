@@ -2,7 +2,7 @@
 
 import { getContext } from '@/lib/family'
 import { logActivity } from '@/lib/log'
-import { refresh } from '@/lib/util'
+import { refresh, type ActionResult } from '@/lib/util'
 import { recordActivity } from '@/lib/audit'
 import { AddTodoSchema, TodoIdSchema } from '@/lib/validations/schemas'
 
@@ -15,22 +15,28 @@ function getActorName(ctx: any): string {
   )
 }
 
-export async function addTodo(fd: FormData) {
+export async function addTodo(fd: FormData): Promise<ActionResult> {
   const ctx = await getContext()
-  if (ctx.role === 'viewer') return
+  if (ctx.role === 'viewer') return { ok: false, error: 'Sin permiso de edición' }
 
   const parsed = AddTodoSchema.safeParse({
     title: fd.get('title'),
   })
-  if (!parsed.success) return
+  if (!parsed.success) {
+    return { ok: false, error: parsed.error.issues[0]?.message || 'Datos de la tarea inválidos' }
+  }
 
   const { title } = parsed.data
 
-  const { data: inserted } = await ctx.supabase
+  const { data: inserted, error } = await ctx.supabase
     .from('todos')
     .insert({ family_id: ctx.familyId, title })
     .select('id')
     .maybeSingle()
+
+  if (error) {
+    return { ok: false, error: 'No se pudo guardar la tarea' }
+  }
 
   await logActivity(ctx, 'Tareas', 'añadida', title)
 
@@ -46,14 +52,15 @@ export async function addTodo(fd: FormData) {
   })
 
   refresh()
+  return { ok: true }
 }
 
-export async function toggleTodo(fd: FormData) {
+export async function toggleTodo(fd: FormData): Promise<ActionResult> {
   const ctx = await getContext()
-  if (ctx.role === 'viewer') return
+  if (ctx.role === 'viewer') return { ok: false, error: 'Sin permiso de edición' }
 
   const parsed = TodoIdSchema.safeParse({ id: fd.get('id') })
-  if (!parsed.success) return
+  if (!parsed.success) return { ok: false, error: 'ID de tarea inválido' }
   const { id } = parsed.data
 
   const { data: t } = await ctx.supabase
@@ -63,14 +70,18 @@ export async function toggleTodo(fd: FormData) {
     .eq('family_id', ctx.familyId)
     .maybeSingle()
 
-  if (!t) return
+  if (!t) return { ok: false, error: 'Tarea no encontrada' }
 
   const nextDone = !t.done
-  await ctx.supabase
+  const { error } = await ctx.supabase
     .from('todos')
     .update({ done: nextDone, done_at: nextDone ? new Date().toISOString() : null })
     .eq('id', id)
     .eq('family_id', ctx.familyId)
+
+  if (error) {
+    return { ok: false, error: 'No se pudo actualizar la tarea' }
+  }
 
   await logActivity(ctx, 'Tareas', t.done ? 'restaurada' : 'completada', t.title)
 
@@ -86,14 +97,15 @@ export async function toggleTodo(fd: FormData) {
   })
 
   refresh()
+  return { ok: true }
 }
 
-export async function deleteTodo(fd: FormData) {
+export async function deleteTodo(fd: FormData): Promise<ActionResult> {
   const ctx = await getContext()
-  if (ctx.role === 'viewer') return
+  if (ctx.role === 'viewer') return { ok: false, error: 'Sin permiso de edición' }
 
   const parsed = TodoIdSchema.safeParse({ id: fd.get('id') })
-  if (!parsed.success) return
+  if (!parsed.success) return { ok: false, error: 'ID de tarea inválido' }
   const { id } = parsed.data
 
   const { data: t } = await ctx.supabase
@@ -103,13 +115,17 @@ export async function deleteTodo(fd: FormData) {
     .eq('family_id', ctx.familyId)
     .maybeSingle()
 
-  if (!t) return
+  if (!t) return { ok: false, error: 'Tarea no encontrada' }
 
-  await ctx.supabase
+  const { error } = await ctx.supabase
     .from('todos')
     .delete()
     .eq('id', id)
     .eq('family_id', ctx.familyId)
+
+  if (error) {
+    return { ok: false, error: 'No se pudo eliminar la tarea' }
+  }
 
   await logActivity(ctx, 'Tareas', 'eliminada', t.title)
 
@@ -123,17 +139,22 @@ export async function deleteTodo(fd: FormData) {
   })
 
   refresh()
+  return { ok: true }
 }
 
-export async function clearTodos() {
+export async function clearTodos(): Promise<ActionResult> {
   const ctx = await getContext()
-  if (ctx.role === 'viewer') return
+  if (ctx.role === 'viewer') return { ok: false, error: 'Sin permiso de edición' }
 
-  await ctx.supabase
+  const { error } = await ctx.supabase
     .from('todos')
     .delete()
     .eq('family_id', ctx.familyId)
     .eq('done', true)
+
+  if (error) {
+    return { ok: false, error: 'No se pudo vaciar el historial de tareas' }
+  }
 
   await logActivity(ctx, 'Tareas', 'historial vaciado')
 
@@ -146,4 +167,5 @@ export async function clearTodos() {
   })
 
   refresh()
+  return { ok: true }
 }

@@ -23,14 +23,14 @@ export default async function MembersPanel({ ctx }: { ctx: Ctx }) {
             <span className="t">{m.display_name || m.email}</span>
             {isAdmin && m.user_id !== user.id ? (
               <div className="inline">
-                <form action={setRole} className="inline">
+                <form action={async (fd) => { 'use server'; await setRole(fd) }} className="inline">
                   <input type="hidden" name="user_id" value={m.user_id} />
                   <select name="role" defaultValue={m.role} aria-label={`Rol de ${m.display_name || m.email}`}>
                     {ROLES.map((r) => <option key={r} value={r}>{ROLE_LABEL[r]}</option>)}
                   </select>
                   <button className="btn ghost">Guardar</button>
                 </form>
-                <form action={removeMember}>
+                <form action={async (fd) => { 'use server'; await removeMember(fd) }}>
                   <input type="hidden" name="user_id" value={m.user_id} />
                   <button className="btn danger">Quitar</button>
                 </form>
@@ -43,7 +43,7 @@ export default async function MembersPanel({ ctx }: { ctx: Ctx }) {
         {invites?.map((i) => (
           <li key={i.id}>
             <span className="t">{i.email} <span className="muted">· invitación pendiente</span></span>
-            <form action={cancelInvite}>
+            <form action={async (fd) => { 'use server'; await cancelInvite(fd) }}>
               <input type="hidden" name="id" value={i.id} />
               <button className="btn danger">Cancelar</button>
             </form>
@@ -53,7 +53,7 @@ export default async function MembersPanel({ ctx }: { ctx: Ctx }) {
       {isAdmin && (
         <details>
           <summary>Invitar a alguien</summary>
-          <form action={inviteMember} className="stack">
+          <form action={async (fd) => { 'use server'; await inviteMember(fd) }} className="stack">
             <div>
               <label htmlFor="inv-email">Correo electrónico</label>
               <input id="inv-email" name="email" type="email" required />

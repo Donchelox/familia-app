@@ -3,6 +3,7 @@
 import { revalidatePath } from 'next/cache'
 import { getContext } from '@/lib/family'
 import { todayStr } from '@/lib/dates'
+import type { ActionResult } from '@/lib/util'
 import {
   MedicationSchema,
   UpdateMedicationSchema,
@@ -17,7 +18,7 @@ const refreshMeds = () => {
 
 // getContext() queda FUERA de los try/catch: internamente usa redirect(), que no debe atraparse.
 
-export async function addMedicationAction(formData: FormData) {
+export async function addMedicationAction(formData: FormData): Promise<ActionResult> {
   const ctx = await getContext()
   if (ctx.role === 'viewer') return { ok: false, error: 'Sin permiso' }
 
@@ -52,7 +53,7 @@ export async function addMedicationAction(formData: FormData) {
   return { ok: true }
 }
 
-export async function updateMedicationAction(formData: FormData) {
+export async function updateMedicationAction(formData: FormData): Promise<ActionResult> {
   const ctx = await getContext()
   if (ctx.role === 'viewer') return { ok: false, error: 'Sin permiso' }
 
@@ -87,12 +88,12 @@ export async function updateMedicationAction(formData: FormData) {
   return { ok: true }
 }
 
-export async function deleteMedicationAction(formData: FormData) {
+export async function deleteMedicationAction(formData: FormData): Promise<ActionResult> {
   const ctx = await getContext()
   if (ctx.role === 'viewer') return { ok: false, error: 'Sin permiso' }
 
   const parsed = UUID_SCHEMA.safeParse(formData.get('id'))
-  if (!parsed.success) return { ok: false }
+  if (!parsed.success) return { ok: false, error: 'ID de medicamento inválido' }
   const id = parsed.data
 
   const { error } = await ctx.supabase
@@ -109,7 +110,7 @@ export async function deleteMedicationAction(formData: FormData) {
   return { ok: true }
 }
 
-export async function toggleDoseAction(formData: FormData) {
+export async function toggleDoseAction(formData: FormData): Promise<ActionResult> {
   const ctx = await getContext()
   if (ctx.role === 'viewer') return { ok: false, error: 'Sin permiso' }
 
@@ -119,7 +120,7 @@ export async function toggleDoseAction(formData: FormData) {
     isTaken: formData.get('isTaken') === 'true',
   })
 
-  if (!parsed.success) return { ok: false }
+  if (!parsed.success) return { ok: false, error: 'Datos de dosis inválidos' }
   const { medicationId, scheduledTime, isTaken } = parsed.data
 
   // La fecha la define el servidor (hora de Chile), no el cliente
@@ -132,7 +133,7 @@ export async function toggleDoseAction(formData: FormData) {
     .eq('id', medicationId)
     .eq('family_id', ctx.familyId)
     .maybeSingle()
-  if (!med) return { ok: false }
+  if (!med) return { ok: false, error: 'Medicamento no encontrado' }
 
   if (isTaken) {
     const { error } = await ctx.supabase

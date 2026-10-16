@@ -2,8 +2,9 @@
 
 import { revalidatePath } from 'next/cache'
 import { getContext } from '@/lib/family'
-import { recordActivity } from '@/lib/audit'
 import { translateErrorMessage } from '@/lib/formatErrors'
+import { recordActivity } from '@/lib/audit'
+import type { ActionResult } from '@/lib/util'
 import {
   AddShoppingItemSchema,
   UpdateShoppingItemSchema,
@@ -11,18 +12,17 @@ import {
 } from '@/lib/validations/schemas'
 import { z } from 'zod'
 
-// Helper para obtener el nombre del usuario activo
 async function getActorName(supabase: any, user: any, familyId: string): Promise<string> {
   if (!user) return 'Familiar'
-
-  const { data: member } = await supabase
-    .from('family_members')
-    .select('name')
-    .eq('family_id', familyId)
-    .eq('user_id', user.id)
-    .maybeSingle()
-
-  if (member?.name) return member.name
+  try {
+    const { data: member } = await supabase
+      .from('family_members')
+      .select('name')
+      .eq('family_id', familyId)
+      .eq('user_id', user.id)
+      .maybeSingle()
+    if (member?.name) return member.name
+  } catch {}
 
   return (
     user.user_metadata?.full_name ||
@@ -32,7 +32,7 @@ async function getActorName(supabase: any, user: any, familyId: string): Promise
 }
 
 // 1. AÑADIR ÍTEM A LA LISTA (Súper o Feria vía FormData)
-export async function addShoppingItem(formData: FormData) {
+export async function addShoppingItem(formData: FormData): Promise<ActionResult> {
   const { supabase, familyId, role } = await getContext()
   if (role === 'viewer') return { ok: false, error: 'Sin permiso de edición' }
 
@@ -96,9 +96,9 @@ export async function addShoppingItem(formData: FormData) {
 export async function updateShoppingItem(
   arg1: string | FormData,
   arg2?: { name?: string; quantity?: string | null; category?: string | null }
-) {
+): Promise<ActionResult> {
   const { supabase, familyId, role } = await getContext()
-  if (role === 'viewer') return
+  if (role === 'viewer') return { ok: false, error: 'Sin permiso de edición' }
 
   let rawId = ''
   let rawUpdates: Record<string, any> = {}
@@ -122,10 +122,12 @@ export async function updateShoppingItem(
   }
 
   const parsed = UpdateShoppingItemSchema.safeParse({ id: rawId, ...rawUpdates })
-  if (!parsed.success) return
+  if (!parsed.success) {
+    return { ok: false, error: parsed.error.issues[0]?.message || 'Datos de producto inválidos' }
+  }
 
   const { id, ...updates } = parsed.data
-  if (Object.keys(updates).length === 0) return
+  if (Object.keys(updates).length === 0) return { ok: false, error: 'Sin cambios' }
 
   const userRes = await supabase.auth.getUser()
   const actorName = await getActorName(supabase, userRes.data?.user, familyId)
@@ -143,7 +145,11 @@ export async function updateShoppingItem(
     .eq('id', id)
     .eq('family_id', familyId)
 
-  if (!error && item) {
+  if (error) {
+    return { ok: false, error: translateErrorMessage(error) }
+  }
+
+  if (item) {
     const listLabel = item.list === 'feria' ? 'Feria' : 'Supermercado'
     await recordActivity(supabase, {
       familyId,
@@ -160,15 +166,16 @@ export async function updateShoppingItem(
   revalidatePath('/super')
   revalidatePath('/feria')
   revalidatePath('/')
+  return { ok: true }
 }
 
 // 3. MARCAR / DESMARCAR COMPRADO
 export async function toggleShoppingItem(
   arg1: string | FormData,
   arg2?: boolean
-) {
+): Promise<ActionResult> {
   const { supabase, familyId, role } = await getContext()
-  if (role === 'viewer') return
+  if (role === 'viewer') return { ok: false, error: 'Sin permiso de edición' }
 
   let id = ''
   let explicitNextDone: boolean | undefined = undefined
@@ -186,7 +193,7 @@ export async function toggleShoppingItem(
     }
   }
 
-  if (!UUID_SCHEMA.safeParse(id).success) return
+  if (!UUID_SCHEMA.safeParse(id).success) return { ok: false, error: 'ID de producto inválido' }
 
   const { data: item } = await supabase
     .from('shopping_items')
@@ -195,7 +202,7 @@ export async function toggleShoppingItem(
     .eq('family_id', familyId)
     .single()
 
-  if (!item) return
+  if (!item) return { ok: false, error: 'Producto no encontrado' }
 
   const nextDone = explicitNextDone !== undefined ? explicitNextDone : !item.done
 
@@ -205,35 +212,38 @@ export async function toggleShoppingItem(
     .eq('id', id)
     .eq('family_id', familyId)
 
-  if (!error) {
-    const userRes = await supabase.auth.getUser()
-    const actorName = await getActorName(supabase, userRes.data?.user, familyId)
-    const listLabel = item.list === 'feria' ? 'Feria' : 'Supermercado'
-
-    await recordActivity(supabase, {
-      familyId,
-      actorName,
-      entity: 'shopping',
-      entityId: id,
-      action: 'toggle',
-      title: `${nextDone ? 'Comprado' : 'Pendiente'} en ${listLabel}: ${item.name}`,
-      scheduledAt: null,
-      details: { list: item.list, done: nextDone },
-    })
+  if (error) {
+    return { ok: false, error: translateErrorMessage(error) }
   }
+
+  const userRes = await supabase.auth.getUser()
+  const actorName = await getActorName(supabase, userRes.data?.user, familyId)
+  const listLabel = item.list === 'feria' ? 'Feria' : 'Supermercado'
+
+  await recordActivity(supabase, {
+    familyId,
+    actorName,
+    entity: 'shopping',
+    entityId: id,
+    action: 'toggle',
+    title: `${nextDone ? 'Comprado' : 'Pendiente'} en ${listLabel}: ${item.name}`,
+    scheduledAt: null,
+    details: { list: item.list, done: nextDone },
+  })
 
   revalidatePath('/super')
   revalidatePath('/feria')
   revalidatePath('/')
+  return { ok: true }
 }
 
 // 4. ELIMINAR UN ÍTEM ESPECÍFICO
-export async function deleteShoppingItem(arg: string | FormData) {
+export async function deleteShoppingItem(arg: string | FormData): Promise<ActionResult> {
   const { supabase, familyId, role } = await getContext()
-  if (role === 'viewer') return
+  if (role === 'viewer') return { ok: false, error: 'Sin permiso de edición' }
 
   const id = typeof arg === 'string' ? arg : ((arg.get('id') as string)?.trim() || '')
-  if (!UUID_SCHEMA.safeParse(id).success) return
+  if (!UUID_SCHEMA.safeParse(id).success) return { ok: false, error: 'ID de producto inválido' }
 
   const userRes = await supabase.auth.getUser()
   const actorName = await getActorName(supabase, userRes.data?.user, familyId)
@@ -251,7 +261,11 @@ export async function deleteShoppingItem(arg: string | FormData) {
     .eq('id', id)
     .eq('family_id', familyId)
 
-  if (!error && item) {
+  if (error) {
+    return { ok: false, error: translateErrorMessage(error) }
+  }
+
+  if (item) {
     const listLabel = item.list === 'feria' ? 'Feria' : 'Supermercado'
     await recordActivity(supabase, {
       familyId,
@@ -268,13 +282,14 @@ export async function deleteShoppingItem(arg: string | FormData) {
   revalidatePath('/super')
   revalidatePath('/feria')
   revalidatePath('/')
+  return { ok: true }
 }
 
 // 5. LIMPIAR TODOS LOS COMPRADOS (CLEAR COMPLETED)
-export async function clearCompletedShopping(listType: 'super' | 'feria') {
+export async function clearCompletedShopping(listType: 'super' | 'feria'): Promise<ActionResult> {
   const { supabase, familyId, role } = await getContext()
-  if (role === 'viewer') return
-  if (!z.enum(['super', 'feria']).safeParse(listType).success) return
+  if (role === 'viewer') return { ok: false, error: 'Sin permiso de edición' }
+  if (!z.enum(['super', 'feria']).safeParse(listType).success) return { ok: false, error: 'Tipo de lista inválido' }
 
   const userRes = await supabase.auth.getUser()
   const actorName = await getActorName(supabase, userRes.data?.user, familyId)
@@ -296,32 +311,35 @@ export async function clearCompletedShopping(listType: 'super' | 'feria') {
       .eq('list', listType)
       .eq('done', true)
 
-    if (!error) {
-      const listLabel = listType === 'feria' ? 'Feria' : 'Supermercado'
-      await recordActivity(supabase, {
-        familyId,
-        actorName,
-        entity: 'shopping',
-        action: 'delete',
-        title: `Vaciado de comprados en ${listLabel} (${count} ítems removidos)`,
-        scheduledAt: null,
-        details: { list: listType, count },
-      })
+    if (error) {
+      return { ok: false, error: translateErrorMessage(error) }
     }
+
+    const listLabel = listType === 'feria' ? 'Feria' : 'Supermercado'
+    await recordActivity(supabase, {
+      familyId,
+      actorName,
+      entity: 'shopping',
+      action: 'delete',
+      title: `Vaciado de comprados en ${listLabel} (${count} ítems removidos)`,
+      scheduledAt: null,
+      details: { list: listType, count },
+    })
   }
 
   revalidatePath('/super')
   revalidatePath('/feria')
   revalidatePath('/')
+  return { ok: true }
 }
 
 // 6. AÑADIR MÚLTIPLES ÍTEMS (Compatible con AddShoppingSheet)
 export async function addItems(
   arg1: 'super' | 'feria' | FormData,
   arg2?: string[]
-) {
+): Promise<ActionResult> {
   const { supabase, familyId, role } = await getContext()
-  if (role === 'viewer') return
+  if (role === 'viewer') return { ok: false, error: 'Sin permiso de edición' }
 
   const userRes = await supabase.auth.getUser()
   const actorName = await getActorName(supabase, userRes.data?.user, familyId)
@@ -346,7 +364,7 @@ export async function addItems(
 
   // Filtrar nombres válidos y limitar tamaño
   const validNames = rawNames.filter((n) => n.length >= 1 && n.length <= 120).slice(0, 100)
-  if (validNames.length === 0) return
+  if (validNames.length === 0) return { ok: false, error: 'No se ingresaron productos válidos' }
 
   const rows = validNames.map((name) => ({
     family_id: familyId,
@@ -357,22 +375,25 @@ export async function addItems(
 
   const { error } = await supabase.from('shopping_items').insert(rows)
 
-  if (!error) {
-    const listLabel = listType === 'feria' ? 'Feria' : 'Supermercado'
-    await recordActivity(supabase, {
-      familyId,
-      actorName,
-      entity: 'shopping',
-      action: 'create',
-      title: `Añadidos a ${listLabel}: ${validNames.join(', ')}`,
-      scheduledAt: null,
-      details: { list: listType, count: validNames.length },
-    })
+  if (error) {
+    return { ok: false, error: translateErrorMessage(error) }
   }
+
+  const listLabel = listType === 'feria' ? 'Feria' : 'Supermercado'
+  await recordActivity(supabase, {
+    familyId,
+    actorName,
+    entity: 'shopping',
+    action: 'create',
+    title: `Añadidos a ${listLabel}: ${validNames.join(', ')}`,
+    scheduledAt: null,
+    details: { list: listType, count: validNames.length },
+  })
 
   revalidatePath('/super')
   revalidatePath('/feria')
   revalidatePath('/')
+  return { ok: true }
 }
 
 // Alias de compatibilidad

@@ -365,7 +365,11 @@ export default function AjustesHubView({
 
             <form
               action={async (formData) => {
-                await updateAccount(formData)
+                const res = await updateAccount(formData)
+                if (res && !res.ok) {
+                  alert(res.error)
+                  return
+                }
                 closeAccountEdit()
               }}
               className="flex flex-col gap-3.5"

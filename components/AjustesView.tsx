@@ -379,7 +379,11 @@ export default function AjustesView({
             {sheet.type === 'edit_account' && (
               <form
                 action={async (formData) => {
-                  await updateAccount(formData)
+                  const res = await updateAccount(formData)
+                  if (res && !res.ok) {
+                    alert(res.error)
+                    return
+                  }
                   closeSheet()
                 }}
                 className="flex flex-col gap-3.5"
@@ -558,7 +562,11 @@ export default function AjustesView({
             {sheet.type === 'edit_member' && (
               <form
                 action={async (formData) => {
-                  await deleteFamilyMember(formData)
+                  const res = await deleteFamilyMember(formData)
+                  if (res && !res.ok) {
+                    alert(res.error)
+                    return
+                  }
                   closeSheet()
                 }}
                 className="pt-1 border-t border-neutral-800/60"
