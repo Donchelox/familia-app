@@ -247,8 +247,9 @@ export default function TareasPage() {
       try {
         let todosQuery = supabase
           .from('todos')
-          .select('*')
+          .select('id, family_id, title, assigned_to, due_date, done, done_at, created_at')
           .order('created_at', { ascending: false })
+          .limit(200)
 
         if (currentFamId) {
           todosQuery = todosQuery.eq('family_id', currentFamId)

@@ -158,8 +158,10 @@ export default function SuperPage() {
 
         let query = supabase
           .from('shopping_items')
-          .select('*')
+          .select('id, family_id, list, name, category, done, done_at, created_at')
+          .neq('list', 'feria')
           .order('created_at', { ascending: false })
+          .limit(200)
 
         if (currentFamId) {
           query = query.eq('family_id', currentFamId)

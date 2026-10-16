@@ -18,7 +18,7 @@ export default async function HistorialPage() {
     })
     const { data } = await admin
       .from('activity_log')
-      .select('*')
+      .select('id, family_id, user_name, module, action, item, created_at')
       .eq('family_id', familyId)
       .order('created_at', { ascending: false })
       .limit(300)

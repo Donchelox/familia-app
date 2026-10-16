@@ -48,7 +48,9 @@ export default async function MedsPage() {
       .from('medications')
       .select('id, name, dose, times, person, frequency, end_date')
       .eq('family_id', ctx.familyId)
+      .or(`end_date.is.null,end_date.gte.${todayStr}`)
       .order('created_at', { ascending: true })
+      .limit(100)
 
     activeMeds = (rawMeds ?? []).filter((med) => {
       if (!med.end_date) return true

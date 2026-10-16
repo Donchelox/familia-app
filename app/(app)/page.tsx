@@ -22,26 +22,35 @@ export default async function Inicio() {
   ] = await Promise.all([
     supabase
       .from('shopping_items')
-      .select('*')
+      .select('id, name, list, category')
       .eq('family_id', familyId)
-      .or('done.eq.false,done.is.null'),
+      .or('done.eq.false,done.is.null')
+      .limit(300),
     supabase
       .from('todos')
-      .select('id, title', { count: 'exact' })
+      .select('id, title, due_date', { count: 'exact' })
       .eq('family_id', familyId)
-      .or('done.eq.false,done.is.null'),
+      .or('done.eq.false,done.is.null')
+      .limit(100),
     supabase
       .from('school_tests')
-      .select('*')
-      .eq('family_id', familyId),
+      .select('id, subject, topic, test_date')
+      .eq('family_id', familyId)
+      .gte('test_date', today)
+      .order('test_date', { ascending: true })
+      .limit(100),
     supabase
       .from('school_homework')
-      .select('*')
-      .eq('family_id', familyId),
+      .select('id, subject, task, done')
+      .eq('family_id', familyId)
+      .or('done.eq.false,done.is.null')
+      .limit(100),
     supabase
       .from('medications')
       .select('id, name, person, times, frequency, end_date')
-      .eq('family_id', familyId),
+      .eq('family_id', familyId)
+      .or(`end_date.is.null,end_date.gte.${today}`)
+      .limit(100),
     supabase
       .from('dose_logs')
       .select('medication_id, time')

@@ -222,20 +222,26 @@ export default function ColegioPage() {
       } catch {}
 
       try {
+        const yesterday = new Date(Date.now() - 86400000).toISOString().split('T')[0]
+
         let schedQuery = supabase
           .from('school_schedule')
-          .select('*')
+          .select('id, family_id, day, subject, time_start, time_end, teacher_initials, valid_until')
           .order('time_start', { ascending: true })
+          .limit(100)
 
         let testsQuery = supabase
           .from('school_tests')
-          .select('*')
+          .select('id, family_id, subject, topic, test_date')
+          .gte('test_date', yesterday)
           .order('test_date', { ascending: true })
+          .limit(100)
 
         let hwQuery = supabase
           .from('school_homework')
-          .select('*')
+          .select('id, family_id, subject, task, due, due_date, done, done_at, created_at')
           .order('created_at', { ascending: false })
+          .limit(100)
 
         let childQuery = supabase
           .from('family_members')

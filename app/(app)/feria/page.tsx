@@ -89,8 +89,10 @@ export default function FeriaPage() {
 
         let query = supabase
           .from('shopping_items')
-          .select('*')
+          .select('id, family_id, list, name, quantity, done, done_at, created_at')
+          .eq('list', 'feria')
           .order('created_at', { ascending: false })
+          .limit(200)
 
         if (currentFamId) {
           query = query.eq('family_id', currentFamId)

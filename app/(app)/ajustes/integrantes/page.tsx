@@ -7,14 +7,16 @@ export default async function IntegrantesPage() {
   const [membersRes, invitesRes] = await Promise.all([
     supabase
       .from('family_members')
-      .select('*')
+      .select('id, name, role, type')
       .eq('family_id', familyId)
-      .order('created_at', { ascending: true }),
+      .order('created_at', { ascending: true })
+      .limit(50),
     supabase
       .from('invites')
-      .select('*')
+      .select('id, email, role, created_at')
       .eq('family_id', familyId)
-      .order('created_at', { ascending: false }),
+      .order('created_at', { ascending: false })
+      .limit(50),
   ])
 
   const members = membersRes.data ?? []
