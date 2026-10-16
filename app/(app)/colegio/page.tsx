@@ -46,7 +46,7 @@ interface SchoolHomework {
 
 const SCHEDULE_DAYS = ['Lunes', 'Martes', 'Miércoles', 'Jueves', 'Viernes']
 
-const DEFAULT_DIEGO_SCHEDULE: Omit<SchoolScheduleBlock, 'id'>[] = [
+const DEFAULT_SCHOOL_SCHEDULE: Omit<SchoolScheduleBlock, 'id'>[] = [
   // Lunes (08:00 a 15:25)
   { day: 'Lunes', time_start: '08:00', time_end: '09:30', subject: 'LENGUAJE Y COMUNICACIÓN', teacher_initials: 'CN', order_index: 1 },
   { day: 'Lunes', time_start: '09:45', time_end: '11:15', subject: 'MATEMÁTICA', teacher_initials: 'JJ', order_index: 2 },
@@ -122,6 +122,7 @@ export default function ColegioPage() {
   })
 
   // Bottom Sheet Estados
+  const [childName, setChildName] = useState<string | null>(null)
   const [isSheetOpen, setIsSheetOpen] = useState(false)
   const [modalType, setModalType] = useState<'test' | 'homework' | 'schedule'>('homework')
   const [editingId, setEditingId] = useState<string | null>(null)
@@ -189,6 +190,15 @@ export default function ColegioPage() {
         )
       }
 
+      try {
+        const cachedMembers = typeof localStorage !== 'undefined' ? localStorage.getItem('casa_family_members') : null
+        if (cachedMembers) {
+          const parsed = JSON.parse(cachedMembers)
+          const child = parsed.find((m: any) => m.type === 'child')
+          if (child?.name) setChildName(child.name)
+        }
+      } catch {}
+
       if (localTasks.length > 0 || localExams.length > 0) {
         setLoading(false)
       }
@@ -227,16 +237,33 @@ export default function ColegioPage() {
           .select('*')
           .order('created_at', { ascending: false })
 
+        let childQuery = supabase
+          .from('family_members')
+          .select('name')
+          .eq('type', 'child')
+          .order('created_at', { ascending: true })
+          .limit(1)
+
         if (currentFamId) {
           schedQuery = schedQuery.eq('family_id', currentFamId)
           testsQuery = testsQuery.eq('family_id', currentFamId)
           hwQuery = hwQuery.eq('family_id', currentFamId)
+          childQuery = childQuery.eq('family_id', currentFamId)
         }
 
-        const [schedRes, testsRes, hwRes] = await Promise.all([schedQuery, testsQuery, hwQuery])
+        const [schedRes, testsRes, hwRes, childRes] = await Promise.all([
+          schedQuery,
+          testsQuery,
+          hwQuery,
+          childQuery.maybeSingle(),
+        ])
+
+        if (childRes.data?.name) {
+          setChildName(childRes.data.name)
+        }
 
         if (!schedRes.data || schedRes.data.length === 0) {
-          const fallbackList: SchoolScheduleBlock[] = DEFAULT_DIEGO_SCHEDULE.map((item, idx) => ({
+          const fallbackList: SchoolScheduleBlock[] = DEFAULT_SCHOOL_SCHEDULE.map((item, idx) => ({
             ...item,
             id: `local-${idx}`,
             valid_until: '2026-12-31',
@@ -672,7 +699,9 @@ export default function ColegioPage() {
                 <path strokeLinecap="round" strokeLinejoin="round" d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z" />
               </svg>
             </span>
-            <h2 className="text-base font-bold text-white m-0">Horario de Diego</h2>
+            <h2 className="text-base font-bold text-white m-0">
+              {childName ? `Horario de ${childName}` : 'Horario escolar'}
+            </h2>
           </div>
           <div className="flex items-center gap-2">
             <span className="text-[11px] text-[#F76911] font-bold bg-[#F76911]/10 px-2 py-0.5 rounded-md border border-[#F76911]/20">

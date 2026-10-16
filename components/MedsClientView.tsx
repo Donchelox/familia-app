@@ -139,7 +139,7 @@ export default function MedsClientView({
   }, [familyId, initialMeds])
 
   // Formulario Crear / Editar
-  const defaultMemberName = members[0]?.name || 'Marcelo Vásquez'
+  const defaultMemberName = members[0]?.name || 'Familiar'
   const [editingId, setEditingId] = useState<string | null>(null)
   const [name, setName] = useState('')
   const [dose, setDose] = useState('')

@@ -32,7 +32,7 @@ export default async function MedsPage() {
     const currentUserName =
       user?.user_metadata?.full_name ||
       user?.user_metadata?.name ||
-      'Marcelo Vásquez'
+      (user?.email ? user.email.split('@')[0] : 'Familiar')
 
     if (currentUserName) {
       membersList.push({ id: user?.id || 'me', name: currentUserName })
