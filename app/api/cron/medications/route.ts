@@ -68,34 +68,26 @@ export async function GET(req: Request) {
     console.error('cron modular-notifications error:', modErr?.message || 'Error desconocido')
   }
 
-  // 1. Medicamentos (se filtran por hora, frecuencia y fecha de término en planReminders)
-  const { data: medsData, error: medsErr } = await supabase
-    .from('medications')
-    .select('id, name, dose, person, family_id, times, frequency, end_date')
-  if (medsErr) {
-    console.error('cron meds query error:', medsErr.message)
-    return NextResponse.json({ error: 'Error consultando medicamentos' }, { status: 500 })
-  }
-  const meds = (medsData ?? []) as MedRow[]
-  if (!meds.length) return NextResponse.json({ ok: true, hm, due: 0, sent: 0 })
-  const medIds = meds.map((m) => m.id)
-
-  // 2. Consulta de familias e intervalos (tolerante a esquema con fallback a metadatos de admin)
-  const famIds = [...new Set(meds.map((m) => m.family_id))]
+  // 1. Consultar familias activas con reminder_push = true y solo columnas necesarias
   const { data: fams, error: famsErr } = await supabase
     .from('families')
-    .select('*')
-    .in('id', famIds)
+    .select('id, reminder_push, med_reminder_interval, reminder_push_detail')
+    .eq('reminder_push', true)
+
   if (famsErr) {
     console.error('cron families query error:', famsErr.message)
     return NextResponse.json({ error: 'Error consultando familias' }, { status: 500 })
   }
 
-  const pushFamilies = new Set((fams ?? []).filter((f) => f.reminder_push).map((f) => f.id as string))
+  if (!fams || fams.length === 0) {
+    return NextResponse.json({ ok: true, hm, due: 0, sent: 0, note: 'Sin familias con recordatorios push activos' })
+  }
+
+  const pushFamilies = new Set(fams.map((f) => f.id as string))
   const familyIntervals = new Map<string, number>()
   const familyDetailMap = new Map<string, boolean>()
 
-  for (const f of fams ?? []) {
+  for (const f of fams) {
     const rawInterval = (f as any).med_reminder_interval
     const interval = Number(rawInterval)
     if ([5, 10, 15, 30].includes(interval)) {
@@ -106,42 +98,22 @@ export async function GET(req: Request) {
     }
   }
 
-  // Fallback: si alguna familia no tiene el intervalo o privacidad en la tabla families, consultar metadata del admin
-  const missingIntervalFams = famIds.filter((id) => !familyIntervals.has(id))
-  if (missingIntervalFams.length > 0) {
-    try {
-      const { data: adminMembers } = await supabase
-        .from('members')
-        .select('family_id, user_id')
-        .eq('role', 'admin')
-        .in('family_id', missingIntervalFams)
+  const famIds = Array.from(pushFamilies)
 
-      if (adminMembers && adminMembers.length > 0) {
-        await Promise.all(
-          adminMembers.map(async (m) => {
-            try {
-              const { data: u } = await supabase.auth.admin.getUserById(m.user_id)
-              const meta = u.user?.user_metadata
-              const metaInterval = Number(meta?.med_reminder_interval)
-              if ([5, 10, 15, 30].includes(metaInterval)) {
-                familyIntervals.set(m.family_id, metaInterval)
-              }
-              if (meta?.reminder_push_detail !== undefined && !familyDetailMap.has(m.family_id)) {
-                familyDetailMap.set(m.family_id, Boolean(meta.reminder_push_detail))
-              }
-            } catch {}
-          })
-        )
-      }
-    } catch (adminErr) {
-      console.warn('cron admin fallback warning:', adminErr)
-    }
-  }
+  // 2. Medicamentos de familias con push activo y end_date nulo o >= hoy
+  const { data: medsData, error: medsErr } = await supabase
+    .from('medications')
+    .select('id, name, dose, person, family_id, times, frequency, end_date')
+    .in('family_id', famIds)
+    .or(`end_date.is.null,end_date.gte.${day}`)
 
-  // 3.4 Salir temprano si ninguna familia tiene reminder_push antes de consultar dose_logs y dose_reminders
-  if (pushFamilies.size === 0) {
-    return NextResponse.json({ ok: true, hm, due: 0, sent: 0, note: 'Sin familias con recordatorios push activos' })
+  if (medsErr) {
+    console.error('cron meds query error:', medsErr.message)
+    return NextResponse.json({ error: 'Error consultando medicamentos' }, { status: 500 })
   }
+  const meds = (medsData ?? []) as MedRow[]
+  if (!meds.length) return NextResponse.json({ ok: true, hm, due: 0, sent: 0 })
+  const medIds = meds.map((m) => m.id)
 
   // 3. Dosis ya marcadas como tomadas hoy
   const { data: logs, error: logsErr } = await supabase
@@ -237,67 +209,86 @@ export async function GET(req: Request) {
   }
 
   let sent = 0
-  const jobs: Promise<void>[] = []
-  for (const p of claimed) {
-    const { med } = p
-    const allowDetail = familyDetailMap.get(med.family_id) ?? false
+  const pushTasks: (() => Promise<void>)[] = []
+  const claimedFamilyIds = [...new Set(claimed.map((p) => p.med.family_id))]
 
-    // 3.7 Privacidad: no mostrar nombre ni dosis en pantalla bloqueada por defecto
-    let title: string
-    let body: string
-    if (allowDetail) {
-      const who = `${med.person ? med.person + ' · ' : ''}${med.dose || 'Dosis habitual'}`
-      title = p.kind === 'repeat' ? `⏰ ${med.name} · sin confirmar` : `💊 ${med.name}`
-      body = p.kind === 'repeat'
-        ? `${who}. Pasaron ${p.minutesLate} min y aún no lo marcas como tomado.`
-        : `${who}. Es momento de tomarlo.`
-    } else {
-      title = p.kind === 'repeat' ? '⏰ Recordatorio de medicamento' : '💊 Hora de un medicamento'
-      body = p.kind === 'repeat'
-        ? `Tienes una dosis pendiente por confirmar (${p.minutesLate} min). Toca para ver el detalle.`
-        : 'Es momento de tomar un medicamento programado. Toca para ver el detalle.'
-    }
+  // Aísla errores por familia: un fallo en una familia no interrumpe el procesamiento de las demás
+  for (const famId of claimedFamilyIds) {
+    try {
+      const famClaimed = claimed.filter((p) => p.med.family_id === famId)
+      const famSubs = (subs ?? []).filter((s) => s.family_id === famId)
+      if (!famSubs.length) continue
 
-    const payload = JSON.stringify({
-      title,
-      body,
-      url: '/meds',
-      // Mismo tag en toda la serie: en la bandeja queda un solo aviso por dosis que se vuelve a sonar
-      tag: `med-${med.id}-${day}-${p.time}`,
-    })
+      const allowDetail = familyDetailMap.get(famId) ?? false
 
-    // 3.1 webpush.sendNotification con { TTL: 1200, urgency: 'high', timeout: 10000 }
-    const sendOptions = { TTL: 1200, urgency: 'high' as const, timeout: 10000 }
+      for (const p of famClaimed) {
+        const { med } = p
+        let title: string
+        let body: string
+        if (allowDetail) {
+          const who = `${med.person ? med.person + ' · ' : ''}${med.dose || 'Dosis habitual'}`
+          title = p.kind === 'repeat' ? `⏰ ${med.name} · sin confirmar` : `💊 ${med.name}`
+          body = p.kind === 'repeat'
+            ? `${who}. Pasaron ${p.minutesLate} min y aún no lo marcas como tomado.`
+            : `${who}. Es momento de tomarlo.`
+        } else {
+          title = p.kind === 'repeat' ? '⏰ Recordatorio de medicamento' : '💊 Hora de un medicamento'
+          body = p.kind === 'repeat'
+            ? `Tienes una dosis pendiente por confirmar (${p.minutesLate} min). Toca para ver el detalle.`
+            : 'Es momento de tomar un medicamento programado. Toca para ver el detalle.'
+        }
 
-    for (const sub of (subs ?? []).filter((s) => s.family_id === med.family_id)) {
-      jobs.push(
-        webpush
-          .sendNotification(
-            { endpoint: sub.endpoint, keys: { p256dh: sub.p256dh, auth: sub.auth } },
-            payload,
-            sendOptions
-          )
-          .then(() => {
-            sent++
-          })
-          .catch(async (err: any) => {
-            // Eliminar SOLO si el endpoint expiró o fue desregistrado en el servicio push (404 Not Found o 410 Gone)
-            const status = err?.statusCode
-            if (status === 404 || status === 410) {
-              console.error(`Suscripción push caducada (status: ${status}), eliminando suscripción ID:`, sub.id)
-              try {
-                await supabase.from('push_subscriptions').delete().eq('id', sub.id)
-              } catch (delErr: any) {
-                console.error('Error eliminando suscripción push caducada:', delErr?.message)
+        const payload = JSON.stringify({
+          title,
+          body,
+          url: '/meds',
+          tag: `med-${med.id}-${day}-${p.time}`,
+        })
+
+        const sendOptions = { TTL: 1200, urgency: 'high' as const, timeout: 10000 }
+
+        for (const sub of famSubs) {
+          pushTasks.push(async () => {
+            try {
+              await webpush.sendNotification(
+                { endpoint: sub.endpoint, keys: { p256dh: sub.p256dh, auth: sub.auth } },
+                payload,
+                sendOptions
+              )
+              sent++
+            } catch (err: any) {
+              const status = err?.statusCode
+              if (status === 404 || status === 410) {
+                console.error(`Suscripción push caducada (status: ${status}), eliminando suscripción ID:`, sub.id)
+                try {
+                  await supabase.from('push_subscriptions').delete().eq('id', sub.id)
+                } catch (delErr: any) {
+                  console.error('Error eliminando suscripción push caducada:', delErr?.message)
+                }
+              } else {
+                console.error('Error enviando push:', status ?? err?.message)
               }
-            } else {
-              console.error('Error enviando push:', status ?? err?.message)
             }
           })
-      )
+        }
+      }
+    } catch (famErr: any) {
+      console.error(`Error procesando notificaciones para la familia ${famId}:`, famErr?.message || famErr)
     }
   }
-  await Promise.all(jobs)
+
+  // Limitar concurrencia de envíos web-push (máx 5 workers en paralelo)
+  if (pushTasks.length > 0) {
+    const CONCURRENCY_LIMIT = 5
+    let taskIdx = 0
+    const workers = Array.from({ length: Math.min(CONCURRENCY_LIMIT, pushTasks.length) }, async () => {
+      while (taskIdx < pushTasks.length) {
+        const fn = pushTasks[taskIdx++]
+        await fn()
+      }
+    })
+    await Promise.all(workers)
+  }
 
   // 3.8 Ping opcional a HEALTHCHECK_URL al terminar con éxito
   const healthcheckUrl = process.env.HEALTHCHECK_URL

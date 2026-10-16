@@ -26,6 +26,18 @@ export interface FamilyNotificationPrefs {
   superTime: string
 }
 
+async function runPushWithConcurrency(tasks: (() => Promise<void>)[], limit = 5) {
+  if (!tasks.length) return
+  let taskIdx = 0
+  const workers = Array.from({ length: Math.min(limit, tasks.length) }, async () => {
+    while (taskIdx < tasks.length) {
+      const fn = tasks[taskIdx++]
+      await fn()
+    }
+  })
+  await Promise.all(workers)
+}
+
 /**
  * Obtiene las preferencias de notificaciones para todas las familias desde los metadatos de administradores
  */
@@ -34,56 +46,24 @@ export async function getFamiliesNotificationPrefs(
 ): Promise<Map<string, FamilyNotificationPrefs>> {
   const { data: families } = await supabase
     .from('families')
-    .select('id, reminder_push, reminder_email')
+    .select('id, reminder_push, reminder_email, school_reminders_enabled, school_reminder_time, feria_reminders_enabled, feria_days, feria_time, super_reminders_enabled, super_time')
 
   const prefsMap = new Map<string, FamilyNotificationPrefs>()
   if (!families || families.length === 0) return prefsMap
 
-  // Valores predeterminados requeridos
   for (const f of families) {
     prefsMap.set(f.id, {
       familyId: f.id,
-      schoolEnabled: true,
-      schoolTime: '07:30',
-      feriaEnabled: true,
-      feriaDays: ['Jueves', 'Domingo'],
-      feriaTime: '07:00',
-      superEnabled: true,
-      superTime: '18:00',
+      schoolEnabled: (f as any).school_reminders_enabled !== false,
+      schoolTime: (f as any).school_reminder_time || '07:30',
+      feriaEnabled: (f as any).feria_reminders_enabled !== false,
+      feriaDays: Array.isArray((f as any).feria_days) && (f as any).feria_days.length > 0
+        ? (f as any).feria_days
+        : ['Jueves', 'Domingo'],
+      feriaTime: (f as any).feria_time || '07:00',
+      superEnabled: (f as any).super_reminders_enabled !== false,
+      superTime: (f as any).super_time || '18:00',
     })
-  }
-
-  // Leer configuración personalizada de cada usuario administrador
-  const famIds = families.map((f) => f.id)
-  const { data: adminMembers } = await supabase
-    .from('members')
-    .select('family_id, user_id')
-    .eq('role', 'admin')
-    .in('family_id', famIds)
-
-  if (adminMembers && adminMembers.length > 0) {
-    await Promise.all(
-      adminMembers.map(async (m) => {
-        try {
-          const { data: u } = await supabase.auth.admin.getUserById(m.user_id)
-          const meta = u.user?.user_metadata
-          const existing = prefsMap.get(m.family_id)
-          if (existing && meta) {
-            existing.schoolEnabled = meta.school_reminders_enabled !== false
-            existing.schoolTime = meta.school_reminder_time || '07:30'
-
-            existing.feriaEnabled = meta.feria_reminders_enabled !== false
-            existing.feriaDays = Array.isArray(meta.feria_days) && meta.feria_days.length > 0
-              ? meta.feria_days
-              : ['Jueves', 'Domingo']
-            existing.feriaTime = meta.feria_time || '07:00'
-
-            existing.superEnabled = meta.super_reminders_enabled !== false
-            existing.superTime = meta.super_time || '18:00'
-          }
-        } catch {}
-      })
-    )
   }
 
   return prefsMap
@@ -181,71 +161,73 @@ export async function dispatchSchoolReminders(
   ])
 
   let sent = 0
-  const jobs: Promise<void>[] = []
+  const pushTasks: (() => Promise<void>)[] = []
 
   for (const fam of targetFamilies) {
-    const famTests = (testsRes.data ?? []).filter(
-      (t) => t.family_id === fam.familyId && isSchoolTestActive(t.test_date, currentHM, currentDay)
-    )
-    const famHw = (hwRes.data ?? []).filter((h) => h.family_id === fam.familyId)
+    try {
+      const famTests = (testsRes.data ?? []).filter(
+        (t) => t.family_id === fam.familyId && isSchoolTestActive(t.test_date, currentHM, currentDay)
+      )
+      const famHw = (hwRes.data ?? []).filter((h) => h.family_id === fam.familyId)
 
-    // Si no hay nada de colegio para hoy, no molestar
-    if (famTests.length === 0 && famHw.length === 0) continue
+      // Si no hay nada de colegio para hoy, no molestar
+      if (famTests.length === 0 && famHw.length === 0) continue
 
-    let title = '📚 Colegio · Recordatorio de Hoy'
-    let body = ''
+      let title = '📚 Colegio · Recordatorio de Hoy'
+      let body = ''
 
-    if (famTests.length > 0 && famHw.length > 0) {
-      title = `📝 Prueba Hoy: ${famTests[0].subject}`
-      body = `Hoy tienes prueba de ${famTests[0].subject} y ${famHw.length} tarea escolar pendiente. ¡Mucho éxito!`
-    } else if (famTests.length > 0) {
-      title = `📝 Prueba Hoy: ${famTests[0].subject}`
-      body = `Hoy es día de prueba de ${famTests[0].subject}${famTests[0].topic ? ` (${famTests[0].topic})` : ''}. Recuerda revisar tus contenidos.`
-    } else {
-      title = `📖 Tarea Escolar para Hoy`
-      body = `Tienes ${famHw.length} tarea${famHw.length === 1 ? '' : 's'} por entregar hoy (${famHw[0].subject}).`
-    }
+      if (famTests.length > 0 && famHw.length > 0) {
+        title = `📝 Prueba Hoy: ${famTests[0].subject}`
+        body = `Hoy tienes prueba de ${famTests[0].subject} y ${famHw.length} tarea escolar pendiente. ¡Mucho éxito!`
+      } else if (famTests.length > 0) {
+        title = `📝 Prueba Hoy: ${famTests[0].subject}`
+        body = `Hoy es día de prueba de ${famTests[0].subject}${famTests[0].topic ? ` (${famTests[0].topic})` : ''}. Recuerda revisar tus contenidos.`
+      } else {
+        title = `📖 Tarea Escolar para Hoy`
+        body = `Tienes ${famHw.length} tarea${famHw.length === 1 ? '' : 's'} por entregar hoy (${famHw[0].subject}).`
+      }
 
-    const payload = JSON.stringify({
-      title,
-      body,
-      url: '/colegio',
-      tag: `school-reminder-${fam.familyId}-${currentDay}`,
-    })
+      const payload = JSON.stringify({
+        title,
+        body,
+        url: '/colegio',
+        tag: `school-reminder-${fam.familyId}-${currentDay}`,
+      })
 
-    const famSubs = (subsRes.data ?? []).filter((s) => s.family_id === fam.familyId)
-    for (const sub of famSubs) {
-      jobs.push(
-        webpush
-          .sendNotification(
-            { endpoint: sub.endpoint, keys: { p256dh: sub.p256dh, auth: sub.auth } },
-            payload
-          )
-          .then(() => {
+      const famSubs = (subsRes.data ?? []).filter((s) => s.family_id === fam.familyId)
+      for (const sub of famSubs) {
+        pushTasks.push(async () => {
+          try {
+            await webpush.sendNotification(
+              { endpoint: sub.endpoint, keys: { p256dh: sub.p256dh, auth: sub.auth } },
+              payload
+            )
             sent++
-          })
-          .catch(async (err: any) => {
+          } catch (err: any) {
             if (err?.statusCode === 404 || err?.statusCode === 410) {
               await supabase.from('push_subscriptions').delete().eq('id', sub.id)
             }
-          })
-      )
-    }
-
-    jobs.push(
-      (async () => {
-        await supabase.from('activity_log').insert({
-          family_id: fam.familyId,
-          user_name: 'Sistema',
-          module: 'Colegio',
-          action: 'notificado',
-          item: dedupTag,
+          }
         })
-      })()
-    )
+      }
+
+      pushTasks.push(async () => {
+        try {
+          await supabase.from('activity_log').insert({
+            family_id: fam.familyId,
+            user_name: 'Sistema',
+            module: 'Colegio',
+            action: 'notificado',
+            item: dedupTag,
+          })
+        } catch {}
+      })
+    } catch (famErr) {
+      console.error(`Error procesando recordatorio escolar para familia ${fam.familyId}:`, famErr)
+    }
   }
 
-  await Promise.all(jobs)
+  await runPushWithConcurrency(pushTasks, 5)
   return sent
 }
 
@@ -300,58 +282,60 @@ export async function dispatchFeriaReminders(
   ])
 
   let sent = 0
-  const jobs: Promise<void>[] = []
+  const pushTasks: (() => Promise<void>)[] = []
 
   for (const fam of targetFamilies) {
-    const pendingItems = (itemsRes.data ?? []).filter((i) => i.family_id === fam.familyId)
-    const count = pendingItems.length
+    try {
+      const pendingItems = (itemsRes.data ?? []).filter((i) => i.family_id === fam.familyId)
+      const count = pendingItems.length
 
-    const title = '🥬 Recordatorio de Feria Libre'
-    const body =
-      count > 0
-        ? `Hoy es día de feria (${currentWeekdayName}). Tienes ${count} producto${count === 1 ? '' : 's'} pendientes por comprar.`
-        : `Hoy es día de feria (${currentWeekdayName}). Revisa qué verduras o frutas faltan en casa.`
+      const title = '🥬 Recordatorio de Feria Libre'
+      const body =
+        count > 0
+          ? `Hoy es día de feria (${currentWeekdayName}). Tienes ${count} producto${count === 1 ? '' : 's'} pendientes por comprar.`
+          : `Hoy es día de feria (${currentWeekdayName}). Revisa qué verduras o frutas faltan en casa.`
 
-    const payload = JSON.stringify({
-      title,
-      body,
-      url: '/feria',
-      tag: `feria-reminder-${fam.familyId}-${currentDay}`,
-    })
+      const payload = JSON.stringify({
+        title,
+        body,
+        url: '/feria',
+        tag: `feria-reminder-${fam.familyId}-${currentDay}`,
+      })
 
-    const famSubs = (subsRes.data ?? []).filter((s) => s.family_id === fam.familyId)
-    for (const sub of famSubs) {
-      jobs.push(
-        webpush
-          .sendNotification(
-            { endpoint: sub.endpoint, keys: { p256dh: sub.p256dh, auth: sub.auth } },
-            payload
-          )
-          .then(() => {
+      const famSubs = (subsRes.data ?? []).filter((s) => s.family_id === fam.familyId)
+      for (const sub of famSubs) {
+        pushTasks.push(async () => {
+          try {
+            await webpush.sendNotification(
+              { endpoint: sub.endpoint, keys: { p256dh: sub.p256dh, auth: sub.auth } },
+              payload
+            )
             sent++
-          })
-          .catch(async (err: any) => {
+          } catch (err: any) {
             if (err?.statusCode === 404 || err?.statusCode === 410) {
               await supabase.from('push_subscriptions').delete().eq('id', sub.id)
             }
-          })
-      )
-    }
-
-    jobs.push(
-      (async () => {
-        await supabase.from('activity_log').insert({
-          family_id: fam.familyId,
-          user_name: 'Sistema',
-          module: 'Feria',
-          action: 'notificado',
-          item: dedupTag,
+          }
         })
-      })()
-    )
+      }
+
+      pushTasks.push(async () => {
+        try {
+          await supabase.from('activity_log').insert({
+            family_id: fam.familyId,
+            user_name: 'Sistema',
+            module: 'Feria',
+            action: 'notificado',
+            item: dedupTag,
+          })
+        } catch {}
+      })
+    } catch (famErr) {
+      console.error(`Error procesando recordatorio de feria para familia ${fam.familyId}:`, famErr)
+    }
   }
 
-  await Promise.all(jobs)
+  await runPushWithConcurrency(pushTasks, 5)
   return sent
 }
 
@@ -402,56 +386,58 @@ export async function dispatchSuperReminders(
   ])
 
   let sent = 0
-  const jobs: Promise<void>[] = []
+  const pushTasks: (() => Promise<void>)[] = []
 
   for (const fam of targetFamilies) {
-    const pendingItems = (itemsRes.data ?? []).filter((i) => i.family_id === fam.familyId)
-    const count = pendingItems.length
-    if (count === 0) continue // Si no hay nada pendiente en supermercado, no enviar aviso
+    try {
+      const pendingItems = (itemsRes.data ?? []).filter((i) => i.family_id === fam.familyId)
+      const count = pendingItems.length
+      if (count === 0) continue // Si no hay nada pendiente en supermercado, no enviar aviso
 
-    const title = '🛒 Compras de Supermercado'
-    const body = `Tienes ${count} producto${count === 1 ? '' : 's'} pendientes en tu lista de supermercado.`
+      const title = '🛒 Compras de Supermercado'
+      const body = `Tienes ${count} producto${count === 1 ? '' : 's'} pendientes en tu lista de supermercado.`
 
-    const payload = JSON.stringify({
-      title,
-      body,
-      url: '/super',
-      tag: `super-reminder-${fam.familyId}-${currentDay}`,
-    })
+      const payload = JSON.stringify({
+        title,
+        body,
+        url: '/super',
+        tag: `super-reminder-${fam.familyId}-${currentDay}`,
+      })
 
-    const famSubs = (subsRes.data ?? []).filter((s) => s.family_id === fam.familyId)
-    for (const sub of famSubs) {
-      jobs.push(
-        webpush
-          .sendNotification(
-            { endpoint: sub.endpoint, keys: { p256dh: sub.p256dh, auth: sub.auth } },
-            payload
-          )
-          .then(() => {
+      const famSubs = (subsRes.data ?? []).filter((s) => s.family_id === fam.familyId)
+      for (const sub of famSubs) {
+        pushTasks.push(async () => {
+          try {
+            await webpush.sendNotification(
+              { endpoint: sub.endpoint, keys: { p256dh: sub.p256dh, auth: sub.auth } },
+              payload
+            )
             sent++
-          })
-          .catch(async (err: any) => {
+          } catch (err: any) {
             if (err?.statusCode === 404 || err?.statusCode === 410) {
               await supabase.from('push_subscriptions').delete().eq('id', sub.id)
             }
-          })
-      )
-    }
-
-    jobs.push(
-      (async () => {
-        await supabase.from('activity_log').insert({
-          family_id: fam.familyId,
-          user_name: 'Sistema',
-          module: 'Supermercado',
-          action: 'notificado',
-          item: dedupTag,
+          }
         })
-      })()
-    )
+      }
+
+      pushTasks.push(async () => {
+        try {
+          await supabase.from('activity_log').insert({
+            family_id: fam.familyId,
+            user_name: 'Sistema',
+            module: 'Supermercado',
+            action: 'notificado',
+            item: dedupTag,
+          })
+        } catch {}
+      })
+    } catch (famErr) {
+      console.error(`Error procesando recordatorio de supermercado para familia ${fam.familyId}:`, famErr)
+    }
   }
 
-  await Promise.all(jobs)
+  await runPushWithConcurrency(pushTasks, 5)
   return sent
 }
 

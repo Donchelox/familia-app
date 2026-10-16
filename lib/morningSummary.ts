@@ -292,46 +292,24 @@ export async function dispatchMorningSummary(
   today: string,
   force: boolean = false
 ): Promise<{ targeted: number; sent: number }> {
-  // 1. Obtener familias
+  // 1. Obtener familias y sus configuraciones de resumen matutino
   const { data: families } = await supabase
     .from('families')
-    .select('id, reminder_email')
+    .select('id, reminder_email, morning_summary_enabled, morning_summary_time')
 
   if (!families || families.length === 0) {
     return { targeted: 0, sent: 0 }
   }
 
-  // 2. Preferencias de horario por familia (admin)
-  const famIds = families.map((f) => f.id)
-  const { data: adminMembers } = await supabase
-    .from('members')
-    .select('family_id, user_id')
-    .eq('role', 'admin')
-    .in('family_id', famIds)
-
+  // 2. Preferencias de horario por familia desde la tabla families
   const familyTimes = new Map<string, { enabled: boolean; time: string }>()
   for (const f of families) {
+    const isEnabled = (f as any).morning_summary_enabled !== false && (f.reminder_email ?? true)
+    const configuredTime = (f as any).morning_summary_time || '07:00'
     familyTimes.set(f.id, {
-      enabled: f.reminder_email ?? true,
-      time: '07:00',
+      enabled: isEnabled,
+      time: configuredTime,
     })
-  }
-
-  if (adminMembers && adminMembers.length > 0) {
-    await Promise.all(
-      adminMembers.map(async (m) => {
-        try {
-          const { data: u } = await supabase.auth.admin.getUserById(m.user_id)
-          const meta = u.user?.user_metadata
-          const isEnabled = meta?.morning_summary_enabled !== false
-          const configuredTime = meta?.morning_summary_time || '07:00'
-          familyTimes.set(m.family_id, {
-            enabled: isEnabled,
-            time: configuredTime,
-          })
-        } catch {}
-      })
-    )
   }
 
   // 3. Filtrar familias cuyo horario coincida
@@ -391,42 +369,59 @@ export async function dispatchMorningSummary(
     )
   }
 
-  for (const famId of targetFamilies) {
-    const summary = await fetchMorningSummary(supabase, famId, today)
-    const payload = JSON.stringify(buildMorningSummaryPushPayload(summary))
-    const famSubs = (subs ?? []).filter((s) => s.family_id === famId)
+  const pushTasks: (() => Promise<void>)[] = []
 
-    for (const sub of famSubs) {
-      jobs.push(
-        webpush.default
-          .sendNotification(
-            { endpoint: sub.endpoint, keys: { p256dh: sub.p256dh, auth: sub.auth } },
-            payload
-          )
-          .then(() => {
+  for (const famId of targetFamilies) {
+    try {
+      const summary = await fetchMorningSummary(supabase, famId, today)
+      const payload = JSON.stringify(buildMorningSummaryPushPayload(summary))
+      const famSubs = (subs ?? []).filter((s) => s.family_id === famId)
+
+      for (const sub of famSubs) {
+        pushTasks.push(async () => {
+          try {
+            await webpush.default.sendNotification(
+              { endpoint: sub.endpoint, keys: { p256dh: sub.p256dh, auth: sub.auth } },
+              payload
+            )
             sent++
-          })
-          .catch(async (err: any) => {
+          } catch (err: any) {
             if (err?.statusCode === 404 || err?.statusCode === 410) {
               await supabase.from('push_subscriptions').delete().eq('id', sub.id)
             }
-          })
-      )
-    }
-
-    jobs.push(
-      (async () => {
-        await supabase.from('activity_log').insert({
-          family_id: famId,
-          user_name: 'Sistema',
-          module: 'Resumen Matutino',
-          action: 'notificado',
-          item: dedupTag,
+          }
         })
-      })()
-    )
+      }
+
+      pushTasks.push(async () => {
+        try {
+          await supabase.from('activity_log').insert({
+            family_id: famId,
+            user_name: 'Sistema',
+            module: 'Resumen Matutino',
+            action: 'notificado',
+            item: dedupTag,
+          })
+        } catch (logErr) {
+          console.error('Error registrando auditoria de resumen matutino:', logErr)
+        }
+      })
+    } catch (famErr) {
+      console.error(`Error procesando resumen matutino para familia ${famId}:`, famErr)
+    }
   }
 
-  await Promise.all(jobs)
+  if (pushTasks.length > 0) {
+    const CONCURRENCY_LIMIT = 5
+    let taskIdx = 0
+    const workers = Array.from({ length: Math.min(CONCURRENCY_LIMIT, pushTasks.length) }, async () => {
+      while (taskIdx < pushTasks.length) {
+        const fn = pushTasks[taskIdx++]
+        await fn()
+      }
+    })
+    await Promise.all(workers)
+  }
+
   return { targeted: targetFamilies.length, sent }
 }
