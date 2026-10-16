@@ -52,7 +52,9 @@ export default function FeriaPage() {
       const fallbackFamId = await getOfflineFamilyId()
       if (!familyId && fallbackFamId) setFamilyId(fallbackFamId)
 
-      const localData = await offlineDB.shopping_lists.toArray()
+      const localData = fallbackFamId
+        ? await offlineDB.shopping_lists.where('family_id').equals(fallbackFamId).toArray()
+        : []
       const localFeria = localData
         .filter((i) => i.list === 'feria')
         .map((i) => ({ ...i, quantity: (i as any).quantity || '1 kg' }))

@@ -46,46 +46,7 @@ interface SchoolHomework {
 
 const SCHEDULE_DAYS = ['Lunes', 'Martes', 'Miércoles', 'Jueves', 'Viernes']
 
-const DEFAULT_SCHOOL_SCHEDULE: Omit<SchoolScheduleBlock, 'id'>[] = [
-  // Lunes (08:00 a 15:25)
-  { day: 'Lunes', time_start: '08:00', time_end: '09:30', subject: 'LENGUAJE Y COMUNICACIÓN', teacher_initials: 'CN', order_index: 1 },
-  { day: 'Lunes', time_start: '09:45', time_end: '11:15', subject: 'MATEMÁTICA', teacher_initials: 'JJ', order_index: 2 },
-  { day: 'Lunes', time_start: '11:30', time_end: '12:15', subject: 'ARTES VISUALES', teacher_initials: 'NV', order_index: 3 },
-  { day: 'Lunes', time_start: '13:00', time_end: '13:45', subject: 'ARTES VISUALES', teacher_initials: 'NV', order_index: 4 },
-  { day: 'Lunes', time_start: '13:45', time_end: '14:30', subject: 'HISTORIA, GEOGRAFÍA Y C...', teacher_initials: 'CG', order_index: 5 },
-  { day: 'Lunes', time_start: '14:40', time_end: '15:25', subject: 'HISTORIA, GEOGRAFÍA Y C...', teacher_initials: 'CG', order_index: 6 },
 
-  // Martes (08:00 a 15:25)
-  { day: 'Martes', time_start: '08:00', time_end: '08:45', subject: 'TECNOLOGÍA', teacher_initials: 'JJ', order_index: 1 },
-  { day: 'Martes', time_start: '08:45', time_end: '09:30', subject: 'HISTORIA, GEOGRAFÍA Y C...', teacher_initials: 'CG', order_index: 2 },
-  { day: 'Martes', time_start: '09:45', time_end: '11:15', subject: 'LENGUAJE Y COMUNICACIÓN', teacher_initials: 'CN', order_index: 3 },
-  { day: 'Martes', time_start: '11:30', time_end: '12:15', subject: 'MATEMÁTICA', teacher_initials: 'JJ', order_index: 4 },
-  { day: 'Martes', time_start: '13:00', time_end: '13:45', subject: 'MATEMÁTICA', teacher_initials: 'JJ', order_index: 5 },
-  { day: 'Martes', time_start: '13:45', time_end: '14:30', subject: 'FORMACIÓN CIUDADANA', teacher_initials: 'BF', order_index: 6 },
-  { day: 'Martes', time_start: '14:40', time_end: '15:25', subject: 'ORIENTACIÓN', teacher_initials: 'BF', order_index: 7 },
-
-  // Miércoles (08:00 a 15:25)
-  { day: 'Miércoles', time_start: '08:00', time_end: '09:30', subject: 'TALLER DE INGLÉS', teacher_initials: 'BC', order_index: 1 },
-  { day: 'Miércoles', time_start: '09:45', time_end: '11:15', subject: 'RELIGIÓN', teacher_initials: 'DN', order_index: 2 },
-  { day: 'Miércoles', time_start: '11:30', time_end: '12:15', subject: 'LENGUAJE Y COMUNICACIÓN', teacher_initials: 'CN', order_index: 3 },
-  { day: 'Miércoles', time_start: '13:00', time_end: '13:45', subject: 'LENGUAJE Y COMUNICACIÓN', teacher_initials: 'CN', order_index: 4 },
-  { day: 'Miércoles', time_start: '13:45', time_end: '14:30', subject: 'MATEMÁTICA', teacher_initials: 'JJ', order_index: 5 },
-  { day: 'Miércoles', time_start: '14:40', time_end: '15:25', subject: 'CIENCIAS NATURALES', teacher_initials: 'AO', order_index: 6 },
-
-  // Jueves (08:00 a 15:25)
-  { day: 'Jueves', time_start: '08:00', time_end: '09:30', subject: 'EDUCACIÓN FÍSICA Y SALUD', teacher_initials: 'BF', order_index: 1 },
-  { day: 'Jueves', time_start: '09:45', time_end: '11:15', subject: 'LENGUAJE Y COMUNICACIÓN', teacher_initials: 'CN', order_index: 2 },
-  { day: 'Jueves', time_start: '11:30', time_end: '12:15', subject: 'MATEMÁTICA', teacher_initials: 'JJ', order_index: 3 },
-  { day: 'Jueves', time_start: '13:00', time_end: '13:45', subject: 'MATEMÁTICA', teacher_initials: 'JJ', order_index: 4 },
-  { day: 'Jueves', time_start: '13:45', time_end: '14:30', subject: 'CIENCIAS NATURALES', teacher_initials: 'AO', order_index: 5 },
-  { day: 'Jueves', time_start: '14:40', time_end: '15:25', subject: 'CIENCIAS NATURALES', teacher_initials: 'AO', order_index: 6 },
-
-  // Viernes (08:00 a 13:00)
-  { day: 'Viernes', time_start: '08:00', time_end: '08:45', subject: 'CÁLCULO MENTAL', teacher_initials: 'JJ', order_index: 1 },
-  { day: 'Viernes', time_start: '08:45', time_end: '09:30', subject: 'DOMINIO LECTOR', teacher_initials: 'CN', order_index: 2 },
-  { day: 'Viernes', time_start: '09:45', time_end: '11:15', subject: 'MÚSICA', teacher_initials: 'GR', order_index: 3 },
-  { day: 'Viernes', time_start: '11:30', time_end: '13:00', subject: 'EDUCACIÓN FÍSICA Y SALUD', teacher_initials: 'BF', order_index: 4 },
-]
 
 const COMMON_SUBJECTS = [
   'Lenguaje y Comunicación',
@@ -154,12 +115,14 @@ export default function ColegioPage() {
     // 1. CARGA INMEDIATA DESDE DEXIE (OFFLINE-FIRST)
     try {
       const fallbackFamId = await getOfflineFamilyId()
-      if (!familyId) setFamilyId(fallbackFamId)
+      if (!familyId && fallbackFamId) setFamilyId(fallbackFamId)
 
-      const [localTasks, localExams] = await Promise.all([
-        offlineDB.school_tasks.toArray(),
-        offlineDB.exams.toArray(),
-      ])
+      const [localTasks, localExams] = fallbackFamId
+        ? await Promise.all([
+            offlineDB.school_tasks.where('family_id').equals(fallbackFamId).toArray(),
+            offlineDB.exams.where('family_id').equals(fallbackFamId).toArray(),
+          ])
+        : [[], []]
 
       if (localTasks && localTasks.length > 0) {
         setHomework(
@@ -268,17 +231,7 @@ export default function ColegioPage() {
           setChildName(childRes.data.name)
         }
 
-        if (!schedRes.data || schedRes.data.length === 0) {
-          const fallbackList: SchoolScheduleBlock[] = DEFAULT_SCHOOL_SCHEDULE.map((item, idx) => ({
-            ...item,
-            id: `local-${idx}`,
-            valid_until: '2026-12-31',
-            family_id: currentFamId || undefined,
-          }))
-          setSchedule(fallbackList)
-        } else {
-          setSchedule(schedRes.data)
-        }
+        setSchedule(schedRes.data ?? [])
 
         // Manejo de pruebas remotas + pendientes locales
         const rawTests: SchoolTest[] = testsRes.data ?? []
@@ -395,7 +348,7 @@ export default function ColegioPage() {
   async function toggleHw(hw: SchoolHomework) {
     const nextDone = !hw.done
     const nextDoneAt = nextDone ? new Date().toISOString() : null
-    const targetFamId = hw.family_id || familyId || 'bb16bf3f-db99-4a2f-96e1-4943389bcba2'
+    const targetFamId = hw.family_id || familyId || ''
 
     // Optimistic UI en React
     setHomework((prev) =>
@@ -556,7 +509,7 @@ export default function ColegioPage() {
 
       try {
         await mutate({
-          familyId: targetFamilyId || 'bb16bf3f-db99-4a2f-96e1-4943389bcba2',
+          familyId: targetFamilyId || '',
           entity: 'exams',
           action: editingId ? 'UPDATE' : 'INSERT',
           entityId: tempId,
@@ -600,7 +553,7 @@ export default function ColegioPage() {
 
       try {
         await mutate({
-          familyId: targetFamilyId || 'bb16bf3f-db99-4a2f-96e1-4943389bcba2',
+          familyId: targetFamilyId || '',
           entity: 'school_tasks',
           action: editingId ? 'UPDATE' : 'INSERT',
           entityId: tempId,
@@ -710,9 +663,11 @@ export default function ColegioPage() {
             </h2>
           </div>
           <div className="flex items-center gap-2">
-            <span className="text-[11px] text-[#F76911] font-bold bg-[#F76911]/10 px-2 py-0.5 rounded-md border border-[#F76911]/20">
-              Vigente hasta 31 Dic
-            </span>
+            {schedule.length > 0 && (
+              <span className="text-[11px] text-[#F76911] font-bold bg-[#F76911]/10 px-2 py-0.5 rounded-md border border-[#F76911]/20">
+                Vigente hasta 31 Dic
+              </span>
+            )}
             <button
               type="button"
               onClick={openCreateSchedule}

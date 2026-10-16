@@ -331,8 +331,18 @@ class SyncManager {
 
       // 1. Guardar Medicamentos en Dexie (preservando los pendientes offline)
       if (medsRes.data) {
-        const currentMeds = await offlineDB.medicines.toArray()
+        const currentMeds = await offlineDB.medicines.where('family_id').equals(familyId).toArray()
         const unsyncedIds = new Set(currentMeds.filter((m) => !m._synced).map((m) => m.id))
+        const remoteIds = new Set(medsRes.data.map((m: any) => m.id))
+
+        // Eliminar en Dexie los sincronizados que ya no están en Supabase para esta familia
+        const toDelete = currentMeds
+          .filter((m) => m._synced && !remoteIds.has(m.id))
+          .map((m) => m.id)
+        if (toDelete.length > 0) {
+          await offlineDB.medicines.bulkDelete(toDelete)
+        }
+
         const localMeds: LocalMedicine[] = medsRes.data
           .filter((m: any) => !unsyncedIds.has(m.id))
           .map((m: any) => ({
@@ -355,8 +365,17 @@ class SyncManager {
 
       // 2. Guardar Tareas Escolares en Dexie
       if (tasksRes.data) {
-        const currentTasks = await offlineDB.school_tasks.toArray()
+        const currentTasks = await offlineDB.school_tasks.where('family_id').equals(familyId).toArray()
         const unsyncedIds = new Set(currentTasks.filter((t) => !t._synced).map((t) => t.id))
+        const remoteIds = new Set(tasksRes.data.map((t: any) => t.id))
+
+        const toDelete = currentTasks
+          .filter((t) => t._synced && !remoteIds.has(t.id))
+          .map((t) => t.id)
+        if (toDelete.length > 0) {
+          await offlineDB.school_tasks.bulkDelete(toDelete)
+        }
+
         const localTasks: LocalSchoolTask[] = tasksRes.data
           .filter((t: any) => !unsyncedIds.has(t.id))
           .map((t: any) => ({
@@ -379,8 +398,17 @@ class SyncManager {
 
       // 3. Guardar Exámenes/Pruebas en Dexie
       if (examsRes.data) {
-        const currentExams = await offlineDB.exams.toArray()
+        const currentExams = await offlineDB.exams.where('family_id').equals(familyId).toArray()
         const unsyncedIds = new Set(currentExams.filter((e) => !e._synced).map((e) => e.id))
+        const remoteIds = new Set(examsRes.data.map((e: any) => e.id))
+
+        const toDelete = currentExams
+          .filter((e) => e._synced && !remoteIds.has(e.id))
+          .map((e) => e.id)
+        if (toDelete.length > 0) {
+          await offlineDB.exams.bulkDelete(toDelete)
+        }
+
         const localExams: LocalExam[] = examsRes.data
           .filter((e: any) => !unsyncedIds.has(e.id))
           .map((e: any) => ({
@@ -400,8 +428,17 @@ class SyncManager {
 
       // 4. Guardar Lista de Compras en Dexie
       if (shoppingRes.data) {
-        const currentShop = await offlineDB.shopping_lists.toArray()
+        const currentShop = await offlineDB.shopping_lists.where('family_id').equals(familyId).toArray()
         const unsyncedIds = new Set(currentShop.filter((s) => !s._synced).map((s) => s.id))
+        const remoteIds = new Set(shoppingRes.data.map((s: any) => s.id))
+
+        const toDelete = currentShop
+          .filter((s) => s._synced && !remoteIds.has(s.id))
+          .map((s) => s.id)
+        if (toDelete.length > 0) {
+          await offlineDB.shopping_lists.bulkDelete(toDelete)
+        }
+
         const localShopping: LocalShoppingItem[] = shoppingRes.data
           .filter((s: any) => !unsyncedIds.has(s.id))
           .map((s: any) => ({
@@ -424,8 +461,17 @@ class SyncManager {
 
       // 5. Guardar Tareas del Hogar (todos) en Dexie
       if (todosRes.data) {
-        const currentTodos = await offlineDB.todos.toArray()
+        const currentTodos = await offlineDB.todos.where('family_id').equals(familyId).toArray()
         const unsyncedIds = new Set(currentTodos.filter((t) => !t._synced).map((t) => t.id))
+        const remoteIds = new Set(todosRes.data.map((t: any) => t.id))
+
+        const toDelete = currentTodos
+          .filter((t) => t._synced && !remoteIds.has(t.id))
+          .map((t) => t.id)
+        if (toDelete.length > 0) {
+          await offlineDB.todos.bulkDelete(toDelete)
+        }
+
         const localTodos: LocalTodo[] = todosRes.data
           .filter((t: any) => !unsyncedIds.has(t.id))
           .map((t: any) => ({
