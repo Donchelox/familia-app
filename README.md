@@ -5,13 +5,13 @@ Next.js 15 + Supabase. Módulos: Inicio, Supermercado/Feria, Medicamentos, Tarea
 ## Puesta en marcha paso a paso
 
 ### 1. Base de datos (Supabase)
-En tu proyecto de Supabase → SQL Editor, ejecuta las migraciones en el siguiente orden:
+En tu proyecto de Supabase → SQL Editor (o mediante Supabase CLI), ejecuta en el siguiente orden:
 1. `supabase/schema.sql` (esquema base completo de familias, módulos y RLS).
-2. `supabase/dose-reminders.sql` (tabla de recordatorios de medicamentos).
-3. `supabase/family-members-admin.sql` (políticas de integrantes).
-4. `supabase/fix-claim-invites.sql` (reclamo infalible de invitaciones).
-5. `supabase/fix-shopping-columns.sql` (columnas de categoría y cantidad).
-6. `supabase/migrations/20261015000000_security_phase1.sql` (endurecimiento de seguridad, índices, RLS de push_subscriptions, triggers de integridad y límites CHECK).
+2. `supabase/migrations/20261015000000_security_phase1.sql` (endurecimiento de seguridad, índices, RLS de push_subscriptions, triggers de integridad y límites CHECK).
+3. `supabase/migrations/20261015190000_fix_notification_columns.sql` (columnas de intervalos y detalle de recordatorios).
+4. `supabase/migrations/20261016000000_align_schema_and_code.sql` (alineación de esquema: family_members, school_schedule, dose_reminders, change_logs, y columnas en medications, todos, shopping_items, school_homework, school_tests, activity_log).
+
+*(Los scripts antiguos se conservan en `supabase/legacy/` como referencia histórica).*
 
 ### 2. Autenticación y Correo (Supabase)
 - **Emails**: En Authentication → Email Templates, en las plantillas "Magic Link" y "Confirm signup" reemplaza el enlace por `Tu código: {{ .Token }}`.
