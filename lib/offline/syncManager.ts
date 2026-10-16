@@ -25,11 +25,14 @@ type SyncListener = (status: {
   isOnline: boolean
   isSyncing: boolean
   lastSyncTime: Date | null
+  conflictNotice: string | null
 }) => void
 
 class SyncManager {
   private isSyncing = false
   private lastSyncTime: Date | null = null
+  private conflictNotice: string | null = null
+  private conflictNoticeTimer: any = null
   private listeners: Set<SyncListener> = new Set()
   private initialized = false
 
@@ -37,6 +40,19 @@ class SyncManager {
     if (typeof window !== 'undefined') {
       this.init()
     }
+  }
+
+  /**
+   * Registra un conflicto resuelto automáticamente por LWW o update-vs-delete
+   */
+  public recordConflictResolved() {
+    this.conflictNotice = '1 cambio se resolvió automáticamente'
+    this.notify()
+    if (this.conflictNoticeTimer) clearTimeout(this.conflictNoticeTimer)
+    this.conflictNoticeTimer = setTimeout(() => {
+      this.conflictNotice = null
+      this.notify()
+    }, 6000)
   }
 
   /**
@@ -80,6 +96,7 @@ class SyncManager {
       isOnline: typeof navigator !== 'undefined' ? navigator.onLine : true,
       isSyncing: this.isSyncing,
       lastSyncTime: this.lastSyncTime,
+      conflictNotice: this.conflictNotice,
     })
     return () => {
       this.listeners.delete(listener)
@@ -93,6 +110,7 @@ class SyncManager {
         isOnline,
         isSyncing: this.isSyncing,
         lastSyncTime: this.lastSyncTime,
+        conflictNotice: this.conflictNotice,
       })
     )
   }
@@ -166,13 +184,79 @@ class SyncManager {
           const cleanPayload = { ...item.payload }
           delete cleanPayload._synced
           delete cleanPayload._updated_at
+          delete cleanPayload._base_updated_at
 
-          if (item.action === 'INSERT' || item.action === 'UPDATE') {
+          if (item.action === 'INSERT') {
             const { error: upsertErr } = await supabase
               .from(tableName)
               .upsert(cleanPayload, { onConflict: 'id' })
             error = upsertErr
+          } else if (item.action === 'UPDATE') {
+            // Consultar registro remoto para verificar updated_at base
+            const { data: remoteRecord, error: fetchErr } = await supabase
+              .from(tableName)
+              .select('id, updated_at')
+              .eq('id', item.entityId)
+              .maybeSingle()
+
+            if (fetchErr) {
+              throw fetchErr
+            }
+
+            if (!remoteRecord) {
+              // Caso update-vs-delete: El registro remoto fue eliminado por otro cliente
+              console.warn(`[SyncManager] update-vs-delete en ${item.entity}: ${item.entityId} ya no existe en el servidor.`)
+              const table = offlineDB[item.entity] as any
+              if (table) {
+                await table.delete(item.entityId).catch(() => {})
+              }
+              this.recordConflictResolved()
+              error = null // No reintentar, mutación resuelta
+            } else {
+              const baseUpdated = item.baseUpdatedAt || (item.payload as any)._base_updated_at || (item.payload as any).updated_at
+              const serverUpdated = remoteRecord.updated_at
+
+              if (!baseUpdated || serverUpdated === baseUpdated) {
+                // Sin conflicto: la versión base coincide con la del servidor
+                const { error: updateErr } = await supabase
+                  .from(tableName)
+                  .update(cleanPayload)
+                  .eq('id', item.entityId)
+                error = updateErr
+              } else {
+                // Conflicto detectado: resolver con Última Escritura Gana (Last-Write-Wins)
+                const serverTime = new Date(serverUpdated).getTime()
+                const localTime = item.timestamp
+
+                if (localTime >= serverTime) {
+                  // Gana la escritura local más reciente: sobrescribir servidor
+                  console.log(`[SyncManager] Conflicto resuelto (gana local): ${item.entity} ${item.entityId}`)
+                  const { error: updateErr } = await supabase
+                    .from(tableName)
+                    .update(cleanPayload)
+                    .eq('id', item.entityId)
+                  error = updateErr
+                } else {
+                  // Gana el servidor más reciente: descartar mutación local y actualizar Dexie con datos remotos
+                  console.log(`[SyncManager] Conflicto resuelto (gana servidor): ${item.entity} ${item.entityId}`)
+                  const { data: fullRemote } = await supabase
+                    .from(tableName)
+                    .select('*')
+                    .eq('id', item.entityId)
+                    .maybeSingle()
+                  if (fullRemote) {
+                    const table = offlineDB[item.entity] as any
+                    if (table) {
+                      await table.put({ ...fullRemote, _synced: true }).catch(() => {})
+                    }
+                  }
+                  error = null // Resuelto sin error
+                }
+                this.recordConflictResolved()
+              }
+            }
           } else if (item.action === 'DELETE') {
+            // Caso delete-vs-update o delete normal:
             const { error: deleteErr } = await supabase
               .from(tableName)
               .delete()
@@ -261,6 +345,7 @@ class SyncManager {
             frequency: m.frequency,
             end_date: m.end_date,
             created_at: m.created_at,
+            updated_at: m.updated_at,
             _synced: true,
           }))
         if (localMeds.length > 0) {
@@ -284,6 +369,7 @@ class SyncManager {
             done: t.done || false,
             done_at: t.done_at,
             created_at: t.created_at,
+            updated_at: t.updated_at,
             _synced: true,
           }))
         if (localTasks.length > 0) {
@@ -304,6 +390,7 @@ class SyncManager {
             topic: e.topic,
             test_date: e.test_date,
             created_at: e.created_at,
+            updated_at: e.updated_at,
             _synced: true,
           }))
         if (localExams.length > 0) {
@@ -327,6 +414,7 @@ class SyncManager {
             done: s.done || false,
             done_at: s.done_at,
             created_at: s.created_at,
+            updated_at: s.updated_at,
             _synced: true,
           }))
         if (localShopping.length > 0) {
@@ -349,6 +437,7 @@ class SyncManager {
             done: t.done || false,
             done_at: t.done_at,
             created_at: t.created_at,
+            updated_at: t.updated_at,
             _synced: true,
           }))
         if (localTodos.length > 0) {

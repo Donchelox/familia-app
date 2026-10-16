@@ -43,6 +43,15 @@ export class CasaOfflineDatabase extends Dexie {
       todos: 'id, family_id, title, assigned_to, due_date, done, created_at, _synced',
       sync_queue: '++id, mutationId, familyId, entity, action, status, timestamp',
     })
+
+    this.version(3).stores({
+      medicines: 'id, family_id, person, name, created_at, updated_at, _synced',
+      school_tasks: 'id, family_id, subject, due, due_date, done, created_at, updated_at, _synced',
+      exams: 'id, family_id, subject, test_date, created_at, updated_at, _synced',
+      shopping_lists: 'id, family_id, list, name, done, created_at, updated_at, _synced',
+      todos: 'id, family_id, title, assigned_to, due_date, done, created_at, updated_at, _synced',
+      sync_queue: '++id, mutationId, familyId, entity, action, status, timestamp',
+    })
   }
 
   /**

@@ -9,6 +9,7 @@ export function useOfflineSync() {
   const [isOnline, setIsOnline] = useState<boolean>(true)
   const [isSyncing, setIsSyncing] = useState<boolean>(false)
   const [lastSyncTime, setLastSyncTime] = useState<Date | null>(null)
+  const [conflictNotice, setConflictNotice] = useState<string | null>(null)
 
   // Cantidad de mutaciones pendientes en la cola transaccional (reactivo en tiempo real vía Dexie)
   const pendingCount = useLiveQuery(
@@ -27,6 +28,7 @@ export function useOfflineSync() {
     const unsubscribe = syncManager.subscribe((status) => {
       setIsOnline(status.isOnline)
       setIsSyncing(status.isSyncing)
+      setConflictNotice(status.conflictNotice)
       if (status.lastSyncTime) {
         setLastSyncTime(status.lastSyncTime)
       }
@@ -52,6 +54,7 @@ export function useOfflineSync() {
     isSyncing,
     pendingCount: pendingCount ?? 0,
     lastSyncTime,
+    conflictNotice,
     syncNow,
     pullRemote,
   }

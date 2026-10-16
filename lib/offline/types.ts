@@ -22,6 +22,7 @@ export interface SyncQueueItem {
   status: SyncStatus
   retries: number
   lastError?: string
+  baseUpdatedAt?: string
 }
 
 /**
@@ -37,6 +38,8 @@ export interface LocalMedicine {
   frequency?: string
   end_date?: string
   created_at?: string
+  updated_at?: string
+  _base_updated_at?: string
   _synced?: boolean
   _updated_at?: number
 }
@@ -54,6 +57,8 @@ export interface LocalSchoolTask {
   done: boolean
   done_at?: string | null
   created_at?: string
+  updated_at?: string
+  _base_updated_at?: string
   _synced?: boolean
   _updated_at?: number
 }
@@ -68,6 +73,8 @@ export interface LocalExam {
   topic?: string
   test_date: string
   created_at?: string
+  updated_at?: string
+  _base_updated_at?: string
   _synced?: boolean
   _updated_at?: number
 }
@@ -85,6 +92,8 @@ export interface LocalShoppingItem {
   done: boolean
   done_at?: string | null
   created_at?: string
+  updated_at?: string
+  _base_updated_at?: string
   _synced?: boolean
   _updated_at?: number
 }
@@ -101,6 +110,8 @@ export interface LocalTodo {
   done: boolean
   done_at?: string | null
   created_at?: string
+  updated_at?: string
+  _base_updated_at?: string
   _synced?: boolean
   _updated_at?: number
 }

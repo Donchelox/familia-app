@@ -18,7 +18,7 @@ export default function SyncStatusBadge({
   showLabel = false,
 }: SyncStatusBadgeProps) {
   const [mounted, setMounted] = useState(false)
-  const { isOnline, isSyncing, pendingCount, syncNow } = useOfflineSync()
+  const { isOnline, isSyncing, pendingCount, conflictNotice, syncNow } = useOfflineSync()
 
   useEffect(() => {
     setMounted(true)
@@ -43,7 +43,22 @@ export default function SyncStatusBadge({
     )
   }
 
-  // 1. ESTADO: SIN CONEXIÓN (OFFLINE)
+  // 1. ESTADO: AVISO DISCRETO DE RESOLUCIÓN AUTOMÁTICA DE CONFLICTOS
+  if (conflictNotice) {
+    return (
+      <div
+        title={conflictNotice}
+        className={`inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full bg-blue-950/50 border border-blue-800/60 text-blue-300 animate-in fade-in duration-150 ${className}`}
+      >
+        <span className="w-1.5 h-1.5 rounded-full bg-blue-400" />
+        <span className="text-[10px] font-bold tracking-tight">
+          {conflictNotice}
+        </span>
+      </div>
+    )
+  }
+
+  // 2. ESTADO: SIN CONEXIÓN (OFFLINE)
   if (!isOnline) {
     return (
       <button
@@ -65,7 +80,7 @@ export default function SyncStatusBadge({
     )
   }
 
-  // 2. ESTADO: SINCRONIZANDO CAMBIOS PENDIENTES
+  // 3. ESTADO: SINCRONIZANDO CAMBIOS PENDIENTES
   if (isSyncing) {
     return (
       <div

@@ -47,13 +47,19 @@ export function useOfflineMutation() {
         const now = Date.now()
 
         // 1. ESCRITURA OPTIMISTA INMEDIATA EN DEXIE.JS
+        let baseUpdatedAt: string | undefined = undefined
         if (action === 'INSERT' || action === 'UPDATE') {
+          if (action === 'UPDATE') {
+            const currentRecord = await table.get(finalId)
+            baseUpdatedAt = currentRecord?.updated_at || currentRecord?._base_updated_at
+          }
           const localRecord = {
             ...payload,
             id: finalId,
             family_id: familyId,
             _synced: false,
             _updated_at: now,
+            _base_updated_at: baseUpdatedAt,
           }
           await table.put(localRecord)
         } else if (action === 'DELETE') {
@@ -70,6 +76,7 @@ export function useOfflineMutation() {
           action,
           entityId: finalId,
           payload: { ...payload, id: finalId, family_id: familyId },
+          baseUpdatedAt,
           timestamp: now,
           status: 'pending',
           retries: 0,

@@ -3,7 +3,7 @@
  * Soporte Offline-First (PWA), Caching de App Shell, RSC Flight Streams, Background Sync y Push
  */
 
-const CACHE_VERSION = 'casa-pwa-v5.1'
+const CACHE_VERSION = 'casa-pwa-v6.0'
 const STATIC_CACHE = `${CACHE_VERSION}-static`
 const DYNAMIC_CACHE = `${CACHE_VERSION}-dynamic`
 const APP_SHELL_CACHE = `${CACHE_VERSION}-shell`
