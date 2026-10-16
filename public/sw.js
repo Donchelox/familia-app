@@ -3,7 +3,7 @@
  * Soporte Offline-First (PWA), Caching de App Shell, RSC Flight Streams, Background Sync y Push
  */
 
-const CACHE_VERSION = 'casa-pwa-v5.0'
+const CACHE_VERSION = 'casa-pwa-v5.1'
 const STATIC_CACHE = `${CACHE_VERSION}-static`
 const DYNAMIC_CACHE = `${CACHE_VERSION}-dynamic`
 const APP_SHELL_CACHE = `${CACHE_VERSION}-shell`
@@ -22,6 +22,7 @@ const APP_SHELL_URLS = [
   '/icon-192.webp',
   '/icon-512.webp',
   '/splash-art.webp',
+  '/logo-badge.png',
 ]
 
 /**
@@ -487,8 +488,8 @@ self.addEventListener('push', (event) => {
 
   const show = self.registration.showNotification(title, {
     body,
-    icon: '/icon-192.webp',
-    badge: '/icon-192.webp',
+    icon: '/logo-badge.png',
+    badge: '/logo-badge.png',
     vibrate: [200, 100, 200],
     tag: tag || 'casa-' + id,
     renotify: true,
