@@ -82,15 +82,19 @@ export default function MedsClientView({
           saveOfflineFamilyId(familyId)
         }
 
-        let local = await offlineDB.medicines.where('family_id').equals(activeFamilyId).toArray()
-        if (!local || local.length === 0) {
-          local = await offlineDB.medicines.toArray()
+        if (!activeFamilyId) {
+          if (!initialMeds || initialMeds.length === 0) {
+            setMeds([])
+          }
+          return
         }
 
+        // Consultar únicamente los medicamentos de la familia activa
+        const local = await offlineDB.medicines.where('family_id').equals(activeFamilyId).toArray()
+
         if (local && local.length > 0) {
-          setMeds((prev) => {
+          setMeds(() => {
             const map = new Map<string, Medication>()
-            prev.forEach((m) => map.set(m.id, m))
             local.forEach((m) =>
               map.set(m.id, {
                 id: m.id,
@@ -104,6 +108,9 @@ export default function MedsClientView({
             )
             return Array.from(map.values())
           })
+        } else if (!initialMeds || initialMeds.length === 0) {
+          // Si es una familia nueva sin medicamentos, debe estar vacío
+          setMeds([])
         }
 
         // Si tenemos datos iniciales de servidor y estamos online, respaldar en Dexie
@@ -139,7 +146,7 @@ export default function MedsClientView({
   }, [familyId, initialMeds])
 
   // Formulario Crear / Editar
-  const defaultMemberName = members[0]?.name || 'Marcelo Vásquez'
+  const defaultMemberName = members[0]?.name || ''
   const [editingId, setEditingId] = useState<string | null>(null)
   const [name, setName] = useState('')
   const [dose, setDose] = useState('')

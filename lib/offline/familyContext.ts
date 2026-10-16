@@ -2,7 +2,6 @@
 
 import { offlineDB } from './db'
 
-const FALLBACK_DEFAULT_FAMILY_ID = 'bb16bf3f-db99-4a2f-96e1-4943389bcba2'
 
 /**
  * Guarda el familyId activo en localStorage para uso inmediato offline
@@ -54,5 +53,6 @@ export async function getOfflineFamilyId(): Promise<string> {
     console.debug('[OfflineContext] Error leyendo family_id de Dexie:', err)
   }
 
-  return FALLBACK_DEFAULT_FAMILY_ID
+// Retornar vacío si no hay familia identificada para que familias nuevas inicien vacías
+  return ''
 }

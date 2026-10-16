@@ -15,7 +15,7 @@ import type {
 export function useLocalMedicines(familyId?: string) {
   return useLiveQuery(
     async () => {
-      if (!familyId) return await offlineDB.medicines.toArray()
+      if (!familyId) return []
       return await offlineDB.medicines.where('family_id').equals(familyId).toArray()
     },
     [familyId],
@@ -29,7 +29,7 @@ export function useLocalMedicines(familyId?: string) {
 export function useLocalSchoolTasks(familyId?: string) {
   return useLiveQuery(
     async () => {
-      if (!familyId) return await offlineDB.school_tasks.toArray()
+      if (!familyId) return []
       return await offlineDB.school_tasks.where('family_id').equals(familyId).toArray()
     },
     [familyId],
@@ -43,7 +43,7 @@ export function useLocalSchoolTasks(familyId?: string) {
 export function useLocalExams(familyId?: string) {
   return useLiveQuery(
     async () => {
-      if (!familyId) return await offlineDB.exams.toArray()
+      if (!familyId) return []
       return await offlineDB.exams.where('family_id').equals(familyId).toArray()
     },
     [familyId],
@@ -57,11 +57,8 @@ export function useLocalExams(familyId?: string) {
 export function useLocalShopping(familyId?: string, listType?: 'super' | 'feria') {
   return useLiveQuery(
     async () => {
-      let query = offlineDB.shopping_lists.toCollection()
-      if (familyId) {
-        query = offlineDB.shopping_lists.where('family_id').equals(familyId)
-      }
-      const all = await query.toArray()
+      if (!familyId) return []
+      const all = await offlineDB.shopping_lists.where('family_id').equals(familyId).toArray()
       if (listType) {
         return all.filter((item) => item.list === listType)
       }

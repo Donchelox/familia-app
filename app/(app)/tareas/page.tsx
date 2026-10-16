@@ -114,9 +114,11 @@ export default function TareasPage() {
     let localTodos: TodoItem[] = []
     try {
       const fallbackFamId = await getOfflineFamilyId()
-      if (!familyId) setFamilyId(fallbackFamId)
+      if (!familyId && fallbackFamId) setFamilyId(fallbackFamId)
 
-      const stored = await offlineDB.todos.toArray()
+      const stored = fallbackFamId
+        ? await offlineDB.todos.where('family_id').equals(fallbackFamId).toArray()
+        : []
       if (stored && stored.length > 0) {
         localTodos = stored.map((t) => ({
           id: t.id,

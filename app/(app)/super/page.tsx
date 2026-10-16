@@ -118,7 +118,9 @@ export default function SuperPage() {
       const fallbackFamId = await getOfflineFamilyId()
       if (!familyId && fallbackFamId) setFamilyId(fallbackFamId)
 
-      const localData = await offlineDB.shopping_lists.toArray()
+      const localData = fallbackFamId
+        ? await offlineDB.shopping_lists.where('family_id').equals(fallbackFamId).toArray()
+        : []
       const localSuper = localData
         .filter((i) => i.list !== 'feria')
         .map((i) => ({

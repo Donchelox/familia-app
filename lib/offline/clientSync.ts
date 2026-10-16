@@ -2,6 +2,7 @@
 
 import { syncManager } from './syncManager'
 import { saveOfflineFamilyId } from './familyContext'
+import { offlineDB } from './db'
 
 export const CACHE_VERSION = 'casa-pwa-v5.0'
 export const APP_SHELL_CACHE = `${CACHE_VERSION}-shell`
@@ -112,6 +113,18 @@ export async function preheatAppShell(): Promise<void> {
  */
 export async function hydrateFamilyData(familyId: string): Promise<void> {
   if (!familyId || !familyId.trim()) return
+
+  if (typeof window !== 'undefined') {
+    const prevFam = localStorage.getItem('casa_family_id')
+    if (prevFam && prevFam !== familyId.trim()) {
+      try {
+        await offlineDB.clearAllTables()
+      } catch (err) {
+        console.debug('[ClientSync] Error limpiando tablas locales tras cambio de familia:', err)
+      }
+    }
+  }
+
   saveOfflineFamilyId(familyId)
 
   if (typeof navigator !== 'undefined' && navigator.onLine) {
