@@ -94,7 +94,7 @@ self.addEventListener('install', (event) => {
   self.skipWaiting()
 })
 
-// --- 2. ACTIVACIÓN Y PURGA TOTAL DE CACHÉS ANTERIORES ---
+// --- 2. ACTIVACIÓN Y LIMPIEZA DE CACHES OBSOLETAS ---
 self.addEventListener('activate', (event) => {
   event.waitUntil(
     caches
@@ -103,21 +103,13 @@ self.addEventListener('activate', (event) => {
         return Promise.all(
           keys.map((key) => {
             if (!key.startsWith(CACHE_VERSION)) {
-              console.log(`[SW] Purgando forzosamente caché anterior: ${key}`)
+              console.log(`[SW] Limpiando caché anterior: ${key}`)
               return caches.delete(key)
             }
           })
         )
       })
       .then(() => self.clients.claim())
-      .then(() => {
-        // Notificar a todas las ventanas abiertas que la caché fue purgada
-        return self.clients.matchAll({ type: 'window', includeUncontrolled: true }).then((clients) => {
-          clients.forEach((client) => {
-            client.postMessage({ type: 'CACHE_PURGED_UPDATE', version: CACHE_VERSION })
-          })
-        })
-      })
   )
 })
 
