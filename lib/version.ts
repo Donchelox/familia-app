@@ -17,6 +17,20 @@ export interface ReleaseInfo {
  */
 export const RELEASES: ReleaseInfo[] = [
   {
+    version: '1.6.0',
+    date: '2026-10-16',
+    type: 'minor',
+    title: 'Resolución de deuda técnica, tests unitarios y tolerancia a conflictos offline',
+    description: 'Alineación total de esquema SQL, server actions con ActionResult, cron ligero con aislamiento por familia, tests Vitest y resolución LWW offline.',
+    highlights: [
+      'Esquema de base de datos idempotente alineado con todas las llamadas del código.',
+      'Server actions tipadas uniformemente con ActionResult y compatibilidad con React 19.',
+      'Cron de medicamentos y resúmenes optimizado con aislamiento de fallos y límite de concurrencia push.',
+      'Resolución de conflictos offline con triggers updated_at, Dexie v3 y política Última Escritura Gana (LWW).',
+      'Suite de 45 pruebas unitarias con Vitest y ejecución en CI.',
+    ],
+  },
+  {
     version: '1.3.0',
     date: '2026-10-14',
     type: 'minor',
