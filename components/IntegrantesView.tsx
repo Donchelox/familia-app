@@ -302,7 +302,7 @@ export default function IntegrantesView({
                   type="text"
                   value={memberName}
                   onChange={(e) => setMemberName(e.target.value)}
-                  placeholder="Ej. Sofía, Diego, Toby..."
+                  placeholder="Ej. Mamá, Papá, Hijo..."
                   required
                   className="w-full bg-[#131313] border border-neutral-800 rounded-2xl px-4 py-3 text-sm text-white placeholder-neutral-500 focus:outline-none focus:border-[#F76911]"
                 />

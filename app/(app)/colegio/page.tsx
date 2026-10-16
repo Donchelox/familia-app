@@ -616,7 +616,7 @@ export default function ColegioPage() {
         </div>
       </header>
 
-      {/* SECCIÓN 1: HORARIO DE CLASES DE DIEGO */}
+      {/* SECCIÓN 1: HORARIO ESCOLAR */}
       <section className="flex flex-col gap-3">
         <div className="flex items-center justify-between px-1">
           <div className="flex items-center gap-2">

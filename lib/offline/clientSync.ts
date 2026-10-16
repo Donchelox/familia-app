@@ -109,6 +109,46 @@ export async function preheatAppShell(): Promise<void> {
 }
 
 /**
+ * Purga total de toda la memoria local, base de datos IndexedDB y cachés del navegador.
+ * Garantiza que al cerrar sesión no quede ningún dato de la familia anterior.
+ */
+export async function purgeAllUserDataAndCache(): Promise<void> {
+  // 1. Limpiar Dexie completamente
+  try {
+    await offlineDB.clearAllTables()
+  } catch (err) {
+    console.debug('[PurgeCache] Error limpiando Dexie:', err)
+  }
+
+  // 2. Limpiar LocalStorage y SessionStorage
+  try {
+    if (typeof window !== 'undefined') {
+      localStorage.clear()
+      sessionStorage.clear()
+    }
+  } catch (err) {
+    console.debug('[PurgeCache] Error limpiando Storage:', err)
+  }
+
+  // 3. Limpiar CacheStorage (Service Worker caches) directamente desde window.caches
+  try {
+    if (typeof window !== 'undefined' && 'caches' in window) {
+      const cacheNames = await caches.keys()
+      await Promise.all(cacheNames.map((name) => caches.delete(name)))
+    }
+  } catch (err) {
+    console.debug('[PurgeCache] Error limpiando CacheStorage:', err)
+  }
+
+  // 4. Notificar a Service Worker si está activo para que vacíe cachés en memoria
+  try {
+    if (typeof navigator !== 'undefined' && navigator.serviceWorker?.controller) {
+      navigator.serviceWorker.controller.postMessage({ type: 'PURGE_CACHE' })
+    }
+  } catch {}
+}
+
+/**
  * Hidrata todos los datos remotos de la familia en Dexie y guarda el familyId
  */
 export async function hydrateFamilyData(familyId: string): Promise<void> {
@@ -118,7 +158,7 @@ export async function hydrateFamilyData(familyId: string): Promise<void> {
     const prevFam = localStorage.getItem('casa_family_id')
     if (prevFam && prevFam !== familyId.trim()) {
       try {
-        await offlineDB.clearAllTables()
+        await purgeAllUserDataAndCache()
       } catch (err) {
         console.debug('[ClientSync] Error limpiando tablas locales tras cambio de familia:', err)
       }

@@ -201,7 +201,7 @@ export default function TareasPage() {
         const currentUserName =
           user?.user_metadata?.full_name ||
           user?.user_metadata?.name ||
-          'Marcelo Vásquez'
+          (user?.email ? user.email.split('@')[0] : '')
 
         if (currentUserName && currentUserName.trim()) {
           const trimmed = currentUserName.trim()

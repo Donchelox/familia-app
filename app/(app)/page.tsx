@@ -64,7 +64,7 @@ export default async function Inicio() {
     currentMember?.name ||
     currentUser?.user_metadata?.full_name ||
     currentUser?.user_metadata?.name ||
-    (currentUser?.email ? currentUser.email.split('@')[0] : 'Marcelo')
+    (currentUser?.email ? currentUser.email.split('@')[0] : 'Familia')
 
   const displayName = rawName.charAt(0).toUpperCase() + rawName.slice(1)
   const initials = displayName

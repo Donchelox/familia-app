@@ -1,9 +1,10 @@
 'use client'
 
-import { useState } from 'react'
+import { useState, useEffect } from 'react'
 import { useRouter } from 'next/navigation'
 import { createClient } from '@/lib/supabase/client'
 import { translateErrorMessage } from '@/lib/formatErrors'
+import { purgeAllUserDataAndCache } from '@/lib/offline/clientSync'
 
 export default function Login() {
   const [email, setEmail] = useState('')
@@ -15,6 +16,11 @@ export default function Login() {
   const [isSuccess, setIsSuccess] = useState(false)
   const router = useRouter()
   const supabase = createClient()
+
+  // Al llegar a la pantalla de login, asegurar que no queden datos cacheados de sesiones anteriores
+  useEffect(() => {
+    purgeAllUserDataAndCache().catch(() => {})
+  }, [])
 
   const orangeGradient = {
     background: 'linear-gradient(134.95deg, #F76911 47.75%, #F2A957 100%)',

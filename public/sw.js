@@ -118,7 +118,7 @@ self.addEventListener('message', (event) => {
   if (event.data?.type === 'PRECACHE_CORE_ROUTES') {
     event.waitUntil(precacheRoutes(event.data.routes || APP_SHELL_URLS))
   }
-  if (event.data?.type === 'CLEAR_USER_CACHE' || event.data?.type === 'LOGOUT') {
+  if (event.data?.type === 'CLEAR_USER_CACHE' || event.data?.type === 'LOGOUT' || event.data?.type === 'PURGE_CACHE') {
     event.waitUntil(
       caches.keys().then((keys) => {
         return Promise.all(

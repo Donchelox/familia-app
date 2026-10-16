@@ -6,6 +6,7 @@ import NotificationBell from '@/components/NotificationBell'
 import SyncStatusBadge from '@/components/SyncStatusBadge'
 import { updateAccount, signOut } from '@/app/actions/members'
 import { unsubscribeCurrentPush } from '@/components/PushSubscriptionManager'
+import { purgeAllUserDataAndCache } from '@/lib/offline/clientSync'
 import { RELEASES, getSemVerBreakdown } from '@/lib/version'
 
 interface AjustesHubViewProps {
@@ -216,6 +217,7 @@ export default function AjustesHubView({
       <section className="pt-2">
         <form
           action={async () => {
+            await purgeAllUserDataAndCache()
             await unsubscribeCurrentPush()
             await signOut()
           }}
@@ -377,7 +379,7 @@ export default function AjustesHubView({
                   type="text"
                   value={accountName}
                   onChange={(e) => setAccountName(e.target.value)}
-                  placeholder="Ej. Marcelo Vásquez"
+                  placeholder="Ej. Tu nombre o apodo"
                   required
                   className="w-full bg-[#131313] border border-neutral-800 rounded-2xl px-4 py-3 text-sm text-white placeholder-neutral-500 focus:outline-none focus:border-[#F76911]"
                 />
@@ -390,7 +392,7 @@ export default function AjustesHubView({
                   type="text"
                   value={currentFamilyName}
                   onChange={(e) => setCurrentFamilyName(e.target.value)}
-                  placeholder="Ej. Familia Vásquez Parada"
+                  placeholder="Ej. Mi Familia o Casa"
                   required
                   className="w-full bg-[#131313] border border-neutral-800 rounded-2xl px-4 py-3 text-sm text-white placeholder-neutral-500 focus:outline-none focus:border-[#F76911]"
                 />

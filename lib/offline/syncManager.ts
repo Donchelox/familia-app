@@ -237,13 +237,21 @@ class SyncManager {
       const supabase = createClient()
 
       // Descargar datos en paralelo desde Supabase
-      const [medsRes, tasksRes, examsRes, shoppingRes, todosRes] = await Promise.all([
+      const [medsRes, tasksRes, examsRes, shoppingRes, todosRes, membersRes] = await Promise.all([
         supabase.from('medications').select('*').eq('family_id', familyId),
         supabase.from('school_homework').select('*').eq('family_id', familyId),
         supabase.from('school_tests').select('*').eq('family_id', familyId),
         supabase.from('shopping_items').select('*').eq('family_id', familyId),
         supabase.from('todos').select('*').eq('family_id', familyId),
+        supabase.from('family_members').select('id, name, user_id').eq('family_id', familyId),
       ])
+
+      // Guardar lista de integrantes en cache local
+      if (membersRes.data && typeof window !== 'undefined') {
+        try {
+          localStorage.setItem('casa_family_members', JSON.stringify(membersRes.data))
+        } catch {}
+      }
 
       // 1. Guardar Medicamentos en Dexie (preservando los pendientes offline)
       if (medsRes.data) {

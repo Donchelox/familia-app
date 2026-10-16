@@ -2,8 +2,14 @@ import { redirect } from 'next/navigation'
 import { createClient } from '@/lib/supabase/server'
 import { createClient as createAdminClient } from '@supabase/supabase-js'
 import { CreateFamilySchema } from '@/lib/validations/schemas'
+import OnboardingNotificationsStep from '@/components/OnboardingNotificationsStep'
 
-export default async function Onboarding() {
+export default async function Onboarding(props: {
+  searchParams?: Promise<{ step?: string }>
+}) {
+  const searchParams = await props.searchParams
+  const isNotificationStep = searchParams?.step === 'notifications'
+
   const supabase = await createClient()
   const {
     data: { user },
@@ -13,7 +19,12 @@ export default async function Onboarding() {
     redirect('/login')
   }
 
-  // 1. Si el usuario ya pertenece a una familia, ir directo al dashboard
+  // Pantalla intermedia para solicitar y aprobar notificaciones push en el dispositivo
+  if (isNotificationStep) {
+    return <OnboardingNotificationsStep />
+  }
+
+  // 1. Si el usuario ya pertenece a una familia y no está en el paso de notificaciones, ir directo al dashboard
   const { data: member } = await supabase
     .from('members')
     .select('family_id')
@@ -99,7 +110,7 @@ export default async function Onboarding() {
       .is('user_id', null)
       .eq('type', 'adult')
 
-    redirect('/')
+    redirect('/onboarding?step=notifications')
   }
 
   // Acción para crear una familia nueva (solo si no fue invitado o decide rechazar)
@@ -118,7 +129,7 @@ export default async function Onboarding() {
       dname: parsed.data.name,
     })
     if (error) throw new Error(error.message)
-    redirect('/')
+    redirect('/onboarding?step=notifications')
   }
 
   const orangeGradient = {
@@ -192,7 +203,7 @@ export default async function Onboarding() {
                   name="family"
                   type="text"
                   required
-                  placeholder="Ej. Familia Vásquez o Casa Central"
+                  placeholder="Ej. Casa Central o Mi Familia"
                   className="w-full bg-[#131313] border border-neutral-800 rounded-2xl px-4 py-3.5 text-sm text-white placeholder-neutral-500 focus:outline-none focus:border-[#F76911] transition-colors"
                 />
               </div>
@@ -206,7 +217,7 @@ export default async function Onboarding() {
                   name="name"
                   type="text"
                   required
-                  placeholder="Ej. Marcelo"
+                  placeholder="Ej. Tu nombre o apodo"
                   className="w-full bg-[#131313] border border-neutral-800 rounded-2xl px-4 py-3.5 text-sm text-white placeholder-neutral-500 focus:outline-none focus:border-[#F76911] transition-colors"
                 />
               </div>
