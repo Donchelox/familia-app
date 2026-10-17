@@ -164,16 +164,26 @@ export default function PushSubscriptionManager() {
 export async function unsubscribeCurrentPush(): Promise<void> {
   if (typeof window === 'undefined' || !('serviceWorker' in navigator)) return
   try {
-    const reg = await navigator.serviceWorker.ready
-    const sub = await reg.pushManager.getSubscription()
-    if (sub) {
-      await fetch('/api/push/subscribe', {
-        method: 'DELETE',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ endpoint: sub.endpoint }),
-      }).catch((e) => console.warn('Push delete request error:', e))
-      await sub.unsubscribe().catch((e) => console.warn('Push unsubscribe error:', e))
+    const unregisterLogic = async () => {
+      const reg = await navigator.serviceWorker.getRegistration()
+      if (!reg) return
+      const sub = await reg.pushManager.getSubscription().catch(() => null)
+      if (sub) {
+        await fetch('/api/push/subscribe', {
+          method: 'DELETE',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ endpoint: sub.endpoint }),
+        }).catch((e) => console.warn('Push delete request error:', e))
+        await sub.unsubscribe().catch((e) => console.warn('Push unsubscribe error:', e))
+      }
     }
+
+    // Máximo 800ms de espera para evitar bloqueos
+    await Promise.race([
+      unregisterLogic(),
+      new Promise((resolve) => setTimeout(resolve, 800)),
+    ])
+
     if (navigator.serviceWorker.controller) {
       navigator.serviceWorker.controller.postMessage({ type: 'CLEAR_USER_CACHE' })
     }

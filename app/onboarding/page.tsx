@@ -124,11 +124,60 @@ export default async function Onboarding(props: {
       throw new Error('Datos inválidos para crear la familia.')
     }
     const s = await createClient()
-    const { error } = await s.rpc('create_family', {
-      fname: parsed.data.family,
-      dname: parsed.data.name,
+    const {
+      data: { user: currentUser },
+    } = await s.auth.getUser()
+
+    if (!currentUser) throw new Error('No autenticado')
+
+    const familyName = parsed.data.family.trim()
+    const creatorName = parsed.data.name.trim()
+
+    // 1. Invocar RPC para crear la familia y registrar membresía admin en 'members'
+    const { data: newFid, error } = await s.rpc('create_family', {
+      fname: familyName,
+      dname: creatorName,
     })
     if (error) throw new Error(error.message)
+
+    let finalFid = newFid as string
+    if (!finalFid) {
+      const { data: mem } = await s
+        .from('members')
+        .select('family_id')
+        .eq('user_id', currentUser.id)
+        .order('created_at', { ascending: false })
+        .limit(1)
+        .maybeSingle()
+      finalFid = mem?.family_id
+    }
+
+    // 2. Registrar inmediatamente al creador en 'family_members'
+    if (finalFid) {
+      const serviceKey = process.env.SUPABASE_SERVICE_ROLE_KEY
+      const url = process.env.NEXT_PUBLIC_SUPABASE_URL
+      const adminClient =
+        serviceKey && url
+          ? createAdminClient(url, serviceKey, { auth: { persistSession: false, autoRefreshToken: false } })
+          : s
+
+      await adminClient.from('family_members').insert({
+        family_id: finalFid,
+        name: creatorName,
+        role: 'Administrador',
+        type: 'adult',
+        user_id: currentUser.id,
+      })
+    }
+
+    // 3. Actualizar metadatos de usuario en Supabase Auth para coherencia global
+    await s.auth.updateUser({
+      data: {
+        name: creatorName,
+        full_name: creatorName,
+      },
+    })
+
     redirect('/onboarding?step=notifications')
   }
 

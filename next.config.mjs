@@ -20,6 +20,15 @@ const securityHeaders = [
 ]
 
 const nextConfig = {
+  async redirects() {
+    return [
+      {
+        source: '/medicinas',
+        destination: '/meds',
+        permanent: true,
+      },
+    ]
+  },
   async headers() {
     return [
       { source: '/(.*)', headers: securityHeaders },

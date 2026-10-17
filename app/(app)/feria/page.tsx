@@ -10,7 +10,8 @@ import { useActionParam } from '@/lib/useActionParam'
 import { offlineDB } from '@/lib/offline/db'
 import { useOfflineMutation } from '@/lib/offline/useOfflineMutation'
 
-import { getOfflineFamilyId } from '@/lib/offline/familyContext'
+import { getOfflineFamilyId, saveOfflineFamilyId } from '@/lib/offline/familyContext'
+import { safeUUID } from '@/lib/uuid'
 
 interface FeriaItem {
   id: string
@@ -54,7 +55,7 @@ export default function FeriaPage() {
 
       const localData = fallbackFamId
         ? await offlineDB.shopping_lists.where('family_id').equals(fallbackFamId).toArray()
-        : []
+        : await offlineDB.shopping_lists.toArray()
       const localFeria = localData
         .filter((i) => i.list === 'feria')
         .map((i) => ({ ...i, quantity: (i as any).quantity || '1 kg' }))
@@ -81,12 +82,16 @@ export default function FeriaPage() {
             if (memberData?.family_id) {
               currentFamId = memberData.family_id
               setFamilyId(memberData.family_id)
+              saveOfflineFamilyId(memberData.family_id)
             }
           } catch {}
         }
         if (!currentFamId) {
           currentFamId = await getOfflineFamilyId()
           if (currentFamId) setFamilyId(currentFamId)
+        }
+        if (currentFamId) {
+          saveOfflineFamilyId(currentFamId)
         }
 
         let query = supabase
@@ -99,14 +104,14 @@ export default function FeriaPage() {
         }
 
         const timeoutPromise = new Promise<{ data: any[]; error: any }>((_, reject) =>
-          setTimeout(() => reject(new Error('Timeout de consulta remota')), 8000)
+          setTimeout(() => reject(new Error('Timeout de consulta remota')), 6000)
         )
 
         const { data, error } = await Promise.race([query, timeoutPromise])
 
         if (error) throw error
 
-        if (data && data.length > 0) {
+        if (data) {
           const feriaOnly = data.filter((item: any) => {
             const listVal = (item.list || item.location || '').toLowerCase()
             return listVal === 'feria'
@@ -127,6 +132,16 @@ export default function FeriaPage() {
           setItems(finalItems)
           if (data.length > 0 && data[0].family_id) {
             setFamilyId(data[0].family_id)
+            saveOfflineFamilyId(data[0].family_id)
+          }
+
+          // Eliminar de Dexie los que ya no existen en el servidor
+          const remoteIds = new Set(feriaOnly.map((i: any) => i.id))
+          const staleIds = currentLocal
+            .filter((i) => i.list === 'feria' && i._synced && !remoteIds.has(i.id))
+            .map((i) => i.id)
+          if (staleIds.length > 0) {
+            await offlineDB.shopping_lists.bulkDelete(staleIds)
           }
 
           // Actualizar base de datos local Dexie preservando pendientes
@@ -249,10 +264,7 @@ export default function FeriaPage() {
         },
       })
     } else {
-      const tempId =
-        typeof crypto !== 'undefined' && crypto.randomUUID
-          ? crypto.randomUUID()
-          : `feria_${Date.now()}`
+      const tempId = safeUUID()
 
       const newItem: FeriaItem = {
         id: tempId,
@@ -331,6 +343,15 @@ export default function FeriaPage() {
         </div>
 
         <div className="flex items-center gap-2">
+          <button
+            type="button"
+            onClick={openCreate}
+            style={orangeGradient}
+            className="px-3 py-1.5 rounded-full text-white text-xs font-bold shadow-sm hover:opacity-90 active:scale-95 transition-all cursor-pointer flex items-center gap-1"
+          >
+            <span className="text-sm leading-none">+</span>
+            <span>Producto</span>
+          </button>
           <SyncStatusBadge />
           <NotificationBell />
         </div>
@@ -375,8 +396,17 @@ export default function FeriaPage() {
                 Cargando lista de feria...
               </div>
             ) : pendingItems.length === 0 ? (
-              <div className="p-8 text-center text-xs text-neutral-500 bg-[#1a1a1a] rounded-[28px] border border-neutral-800/80">
-                ¡Lista de feria completada!
+              <div className="p-8 text-center bg-[#1a1a1a] rounded-[28px] border border-neutral-800/80 flex flex-col items-center justify-center gap-3">
+                <span className="text-3xl">🥬</span>
+                <p className="text-xs text-neutral-400 m-0">¡Lista de feria completada o vacía!</p>
+                <button
+                  type="button"
+                  onClick={openCreate}
+                  style={orangeGradient}
+                  className="px-4 py-2 rounded-2xl text-white text-xs font-bold shadow-md hover:opacity-90 active:scale-95 transition-all cursor-pointer"
+                >
+                  + Añadir producto
+                </button>
               </div>
             ) : (
               pendingItems.map((item) => (
@@ -470,7 +500,7 @@ export default function FeriaPage() {
         type="button"
         onClick={openCreate}
         style={orangeGradient}
-        className="fixed bottom-24 right-5 sm:right-8 lg:right-12 w-14 h-14 rounded-full flex items-center justify-center text-white shadow-[0_8px_20px_rgba(247,105,17,0.4)] active:scale-90 transition-transform cursor-pointer z-30"
+        className="fixed bottom-24 right-5 sm:right-8 lg:right-12 w-14 h-14 rounded-full flex items-center justify-center text-white shadow-[0_8px_20px_rgba(247,105,17,0.4)] active:scale-90 transition-transform cursor-pointer z-40"
       >
         <svg className="w-7 h-7 stroke-current stroke-2 fill-none" viewBox="0 0 24 24">
           <path strokeLinecap="round" strokeLinejoin="round" d="M12 4v16m8-8H4" />

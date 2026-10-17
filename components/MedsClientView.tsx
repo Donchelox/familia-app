@@ -11,6 +11,7 @@ import { useActionParam } from '@/lib/useActionParam'
 import { offlineDB } from '@/lib/offline/db'
 import { useOfflineMutation } from '@/lib/offline/useOfflineMutation'
 import { getOfflineFamilyId, saveOfflineFamilyId } from '@/lib/offline/familyContext'
+import { safeUUID } from '@/lib/uuid'
 
 export interface Medication {
   id: string
@@ -318,11 +319,7 @@ export default function MedsClientView({
         ? `days:${selectedDays.join(',')}`
         : frequency
 
-    const tempId =
-      editingId ||
-      (typeof crypto !== 'undefined' && crypto.randomUUID
-        ? crypto.randomUUID()
-        : `med_${Date.now()}`)
+    const tempId = editingId || safeUUID()
 
     const medPayload: Medication = {
       id: tempId,
@@ -412,6 +409,15 @@ export default function MedsClientView({
         </div>
 
         <div className="flex items-center gap-2">
+          <button
+            type="button"
+            onClick={openCreateModal}
+            style={orangeGradient}
+            className="px-3 py-1.5 rounded-full text-white text-xs font-bold shadow-sm hover:opacity-90 active:scale-95 transition-all cursor-pointer flex items-center gap-1"
+          >
+            <span className="text-sm leading-none">+</span>
+            <span>Medicamento</span>
+          </button>
           <SyncStatusBadge />
           <NotificationBell />
         </div>
@@ -457,14 +463,24 @@ export default function MedsClientView({
 
       <main className="flex flex-col gap-3">
         {filteredDoses.length === 0 ? (
-          <div className="p-8 text-center bg-[#1a1a1a] rounded-[28px] border border-neutral-800/80">
-            <div className="w-12 h-12 mx-auto mb-3 rounded-2xl bg-neutral-900 border border-neutral-800 flex items-center justify-center text-neutral-500">
+          <div className="p-8 text-center bg-[#1a1a1a] rounded-[28px] border border-neutral-800/80 flex flex-col items-center justify-center gap-3">
+            <div className="w-12 h-12 mx-auto rounded-2xl bg-neutral-900 border border-neutral-800 flex items-center justify-center text-neutral-500">
               <svg className="w-6 h-6 stroke-current fill-none" viewBox="0 0 24 24">
                 <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19.428 15.428a2 2 0 00-1.022-.547l-2.387-.477a6 6 0 00-3.86.517l-.318.158a6 6 0 01-3.86.517L6.05 15.21a2 2 0 00-1.806.547M8 4h8l-1 1v5.172a2 2 0 00.586 1.414l5 5c1.26 1.26.367 3.414-1.415 3.414H4.828c-1.782 0-2.674-2.154-1.414-3.414l5-5A2 2 0 009 10.172V5L8 4z" />
               </svg>
             </div>
-            <p className="text-sm font-bold text-neutral-300 m-0">No hay dosis pendientes para hoy</p>
-            <p className="text-xs text-neutral-500 mt-1">Presiona el botón + para programar un tratamiento.</p>
+            <div>
+              <p className="text-sm font-bold text-neutral-300 m-0">No hay dosis registradas o pendientes para hoy</p>
+              <p className="text-xs text-neutral-500 mt-1 m-0">Añade medicamentos para programar los horarios y tomas de la familia.</p>
+            </div>
+            <button
+              type="button"
+              onClick={openCreateModal}
+              style={orangeGradient}
+              className="mt-2 px-4 py-2.5 rounded-2xl text-white text-xs font-bold shadow-md hover:opacity-90 active:scale-95 transition-all cursor-pointer"
+            >
+              + Añadir medicamento
+            </button>
           </div>
         ) : (
           filteredDoses.map((dose) => (
@@ -555,7 +571,7 @@ export default function MedsClientView({
         type="button"
         onClick={openCreateModal}
         style={orangeGradient}
-        className="fixed bottom-24 right-5 sm:right-8 lg:right-12 w-14 h-14 rounded-full flex items-center justify-center text-white shadow-[0_8px_20px_rgba(247,105,17,0.4)] active:scale-90 transition-transform cursor-pointer z-30"
+        className="fixed bottom-24 right-5 sm:right-8 lg:right-12 w-14 h-14 rounded-full flex items-center justify-center text-white shadow-[0_8px_20px_rgba(247,105,17,0.4)] active:scale-90 transition-transform cursor-pointer z-40"
       >
         <svg className="w-7 h-7 stroke-current stroke-2 fill-none" viewBox="0 0 24 24">
           <path strokeLinecap="round" strokeLinejoin="round" d="M12 4v16m8-8H4" />

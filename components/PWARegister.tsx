@@ -24,10 +24,7 @@ export default function PWARegister() {
       if (!navigator.onLine) return
 
       try {
-        // Pre-cargar HTML y RSC de todas las páginas de Casa
-        await preheatAppShell()
-
-        // Detectar familyId activo para hidratar la base de datos local Dexie
+        // 1. Detectar familyId activo para hidratar la base de datos local Dexie de inmediato
         const supabase = createClient()
         const { data: userRes } = await supabase.auth.getUser()
         const user = userRes?.user
@@ -41,19 +38,22 @@ export default function PWARegister() {
             .maybeSingle()
 
           if (member?.family_id) {
-            await hydrateFamilyData(member.family_id)
+            hydrateFamilyData(member.family_id).catch(() => {})
           } else {
             const fallbackId = await getOfflineFamilyId()
             if (fallbackId) {
-              await hydrateFamilyData(fallbackId)
+              hydrateFamilyData(fallbackId).catch(() => {})
             }
           }
         } else {
           const fallbackId = await getOfflineFamilyId()
           if (fallbackId) {
-            await hydrateFamilyData(fallbackId)
+            hydrateFamilyData(fallbackId).catch(() => {})
           }
         }
+
+        // 2. Pre-cargar HTML y RSC de todas las páginas de Casa en segundo plano sin bloquear datos
+        preheatAppShell().catch(() => {})
       } catch (err) {
         console.debug('[PWA] Error inicializando capacidades offline:', err)
       }
@@ -111,10 +111,11 @@ export default function PWARegister() {
       }
     }
 
-    // Escuchar cambio de controlador
+    // Escuchar cambio de controlador (solo recargar si ya existía un controlador previo, no en primera instalación)
+    const hadController = Boolean(navigator.serviceWorker.controller)
     let refreshing = false
     navigator.serviceWorker.addEventListener('controllerchange', () => {
-      if (!refreshing) {
+      if (hadController && !refreshing) {
         refreshing = true
         window.location.reload()
       }

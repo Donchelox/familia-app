@@ -3,7 +3,7 @@ import AjustesHubView from '@/components/AjustesHubView'
 import { APP_VERSION } from '@/lib/version'
 
 export default async function AjustesPage() {
-  const { supabase, familyId, familyName, role } = await getContext()
+  const { supabase, familyId, familyName, role, name: contextName } = await getContext()
 
   const [membersRes, userRes, familyRes] = await Promise.all([
     supabase
@@ -18,12 +18,13 @@ export default async function AjustesPage() {
       .maybeSingle(),
   ])
 
-  const membersCount = (membersRes.data ?? []).length
+  const membersCount = Math.max(1, (membersRes.data ?? []).length)
   const user = userRes.data?.user
   const userEmail = user?.email || ''
   const userName =
-    user?.user_metadata?.full_name ||
+    contextName ||
     user?.user_metadata?.name ||
+    user?.user_metadata?.full_name ||
     'Usuario'
 
   // Preferencias iniciales (reminder_push en families)

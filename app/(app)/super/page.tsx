@@ -10,7 +10,8 @@ import { useActionParam } from '@/lib/useActionParam'
 import { offlineDB } from '@/lib/offline/db'
 import { useOfflineMutation } from '@/lib/offline/useOfflineMutation'
 
-import { getOfflineFamilyId } from '@/lib/offline/familyContext'
+import { getOfflineFamilyId, saveOfflineFamilyId } from '@/lib/offline/familyContext'
+import { safeUUID } from '@/lib/uuid'
 
 interface ShoppingItem {
   id: string
@@ -115,12 +116,16 @@ export default function SuperPage() {
 
     // 1. Cargar de inmediato desde Dexie (persistencia offline sin latencia de red)
     try {
-      const fallbackFamId = await getOfflineFamilyId()
-      if (!familyId && fallbackFamId) setFamilyId(fallbackFamId)
+      let currentFamId = familyId
+      if (!currentFamId) {
+        currentFamId = await getOfflineFamilyId()
+        if (currentFamId) setFamilyId(currentFamId)
+      }
 
-      const localData = fallbackFamId
-        ? await offlineDB.shopping_lists.where('family_id').equals(fallbackFamId).toArray()
-        : []
+      const localData = currentFamId
+        ? await offlineDB.shopping_lists.where('family_id').equals(currentFamId).toArray()
+        : await offlineDB.shopping_lists.toArray()
+
       const localSuper = localData
         .filter((i) => i.list !== 'feria')
         .map((i) => ({
@@ -129,7 +134,10 @@ export default function SuperPage() {
         }))
       if (localSuper.length > 0) {
         setItems(localSuper)
-        if (localSuper[0].family_id && !familyId) setFamilyId(localSuper[0].family_id)
+        if (localSuper[0].family_id && !familyId) {
+          setFamilyId(localSuper[0].family_id)
+          saveOfflineFamilyId(localSuper[0].family_id)
+        }
         setLoading(false)
       }
     } catch (e) {
@@ -150,12 +158,16 @@ export default function SuperPage() {
             if (memberData?.family_id) {
               currentFamId = memberData.family_id
               setFamilyId(memberData.family_id)
+              saveOfflineFamilyId(memberData.family_id)
             }
           } catch {}
         }
         if (!currentFamId) {
           currentFamId = await getOfflineFamilyId()
-          if (currentFamId) setFamilyId(currentFamId)
+          if (currentFamId) {
+            setFamilyId(currentFamId)
+            saveOfflineFamilyId(currentFamId)
+          }
         }
 
         let query = supabase
@@ -168,21 +180,23 @@ export default function SuperPage() {
         }
 
         const timeoutPromise = new Promise<{ data: any[]; error: any }>((_, reject) =>
-          setTimeout(() => reject(new Error('Timeout de consulta remota')), 8000)
+          setTimeout(() => reject(new Error('Timeout de consulta remota')), 6000)
         )
 
         const { data, error } = await Promise.race([query, timeoutPromise])
 
         if (error) throw error
 
-        if (data && data.length > 0) {
+        if (data) {
           const superOnly = data.filter((item: any) => {
             const listVal = (item.list || item.location || '').toLowerCase()
             return listVal !== 'feria'
           })
 
           // Preservar elementos locales no sincronizados aún
-          const currentLocal = await offlineDB.shopping_lists.toArray()
+          const currentLocal = currentFamId
+            ? await offlineDB.shopping_lists.where('family_id').equals(currentFamId).toArray()
+            : await offlineDB.shopping_lists.toArray()
           const unsyncedSuper = currentLocal.filter((i) => i.list !== 'feria' && !i._synced)
           const unsyncedMap = new Map(unsyncedSuper.map((i) => [i.id, i]))
 
@@ -201,6 +215,16 @@ export default function SuperPage() {
           setItems(finalItems)
           if (data.length > 0 && data[0].family_id) {
             setFamilyId(data[0].family_id)
+            saveOfflineFamilyId(data[0].family_id)
+          }
+
+          // Eliminar de Dexie los que ya no están en Supabase
+          const remoteIds = new Set(superOnly.map((r: any) => r.id))
+          const toDelete = currentLocal
+            .filter((l) => l.list !== 'feria' && l._synced && !remoteIds.has(l.id))
+            .map((l) => l.id)
+          if (toDelete.length > 0) {
+            await offlineDB.shopping_lists.bulkDelete(toDelete)
           }
 
           // Actualizar base de datos local Dexie preservando pendientes
@@ -329,10 +353,7 @@ export default function SuperPage() {
         },
       })
     } else {
-      const tempId =
-        typeof crypto !== 'undefined' && crypto.randomUUID
-          ? crypto.randomUUID()
-          : `item_${Date.now()}`
+      const tempId = safeUUID()
 
       const newItem: ShoppingItem = {
         id: tempId,
@@ -422,6 +443,17 @@ export default function SuperPage() {
         </div>
 
         <div className="flex items-center gap-2">
+          <button
+            type="button"
+            onClick={openCreate}
+            style={orangeGradient}
+            className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-white text-xs font-bold shadow-md hover:scale-105 active:scale-95 transition-all cursor-pointer"
+          >
+            <svg className="w-3.5 h-3.5 stroke-current stroke-2 fill-none" viewBox="0 0 24 24">
+              <path strokeLinecap="round" strokeLinejoin="round" d="M12 4v16m8-8H4" />
+            </svg>
+            <span>+ Producto</span>
+          </button>
           <SyncStatusBadge />
           <NotificationBell />
         </div>
@@ -486,8 +518,20 @@ export default function SuperPage() {
                 Cargando lista...
               </div>
             ) : displayedPending.length === 0 ? (
-              <div className="p-8 text-center text-xs text-neutral-500 bg-[#1a1a1a] rounded-[28px] border border-neutral-800/80">
-                No hay productos en esta categoría.
+              <div className="p-8 text-center bg-[#1a1a1a] rounded-[28px] border border-neutral-800/80 flex flex-col items-center">
+                <p className="text-sm font-bold text-neutral-300 m-0">No hay productos en esta categoría</p>
+                <p className="text-xs text-neutral-500 mt-1">Usa el botón para añadir productos a tu lista.</p>
+                <button
+                  type="button"
+                  onClick={openCreate}
+                  style={orangeGradient}
+                  className="mt-4 px-4 py-2 rounded-2xl text-white text-xs font-bold shadow-md hover:scale-105 active:scale-95 transition-all cursor-pointer inline-flex items-center gap-2"
+                >
+                  <svg className="w-4 h-4 stroke-current stroke-2 fill-none" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" d="M12 4v16m8-8H4" />
+                  </svg>
+                  <span>Añadir producto</span>
+                </button>
               </div>
             ) : (
               displayedPending.map((item) => (

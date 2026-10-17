@@ -11,7 +11,8 @@ import { translateErrorMessage } from '@/lib/formatErrors'
 import { isSchoolTestActive } from '@/lib/dates'
 import { offlineDB } from '@/lib/offline/db'
 import { useOfflineMutation } from '@/lib/offline/useOfflineMutation'
-import { getOfflineFamilyId } from '@/lib/offline/familyContext'
+import { getOfflineFamilyId, saveOfflineFamilyId } from '@/lib/offline/familyContext'
+import { safeUUID } from '@/lib/uuid'
 
 interface SchoolScheduleBlock {
   id: string
@@ -111,69 +112,83 @@ export default function ColegioPage() {
   async function loadData() {
     setLoading(true)
 
-    // 1. CARGA INMEDIATA DESDE DEXIE (OFFLINE-FIRST)
     try {
-      const fallbackFamId = await getOfflineFamilyId()
-      if (!familyId && fallbackFamId) setFamilyId(fallbackFamId)
-
-      const [localTasks, localExams] = fallbackFamId
-        ? await Promise.all([
-            offlineDB.school_tasks.where('family_id').equals(fallbackFamId).toArray(),
-            offlineDB.exams.where('family_id').equals(fallbackFamId).toArray(),
-          ])
-        : [[], []]
-
-      if (localTasks && localTasks.length > 0) {
-        setHomework(
-          localTasks.map((t) => ({
-            id: t.id,
-            family_id: t.family_id,
-            subject: t.subject,
-            task: t.task,
-            due: t.due,
-            due_date: t.due_date || t.due,
-            done: t.done,
-            done_at: t.done_at,
-          }))
-        )
-      }
-
-      if (localExams && localExams.length > 0) {
-        setTests(
-          localExams
-            .filter((e) => isSchoolTestActive(e.test_date))
-            .map((e) => ({
-              id: e.id,
-              family_id: e.family_id,
-              subject: e.subject,
-              topic: e.topic,
-              test_date: e.test_date,
-            }))
-        )
-      }
-
-      if (localTasks.length > 0 || localExams.length > 0) {
-        setLoading(false)
-      }
-    } catch (e) {
-      console.warn('[Offline] Error leyendo colegio local:', e)
-    }
-
-    let currentFamId = familyId
-    if (typeof navigator !== 'undefined' && navigator.onLine) {
+      // 1. CARGA INMEDIATA DESDE DEXIE (OFFLINE-FIRST)
+      let currentFamId = familyId
       try {
-        const { data: memberData } = await supabase
-          .from('members')
-          .select('family_id')
-          .limit(1)
-          .maybeSingle()
+        if (!currentFamId) {
+          currentFamId = await getOfflineFamilyId()
+          if (currentFamId) setFamilyId(currentFamId)
+        }
 
-        if (memberData?.family_id) {
-          currentFamId = memberData.family_id
-          setFamilyId(memberData.family_id)
+        const [localTasks, localExams] = currentFamId
+          ? await Promise.all([
+              offlineDB.school_tasks.where('family_id').equals(currentFamId).toArray(),
+              offlineDB.exams.where('family_id').equals(currentFamId).toArray(),
+            ])
+          : await Promise.all([
+              offlineDB.school_tasks.toArray(),
+              offlineDB.exams.toArray(),
+            ])
+
+        if (localTasks && localTasks.length > 0) {
+          setHomework(
+            localTasks.map((t) => ({
+              id: t.id,
+              family_id: t.family_id,
+              subject: t.subject,
+              task: t.task,
+              due: t.due,
+              due_date: t.due_date || t.due,
+              done: t.done,
+              done_at: t.done_at,
+            }))
+          )
+        }
+
+        if (localExams && localExams.length > 0) {
+          setTests(
+            localExams
+              .filter((e) => isSchoolTestActive(e.test_date))
+              .map((e) => ({
+                id: e.id,
+                family_id: e.family_id,
+                subject: e.subject,
+                topic: e.topic,
+                test_date: e.test_date,
+              }))
+          )
+        }
+
+        if (localTasks.length > 0 || localExams.length > 0) {
+          setLoading(false)
+        }
+      } catch (e) {
+        console.warn('[Offline] Error leyendo colegio local:', e)
+      }
+
+      if (typeof navigator !== 'undefined' && !navigator.onLine) {
+        return
+      }
+
+      // 2. Obtener family_id remoto si aún no se tiene
+      try {
+        if (!currentFamId) {
+          const { data: memberData } = await supabase
+            .from('members')
+            .select('family_id')
+            .limit(1)
+            .maybeSingle()
+
+          if (memberData?.family_id) {
+            currentFamId = memberData.family_id
+            setFamilyId(memberData.family_id)
+            saveOfflineFamilyId(memberData.family_id)
+          }
         }
       } catch {}
 
+      // 3. Sincronizar horario, pruebas y tareas escolares desde Supabase (con timeout)
       try {
         let schedQuery = supabase
           .from('school_schedule')
@@ -196,13 +211,22 @@ export default function ColegioPage() {
           hwQuery = hwQuery.eq('family_id', currentFamId)
         }
 
-        const [schedRes, testsRes, hwRes] = await Promise.all([schedQuery, testsQuery, hwQuery])
+        const timeoutPromise = new Promise<{ data: any[]; error: any }>((_, reject) =>
+          setTimeout(() => reject(new Error('Timeout de consulta escolar')), 6000)
+        )
 
-        setSchedule(schedRes.data ?? [])
+        const [schedRes, testsRes, hwRes] = await Promise.race([
+          Promise.all([schedQuery, testsQuery, hwQuery]),
+          timeoutPromise as any,
+        ])
+
+        setSchedule(schedRes?.data ?? [])
 
         // Manejo de pruebas remotas + pendientes locales
-        const rawTests: SchoolTest[] = testsRes.data ?? []
-        const currentLocalExams = await offlineDB.exams.toArray()
+        const rawTests: SchoolTest[] = testsRes?.data ?? []
+        const currentLocalExams = currentFamId
+          ? await offlineDB.exams.where('family_id').equals(currentFamId).toArray()
+          : await offlineDB.exams.toArray()
         const unsyncedExams = currentLocalExams.filter((e) => !e._synced)
         const unsyncedExamsMap = new Map(unsyncedExams.map((e) => [e.id, e]))
 
@@ -226,6 +250,15 @@ export default function ColegioPage() {
         })
         setTests(Array.from(mergedTestsMap.values()))
 
+        // Limpiar en Dexie exámenes sincronizados eliminados remotamente
+        const remoteExamIds = new Set(rawTests.map((t) => t.id))
+        const examsToDelete = currentLocalExams
+          .filter((e) => e._synced && !remoteExamIds.has(e.id))
+          .map((e) => e.id)
+        if (examsToDelete.length > 0) {
+          await offlineDB.exams.bulkDelete(examsToDelete)
+        }
+
         // Guardar pruebas limpias en Dexie
         const validExamsToStore = rawTests
           .filter((t) => !unsyncedExamsMap.has(t.id))
@@ -242,8 +275,10 @@ export default function ColegioPage() {
         }
 
         // Manejo de tareas escolares remotas + pendientes locales
-        const rawHw: SchoolHomework[] = hwRes.data ?? []
-        const currentLocalTasks = await offlineDB.school_tasks.toArray()
+        const rawHw: SchoolHomework[] = hwRes?.data ?? []
+        const currentLocalTasks = currentFamId
+          ? await offlineDB.school_tasks.where('family_id').equals(currentFamId).toArray()
+          : await offlineDB.school_tasks.toArray()
         const unsyncedTasks = currentLocalTasks.filter((t) => !t._synced)
         const unsyncedTasksMap = new Map(unsyncedTasks.map((t) => [t.id, t]))
 
@@ -268,6 +303,15 @@ export default function ColegioPage() {
         })
         setHomework(Array.from(mergedHwMap.values()))
 
+        // Limpiar en Dexie tareas sincronizadas eliminadas remotamente
+        const remoteTaskIds = new Set(rawHw.map((h) => h.id))
+        const tasksToDelete = currentLocalTasks
+          .filter((t) => t._synced && !remoteTaskIds.has(t.id))
+          .map((t) => t.id)
+        if (tasksToDelete.length > 0) {
+          await offlineDB.school_tasks.bulkDelete(tasksToDelete)
+        }
+
         // Guardar tareas escolares limpias en Dexie
         const validTasksToStore = rawHw
           .filter((h) => !unsyncedTasksMap.has(h.id))
@@ -288,9 +332,9 @@ export default function ColegioPage() {
       } catch (err) {
         console.warn('[Offline] Error actualizando datos escolares de Supabase:', err)
       }
+    } finally {
+      setLoading(false)
     }
-
-    setLoading(false)
   }
 
   useEffect(() => {
@@ -308,8 +352,8 @@ export default function ColegioPage() {
     }
   }, [])
 
-  // Abre el sheet si viene del botón + (?action=new-homework | new-test)
-  useActionParam({ 'new-homework': openCreate, 'new-test': openCreateTest })
+  // Abre el sheet si viene del botón + (?action=new | new-homework | new-test)
+  useActionParam({ 'new': openCreate, 'new-homework': openCreate, 'new-test': openCreateTest })
 
   // Check / Uncheck tarea escolar
   async function toggleHw(hw: SchoolHomework) {
@@ -356,6 +400,8 @@ export default function ColegioPage() {
     setDateVal('')
     setIsSheetOpen(true)
   }
+
+  const openCreateHw = openCreate
 
   function openCreateTest() {
     setEditingId(null)
@@ -436,12 +482,20 @@ export default function ColegioPage() {
           setSaving(false)
           return
         }
+        setSchedule((prev) =>
+          prev.map((b) => (b.id === editingId ? { ...b, ...payload } : b))
+        )
       } else {
-        const { error } = await supabase.from('school_schedule').insert(payload)
+        const { data, error } = await supabase.from('school_schedule').insert(payload).select()
         if (error) {
           alert(`Error al guardar bloque de horario: ${translateErrorMessage(error)}`)
           setSaving(false)
           return
+        }
+        if (data && data[0]) {
+          setSchedule((prev) => [...prev, data[0]])
+        } else {
+          setSchedule((prev) => [...prev, { id: safeUUID(), ...payload }])
         }
       }
     } 
@@ -451,15 +505,7 @@ export default function ColegioPage() {
         setSaving(false)
         return
       }
-      const tempId =
-        editingId ||
-        (typeof crypto !== 'undefined' && crypto.randomUUID
-          ? crypto.randomUUID()
-          : 'xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx'.replace(/[xy]/g, (c) => {
-              const r = (Math.random() * 16) | 0
-              const v = c === 'x' ? r : (r & 0x3) | 0x8
-              return v.toString(16)
-            }))
+      const tempId = editingId || safeUUID()
 
       const payload: SchoolTest = {
         id: tempId,
@@ -492,15 +538,7 @@ export default function ColegioPage() {
         setSaving(false)
         return
       }
-      const tempId =
-        editingId ||
-        (typeof crypto !== 'undefined' && crypto.randomUUID
-          ? crypto.randomUUID()
-          : 'xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx'.replace(/[xy]/g, (c) => {
-              const r = (Math.random() * 16) | 0
-              const v = c === 'x' ? r : (r & 0x3) | 0x8
-              return v.toString(16)
-            }))
+      const tempId = editingId || safeUUID()
 
       const isDone = editingId ? (homework.find((h) => h.id === editingId)?.done ?? false) : false
       const payload: SchoolHomework = {
@@ -554,9 +592,8 @@ export default function ColegioPage() {
     if (modalType === 'schedule') {
       if (!editingId.startsWith('local-')) {
         await supabase.from('school_schedule').delete().eq('id', editingId)
-      } else {
-        setSchedule((prev) => prev.filter((b) => b.id !== editingId))
       }
+      setSchedule((prev) => prev.filter((b) => b.id !== editingId))
     } else if (modalType === 'test') {
       setTests((prev) => prev.filter((t) => t.id !== editingId))
       try {
@@ -717,7 +754,16 @@ export default function ColegioPage() {
               </span>
               <h2 className="text-base font-bold text-white m-0">Siguientes pruebas</h2>
             </div>
-            <span className="text-xs text-neutral-400 font-bold">{tests.length}</span>
+            <div className="flex items-center gap-2">
+              <span className="text-xs text-neutral-400 font-bold">{tests.length}</span>
+              <button
+                type="button"
+                onClick={openCreateTest}
+                className="text-xs font-bold text-neutral-400 hover:text-white px-2 py-1 rounded-lg bg-neutral-900 border border-neutral-800 cursor-pointer active:scale-95 transition-all"
+              >
+                + Prueba
+              </button>
+            </div>
           </div>
 
           <div className="flex flex-col gap-2.5">
@@ -726,9 +772,16 @@ export default function ColegioPage() {
                 Cargando pruebas...
               </div>
             ) : tests.length === 0 ? (
-              <div className="p-8 text-center bg-[#1a1a1a] rounded-[28px] border border-neutral-800/80">
+              <div className="p-8 text-center bg-[#1a1a1a] rounded-[28px] border border-neutral-800/80 flex flex-col items-center">
                 <p className="text-sm font-bold text-neutral-300 m-0">No hay pruebas agendadas</p>
-                <p className="text-xs text-neutral-500 mt-1">Usa el botón + para registrar una evaluación.</p>
+                <p className="text-xs text-neutral-500 mt-1">Registra las próximas evaluaciones escolares.</p>
+                <button
+                  type="button"
+                  onClick={openCreateTest}
+                  className="mt-4 px-4 py-2 rounded-xl bg-neutral-800 hover:bg-neutral-700 text-[#F76911] text-xs font-bold border border-neutral-700/60 active:scale-95 transition-all cursor-pointer"
+                >
+                  + Agendar prueba
+                </button>
               </div>
             ) : (
               tests.map((test) => (
@@ -774,7 +827,16 @@ export default function ColegioPage() {
                 </span>
                 <h2 className="text-base font-bold text-white m-0">Tareas escolares</h2>
               </div>
-              <span className="text-xs text-neutral-400 font-bold">{pendingHomework.length} pendientes</span>
+              <div className="flex items-center gap-2">
+                <span className="text-xs text-neutral-400 font-bold">{pendingHomework.length} pendientes</span>
+                <button
+                  type="button"
+                  onClick={openCreateHw}
+                  className="text-xs font-bold text-neutral-400 hover:text-white px-2 py-1 rounded-lg bg-neutral-900 border border-neutral-800 cursor-pointer active:scale-95 transition-all"
+                >
+                  + Tarea
+                </button>
+              </div>
             </div>
 
             <div className="flex flex-col gap-2.5">
@@ -783,9 +845,16 @@ export default function ColegioPage() {
                   Cargando tareas escolares...
                 </div>
               ) : pendingHomework.length === 0 ? (
-                <div className="p-8 text-center bg-[#1a1a1a] rounded-[28px] border border-neutral-800/80">
+                <div className="p-8 text-center bg-[#1a1a1a] rounded-[28px] border border-neutral-800/80 flex flex-col items-center">
                   <p className="text-sm font-bold text-neutral-300 m-0">No hay tareas pendientes</p>
                   <p className="text-xs text-neutral-500 mt-1">¡Al día con las actividades escolares!</p>
+                  <button
+                    type="button"
+                    onClick={openCreateHw}
+                    className="mt-4 px-4 py-2 rounded-xl bg-neutral-800 hover:bg-neutral-700 text-[#F76911] text-xs font-bold border border-neutral-700/60 active:scale-95 transition-all cursor-pointer"
+                  >
+                    + Añadir tarea
+                  </button>
                 </div>
               ) : (
                 pendingHomework.map((hw) => {
@@ -886,7 +955,7 @@ export default function ColegioPage() {
         type="button"
         onClick={openCreate}
         style={orangeGradient}
-        className="fixed bottom-24 right-5 sm:right-8 lg:right-12 w-14 h-14 rounded-full flex items-center justify-center text-white shadow-[0_8px_20px_rgba(247,105,17,0.4)] active:scale-90 transition-transform cursor-pointer z-30"
+        className="fixed bottom-24 right-5 sm:right-8 lg:right-12 w-14 h-14 rounded-full flex items-center justify-center text-white shadow-[0_8px_20px_rgba(247,105,17,0.4)] active:scale-90 transition-transform cursor-pointer z-40"
         title="Añadir prueba o tarea"
       >
         <svg className="w-7 h-7 stroke-current stroke-2 fill-none" viewBox="0 0 24 24">

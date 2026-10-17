@@ -8,7 +8,7 @@ import { todayStr } from '@/lib/dates'
 export const dynamic = 'force-dynamic'
 
 export default async function ResumenPage() {
-  const { supabase, familyId } = await getContext()
+  const { supabase, familyId, name: contextName } = await getContext()
   const today = todayStr()
 
   const [summary, userRes, membersRes] = await Promise.all([
@@ -22,6 +22,7 @@ export default async function ResumenPage() {
     (m) => m.user_id && m.user_id === currentUser?.id
   )
   const firstName =
+    contextName ||
     currentMember?.name?.trim() ||
     currentUser?.user_metadata?.name ||
     'Familia'

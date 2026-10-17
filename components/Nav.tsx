@@ -181,7 +181,13 @@ export default function Nav({ family, role }: NavProps) {
           <Link
             key={idx}
             href={action.href}
-            onClick={() => setIsOpen(false)}
+            onClick={() => {
+              setIsOpen(false)
+              if (typeof window !== 'undefined') {
+                setTimeout(() => window.dispatchEvent(new CustomEvent('casa-action-param')), 50)
+                setTimeout(() => window.dispatchEvent(new CustomEvent('casa-action-param')), 200)
+              }
+            }}
             className="flex items-center gap-3.5 px-3 py-2.5 rounded-2xl hover:bg-neutral-800/60 active:scale-[0.98] hover:translate-x-1 transition-all duration-150 no-underline group cursor-pointer"
           >
             <div

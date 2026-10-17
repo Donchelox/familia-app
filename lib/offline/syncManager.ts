@@ -412,6 +412,9 @@ class SyncManager {
 
       this.lastSyncTime = new Date()
       this.notify()
+      if (typeof window !== 'undefined') {
+        window.dispatchEvent(new CustomEvent('casa-sync-complete', { detail: { type: 'pull' } }))
+      }
       console.log('[SyncManager] Datos locales hidratados exitosamente desde Supabase.')
     } catch (err) {
       console.error('[SyncManager] Error al descargar datos remotos:', err)

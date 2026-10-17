@@ -4,6 +4,7 @@ import { useState, useCallback } from 'react'
 import { offlineDB } from './db'
 import { syncManager } from './syncManager'
 import type { SyncEntity, SyncAction } from './types'
+import { safeUUID } from '@/lib/uuid'
 
 interface MutationOptions {
   familyId: string
@@ -11,17 +12,6 @@ interface MutationOptions {
   action: SyncAction
   entityId?: string
   payload?: Record<string, any>
-}
-
-function safeUUID(): string {
-  if (typeof crypto !== 'undefined' && typeof crypto.randomUUID === 'function') {
-    return crypto.randomUUID()
-  }
-  return 'xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx'.replace(/[xy]/g, (c) => {
-    const r = (Math.random() * 16) | 0
-    const v = c === 'x' ? r : (r & 0x3) | 0x8
-    return v.toString(16)
-  })
 }
 
 export function useOfflineMutation() {

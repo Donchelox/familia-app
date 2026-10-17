@@ -104,13 +104,62 @@ export const getApiContext = cache(async () => {
   if (!m) return null
 
   const fam = Array.isArray(m.families) ? m.families[0] : m.families
+  const preferredName = (m.display_name?.trim() || user.user_metadata?.name?.trim() || user.user_metadata?.full_name?.trim() || user.email?.split('@')[0] || 'Familia') as string
+
+  // Auto-heal: Garantizar que el usuario autenticado figure en la tabla 'family_members'
+  if (m.family_id) {
+    try {
+      const { data: fmUser } = await supabase
+        .from('family_members')
+        .select('id, name')
+        .eq('family_id', m.family_id)
+        .eq('user_id', user.id)
+        .limit(1)
+        .maybeSingle()
+
+      if (!fmUser) {
+        const serviceKey = process.env.SUPABASE_SERVICE_ROLE_KEY
+        const url = process.env.NEXT_PUBLIC_SUPABASE_URL
+        const adminClient =
+          serviceKey && url
+            ? createAdminClient(url, serviceKey, { auth: { persistSession: false, autoRefreshToken: false } })
+            : supabase
+
+        const { data: fmByName } = await adminClient
+          .from('family_members')
+          .select('id')
+          .eq('family_id', m.family_id)
+          .ilike('name', preferredName)
+          .limit(1)
+          .maybeSingle()
+
+        if (fmByName) {
+          await adminClient
+            .from('family_members')
+            .update({ user_id: user.id })
+            .eq('id', fmByName.id)
+        } else {
+          await adminClient.from('family_members').insert({
+            family_id: m.family_id,
+            name: preferredName,
+            role: m.role === 'admin' ? 'Administrador' : 'Adulto',
+            type: 'adult',
+            user_id: user.id,
+          })
+        }
+      }
+    } catch (fmErr) {
+      console.warn('[getApiContext] Error asegurando family_members:', fmErr)
+    }
+  }
+
   return {
     supabase,
     user,
     familyId: m.family_id as string,
     role: m.role as Role,
     familyName: (fam?.name ?? 'Mi familia') as string,
-    name: (m.display_name || user.email || 'Alguien') as string,
+    name: preferredName,
     reminderEmail: (fam?.reminder_email ?? true) as boolean,
     reminderPush: (fam?.reminder_push ?? true) as boolean,
   }

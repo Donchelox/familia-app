@@ -9,7 +9,8 @@ import { createClient } from '@/lib/supabase/client'
 import { useActionParam } from '@/lib/useActionParam'
 import { offlineDB } from '@/lib/offline/db'
 import { useOfflineMutation } from '@/lib/offline/useOfflineMutation'
-import { getOfflineFamilyId } from '@/lib/offline/familyContext'
+import { getOfflineFamilyId, saveOfflineFamilyId } from '@/lib/offline/familyContext'
+import { safeUUID } from '@/lib/uuid'
 
 interface TodoItem {
   id: string
@@ -99,89 +100,89 @@ export default function TareasPage() {
   async function loadData() {
     setLoading(true)
 
-    // 0. Cargar integrantes cacheados para disponibilidad inmediata
     try {
-      const cached = localStorage.getItem('casa_family_members')
-      if (cached) {
-        const parsed = JSON.parse(cached)
-        if (Array.isArray(parsed) && parsed.length > 0) {
-          setMembers(parsed)
+      // 0. Cargar integrantes cacheados para disponibilidad inmediata
+      try {
+        const cached = localStorage.getItem('casa_family_members')
+        if (cached) {
+          const parsed = JSON.parse(cached)
+          if (Array.isArray(parsed) && parsed.length > 0) {
+            setMembers(parsed)
+          }
         }
-      }
-    } catch {}
+      } catch {}
 
-    // 1. CARGA INMEDIATA DESDE DEXIE (OFFLINE-FIRST SIN LATENCIA DE RED)
-    let localTodos: TodoItem[] = []
-    try {
-      const fallbackFamId = await getOfflineFamilyId()
-      if (!familyId && fallbackFamId) setFamilyId(fallbackFamId)
-
-      const stored = fallbackFamId
-        ? await offlineDB.todos.where('family_id').equals(fallbackFamId).toArray()
-        : []
-      if (stored && stored.length > 0) {
-        localTodos = stored.map((t) => ({
-          id: t.id,
-          family_id: t.family_id,
-          title: t.title,
-          assigned_to: t.assigned_to,
-          due_date: t.due_date,
-          done: t.done,
-          done_at: t.done_at,
-          created_at: t.created_at,
-        }))
-        setTodos(localTodos)
-        if (stored[0]?.family_id && !familyId) {
-          setFamilyId(stored[0].family_id)
+      // 1. CARGA INMEDIATA DESDE DEXIE (OFFLINE-FIRST SIN LATENCIA DE RED)
+      let currentFamId = familyId
+      try {
+        if (!currentFamId) {
+          currentFamId = await getOfflineFamilyId()
+          if (currentFamId) setFamilyId(currentFamId)
         }
-        setLoading(false)
+
+        const stored = currentFamId
+          ? await offlineDB.todos.where('family_id').equals(currentFamId).toArray()
+          : await offlineDB.todos.toArray()
+
+        if (stored && stored.length > 0) {
+          const localTodos = stored.map((t) => ({
+            id: t.id,
+            family_id: t.family_id,
+            title: t.title,
+            assigned_to: t.assigned_to,
+            due_date: t.due_date,
+            done: t.done,
+            done_at: t.done_at,
+            created_at: t.created_at,
+          }))
+          setTodos(localTodos)
+          if (stored[0]?.family_id && !currentFamId) {
+            currentFamId = stored[0].family_id
+            setFamilyId(stored[0].family_id)
+            saveOfflineFamilyId(stored[0].family_id)
+          }
+          setLoading(false)
+        }
+      } catch (err) {
+        console.warn('[Offline] Error cargando tareas locales:', err)
       }
-    } catch (err) {
-      console.warn('[Offline] Error cargando tareas locales:', err)
-    }
 
-    // 2. Obtener la sesión del usuario conectado
-    let currentFamId = familyId
-    try {
-      const { data: userRes } = await supabase.auth.getUser()
-      const userId = userRes?.user?.id
+      // Si no estamos online, terminamos la carga con los datos locales
+      if (typeof navigator !== 'undefined' && !navigator.onLine) {
+        return
+      }
 
-      if (!currentFamId && userId) {
-        const { data: memberUser } = await supabase
-          .from('members')
-          .select('family_id')
-          .eq('user_id', userId)
-          .maybeSingle()
-
-        if (memberUser?.family_id) {
-          currentFamId = memberUser.family_id
-          setFamilyId(memberUser.family_id)
-        } else {
-          const { data: fmUser } = await supabase
-            .from('family_members')
+      // 2. Obtener family_id remoto si aún no se tiene
+      try {
+        if (!currentFamId) {
+          const { data: memberUser } = await supabase
+            .from('members')
             .select('family_id')
             .limit(1)
             .maybeSingle()
-          if (fmUser?.family_id) {
-            currentFamId = fmUser.family_id
-            setFamilyId(fmUser.family_id)
+
+          if (memberUser?.family_id) {
+            currentFamId = memberUser.family_id
+            setFamilyId(memberUser.family_id)
+            saveOfflineFamilyId(memberUser.family_id)
           }
         }
-      }
-    } catch {}
+      } catch {}
 
-    // 3. Cargar integrantes reales del hogar (family_members + usuario actual)
-    if (typeof navigator !== 'undefined' && navigator.onLine) {
+      // 3. Cargar integrantes reales del hogar
       try {
         const membersMap = new Map<string, FamilyMember>()
 
-        // 1. Integrantes del hogar (configurados en Ajustes > Integrantes)
         let fmQuery = supabase
           .from('family_members')
           .select('id, name')
           .order('created_at', { ascending: true })
         if (currentFamId) fmQuery = fmQuery.eq('family_id', currentFamId)
-        const { data: fmList } = await fmQuery
+
+        const timeoutFm = new Promise<{ data: any[]; error: any }>((_, reject) =>
+          setTimeout(() => reject(new Error('Timeout de integrantes')), 5000)
+        )
+        const { data: fmList } = await Promise.race([fmQuery, timeoutFm]).catch(() => ({ data: null }))
 
         if (fmList) {
           fmList.forEach((fm: any) => {
@@ -195,8 +196,7 @@ export default function TareasPage() {
           })
         }
 
-        // 2. Usuario administrador / sesión actual (si no está ya en la lista)
-        const { data: userRes } = await supabase.auth.getUser()
+        const { data: userRes } = await supabase.auth.getUser().catch(() => ({ data: null }))
         const user = userRes?.user
         const currentUserName =
           user?.user_metadata?.full_name ||
@@ -213,14 +213,16 @@ export default function TareasPage() {
           }
         }
 
-        // 3. Otros miembros que hayan aceptado invitación y tengan display_name explícito
-        // (nunca usar correos ni prefijos para invitados pendientes o sin nombre)
         let mQuery = supabase
           .from('members')
           .select('user_id, display_name')
           .not('display_name', 'is', null)
         if (currentFamId) mQuery = mQuery.eq('family_id', currentFamId)
-        const { data: mList } = await mQuery
+        let mList: any[] | null = null
+        try {
+          const res = await mQuery
+          mList = res.data
+        } catch {}
 
         if (mList) {
           mList.forEach((m: any) => {
@@ -235,17 +237,17 @@ export default function TareasPage() {
         }
 
         const validMembers = Array.from(membersMap.values())
-        setMembers(validMembers)
-        try {
-          localStorage.setItem('casa_family_members', JSON.stringify(validMembers))
-        } catch {}
+        if (validMembers.length > 0) {
+          setMembers(validMembers)
+          try {
+            localStorage.setItem('casa_family_members', JSON.stringify(validMembers))
+          } catch {}
+        }
       } catch (err) {
         console.warn('[Offline] Error cargando integrantes remotos:', err)
       }
-    }
 
-    // 4. Si hay conexión a internet, sincronizar con Supabase SIN pisar tareas pendientes offline
-    if (typeof navigator !== 'undefined' && navigator.onLine) {
+      // 4. Sincronizar tareas con Supabase (con timeout de 6s para evitar bloqueos)
       try {
         let todosQuery = supabase
           .from('todos')
@@ -256,17 +258,20 @@ export default function TareasPage() {
           todosQuery = todosQuery.eq('family_id', currentFamId)
         }
 
-        const { data: todosRes } = await todosQuery
+        const timeoutPromise = new Promise<{ data: any[]; error: any }>((_, reject) =>
+          setTimeout(() => reject(new Error('Timeout de consulta de tareas')), 6000)
+        )
+
+        const { data: todosRes } = await Promise.race([todosQuery, timeoutPromise]).catch(() => ({ data: null }))
 
         if (todosRes) {
-          // Obtener tareas que aún no se han sincronizado en Dexie
-          const currentLocal = await offlineDB.todos.toArray()
+          const currentLocal = currentFamId
+            ? await offlineDB.todos.where('family_id').equals(currentFamId).toArray()
+            : await offlineDB.todos.toArray()
           const unsyncedItems = currentLocal.filter((t) => !t._synced)
           const unsyncedMap = new Map(unsyncedItems.map((t) => [t.id, t]))
 
-          // Mezclar: lo remoto actualizado + lo pendiente local no subido aún
           const mergedMap = new Map<string, TodoItem>()
-          // 1. Agregar pendientes locales primero para asegurar que nunca desaparezcan
           unsyncedItems.forEach((it) => {
             mergedMap.set(it.id, {
               id: it.id,
@@ -280,7 +285,6 @@ export default function TareasPage() {
             })
           })
 
-          // 2. Agregar elementos del servidor
           todosRes.forEach((rem: any) => {
             if (!unsyncedMap.has(rem.id)) {
               mergedMap.set(rem.id, rem)
@@ -289,6 +293,15 @@ export default function TareasPage() {
 
           const mergedList = Array.from(mergedMap.values())
           setTodos(mergedList)
+
+          // Limpiar en Dexie los registros sincronizados eliminados en el servidor
+          const remoteIds = new Set(todosRes.map((rem: any) => rem.id))
+          const toDelete = currentLocal
+            .filter((rem) => rem._synced && !remoteIds.has(rem.id))
+            .map((rem) => rem.id)
+          if (toDelete.length > 0) {
+            await offlineDB.todos.bulkDelete(toDelete)
+          }
 
           // Respaldar servidor en Dexie sin sobrescribir los no sincronizados
           const serverToStore = todosRes
@@ -312,9 +325,9 @@ export default function TareasPage() {
       } catch (err) {
         console.warn('[Offline] Error descargando tareas de Supabase, manteniendo datos locales:', err)
       }
+    } finally {
+      setLoading(false)
     }
-
-    setLoading(false)
   }
 
   useEffect(() => {
@@ -395,15 +408,7 @@ export default function TareasPage() {
     setSaving(true)
 
     const targetFamilyId = familyId || (await getOfflineFamilyId())
-    const tempId =
-      editingTodo?.id ||
-      (typeof crypto !== 'undefined' && crypto.randomUUID
-        ? crypto.randomUUID()
-        : 'xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx'.replace(/[xy]/g, (c) => {
-            const r = (Math.random() * 16) | 0
-            const v = c === 'x' ? r : (r & 0x3) | 0x8
-            return v.toString(16)
-          }))
+    const tempId = editingTodo?.id || safeUUID()
 
     const payload: TodoItem = {
       id: tempId,
@@ -509,6 +514,17 @@ export default function TareasPage() {
         </div>
 
         <div className="flex items-center gap-2">
+          <button
+            type="button"
+            onClick={openCreate}
+            style={orangeGradient}
+            className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-white text-xs font-bold shadow-md hover:scale-105 active:scale-95 transition-all cursor-pointer"
+          >
+            <svg className="w-3.5 h-3.5 stroke-current stroke-2 fill-none" viewBox="0 0 24 24">
+              <path strokeLinecap="round" strokeLinejoin="round" d="M12 4v16m8-8H4" />
+            </svg>
+            <span>+ Tarea</span>
+          </button>
           <SyncStatusBadge />
           <NotificationBell />
         </div>
@@ -556,11 +572,22 @@ export default function TareasPage() {
                 Cargando tareas...
               </div>
             ) : displayedPending.length === 0 ? (
-              <div className="p-8 text-center bg-[#1a1a1a] rounded-[28px] border border-neutral-800/80">
+              <div className="p-8 text-center bg-[#1a1a1a] rounded-[28px] border border-neutral-800/80 flex flex-col items-center">
                 <p className="text-sm font-bold text-neutral-300 m-0">No hay tareas pendientes</p>
-                <p className="text-xs text-neutral-500 mt-1">
+                <p className="text-xs text-neutral-500 mt-1 max-w-xs">
                   {selectedFilter === 'Todas' ? '¡Todo al día en la casa!' : 'No hay tareas asignadas para este filtro.'}
                 </p>
+                <button
+                  type="button"
+                  onClick={openCreate}
+                  style={orangeGradient}
+                  className="mt-4 px-4 py-2 rounded-2xl text-white text-xs font-bold shadow-md hover:scale-105 active:scale-95 transition-all cursor-pointer inline-flex items-center gap-2"
+                >
+                  <svg className="w-4 h-4 stroke-current stroke-2 fill-none" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" d="M12 4v16m8-8H4" />
+                  </svg>
+                  <span>Añadir nueva tarea</span>
+                </button>
               </div>
             ) : (
               displayedPending.map((t) => {
@@ -670,7 +697,7 @@ export default function TareasPage() {
         type="button"
         onClick={openCreate}
         style={orangeGradient}
-        className="fixed bottom-24 right-5 sm:right-8 lg:right-12 w-14 h-14 rounded-full flex items-center justify-center text-white shadow-[0_8px_20px_rgba(247,105,17,0.4)] active:scale-90 transition-transform cursor-pointer z-30"
+        className="fixed bottom-24 right-5 sm:right-8 lg:right-12 w-14 h-14 rounded-full flex items-center justify-center text-white shadow-[0_8px_20px_rgba(247,105,17,0.4)] active:scale-90 transition-transform cursor-pointer z-40"
         title="Añadir tarea"
       >
         <svg className="w-7 h-7 stroke-current stroke-2 fill-none" viewBox="0 0 24 24">

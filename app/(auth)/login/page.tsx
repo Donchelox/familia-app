@@ -17,10 +17,16 @@ export default function Login() {
   const router = useRouter()
   const supabase = createClient()
 
-  // Al llegar a la pantalla de login, asegurar que no queden datos cacheados de sesiones anteriores
+  // Al llegar a la pantalla de login, asegurar que no queden datos cacheados si no hay sesión activa
   useEffect(() => {
-    purgeAllUserDataAndCache().catch(() => {})
-  }, [])
+    supabase.auth.getUser().then(({ data }) => {
+      if (data?.user) {
+        router.replace('/')
+      } else {
+        purgeAllUserDataAndCache().catch(() => {})
+      }
+    })
+  }, [supabase, router])
 
   const orangeGradient = {
     background: 'linear-gradient(134.95deg, #F76911 47.75%, #F2A957 100%)',

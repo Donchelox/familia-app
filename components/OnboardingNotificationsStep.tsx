@@ -70,21 +70,32 @@ export default function OnboardingNotificationsStep() {
 
       if (res === 'granted') {
         // Registrar Service Worker si no está activo
-        const reg = await navigator.serviceWorker.ready
-        const vapidKey = process.env.NEXT_PUBLIC_VAPID_PUBLIC_KEY
-
-        if (vapidKey) {
+        if ('serviceWorker' in navigator) {
           try {
-            const existingSub = await reg.pushManager.getSubscription()
-            const sub =
-              existingSub ||
-              (await reg.pushManager.subscribe({
-                userVisibleOnly: true,
-                applicationServerKey: urlBase64ToUint8Array(vapidKey),
-              }))
-            await saveSubscription(sub)
-          } catch (subErr) {
-            console.debug('[OnboardingPush] Error suscribiendo a push:', subErr)
+            await navigator.serviceWorker.register('/sw.js')
+          } catch (regErr) {
+            console.debug('[OnboardingPush] Error registrando SW:', regErr)
+          }
+
+          const reg = await Promise.race([
+            navigator.serviceWorker.ready,
+            new Promise<null>((resolve) => setTimeout(() => resolve(null), 2500)),
+          ])
+
+          const vapidKey = process.env.NEXT_PUBLIC_VAPID_PUBLIC_KEY
+          if (reg && vapidKey) {
+            try {
+              const existingSub = await reg.pushManager.getSubscription()
+              const sub =
+                existingSub ||
+                (await reg.pushManager.subscribe({
+                  userVisibleOnly: true,
+                  applicationServerKey: urlBase64ToUint8Array(vapidKey),
+                }))
+              await saveSubscription(sub)
+            } catch (subErr) {
+              console.debug('[OnboardingPush] Error suscribiendo a push:', subErr)
+            }
           }
         }
 

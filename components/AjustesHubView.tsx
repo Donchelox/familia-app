@@ -5,6 +5,7 @@ import Link from 'next/link'
 import NotificationBell from '@/components/NotificationBell'
 import SyncStatusBadge from '@/components/SyncStatusBadge'
 import { updateAccount, signOut } from '@/app/actions/members'
+import { createClient } from '@/lib/supabase/client'
 import { unsubscribeCurrentPush } from '@/components/PushSubscriptionManager'
 import { purgeAllUserDataAndCache } from '@/lib/offline/clientSync'
 import { RELEASES, getSemVerBreakdown } from '@/lib/version'
@@ -33,12 +34,59 @@ export default function AjustesHubView({
 }: AjustesHubViewProps) {
   const [isEditingAccount, setIsEditingAccount] = useState(false)
   const [showReleaseModal, setShowReleaseModal] = useState(false)
+  const [isLoggingOut, setIsLoggingOut] = useState(false)
   const [accountName, setAccountName] = useState(userName)
   const [accountEmail, setAccountEmail] = useState(userEmail)
   const [currentFamilyName, setCurrentFamilyName] = useState(familyName)
 
   const cardGradientStyle = {
     background: 'linear-gradient(134.95deg, #F76911 47.75%, #F2A957 100%)',
+  }
+
+  async function handleLogout() {
+    if (isLoggingOut) return
+    setIsLoggingOut(true)
+
+    try {
+      // 1. Cancelar suscripción de notificaciones push (máx 800ms)
+      try {
+        await Promise.race([
+          unsubscribeCurrentPush(),
+          new Promise((resolve) => setTimeout(resolve, 800)),
+        ])
+      } catch (err) {
+        console.warn('[Logout] Error desuscribiendo push:', err)
+      }
+
+      // 2. Limpieza total de Dexie, localStorage, sessionStorage y caches (máx 800ms)
+      try {
+        await Promise.race([
+          purgeAllUserDataAndCache(),
+          new Promise((resolve) => setTimeout(resolve, 800)),
+        ])
+      } catch (err) {
+        console.warn('[Logout] Error purgando caché:', err)
+      }
+
+      // 3. Cerrar sesión en el cliente de Supabase en el navegador
+      try {
+        const supabase = createClient()
+        await supabase.auth.signOut()
+      } catch (err) {
+        console.warn('[Logout] Error cerrando sesión en cliente:', err)
+      }
+
+      // 4. Invocar el Server Action signOut para limpiar cookies de sesión en el servidor
+      try {
+        await signOut()
+      } catch (err) {
+        // En Next.js redirect('/login') lanza un error NEXT_REDIRECT que es normal
+        console.debug('[Logout] Server signOut completado')
+      }
+    } finally {
+      // 5. Redirigir a /login asegurando que se limpien completamente estados en memoria
+      window.location.href = '/login'
+    }
   }
 
   const openAccountEdit = () => {
@@ -215,20 +263,21 @@ export default function AjustesHubView({
 
       {/* 5. CERRAR SESIÓN */}
       <section className="pt-2">
-        <form
-          action={async () => {
-            await purgeAllUserDataAndCache()
-            await unsubscribeCurrentPush()
-            await signOut()
-          }}
+        <button
+          type="button"
+          disabled={isLoggingOut}
+          onClick={handleLogout}
+          className="w-full py-3.5 rounded-2xl bg-[#201212] border border-red-900/40 text-red-400 hover:text-red-300 hover:bg-[#2c1616] hover:scale-[1.01] active:scale-[0.98] font-bold text-sm transition-all duration-150 cursor-pointer shadow-sm flex items-center justify-center gap-2 disabled:opacity-60"
         >
-          <button
-            type="submit"
-            className="w-full py-3.5 rounded-2xl bg-[#201212] border border-red-900/40 text-red-400 hover:text-red-300 hover:bg-[#2c1616] hover:scale-[1.01] active:scale-[0.98] font-bold text-sm transition-all duration-150 cursor-pointer shadow-sm"
-          >
-            Cerrar sesión
-          </button>
-        </form>
+          {isLoggingOut ? (
+            <>
+              <span className="w-4 h-4 border-2 border-red-400 border-t-transparent rounded-full animate-spin" />
+              <span>Cerrando sesión...</span>
+            </>
+          ) : (
+            <span>Cerrar sesión</span>
+          )}
+        </button>
       </section>
 
       {/* 6. VERSIÓN DE LA APP CON SEMVER INTERACTIVO */}

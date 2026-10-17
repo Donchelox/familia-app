@@ -4,6 +4,7 @@ import { revalidatePath } from 'next/cache'
 import { redirect } from 'next/navigation'
 import { headers } from 'next/headers'
 import { createClient as createAdminClient } from '@supabase/supabase-js'
+import { createClient as createServerClient } from '@/lib/supabase/server'
 import { getContext } from '@/lib/family'
 import { translateErrorMessage } from '@/lib/formatErrors'
 import { recordActivity } from '@/lib/audit'
@@ -231,8 +232,12 @@ export async function deleteFamilyMember(formData: FormData) {
 }
 
 export async function signOut() {
-  const { supabase } = await getContext()
-  await supabase.auth.signOut()
+  try {
+    const supabase = await createServerClient()
+    await supabase.auth.signOut()
+  } catch (err) {
+    console.debug('[Server signOut] error cerrando sesión:', err)
+  }
   redirect('/login')
 }
 

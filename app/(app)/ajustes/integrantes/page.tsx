@@ -2,7 +2,7 @@ import { getContext } from '@/lib/family'
 import IntegrantesView from '@/components/IntegrantesView'
 
 export default async function IntegrantesPage() {
-  const { supabase, familyId, role } = await getContext()
+  const { supabase, familyId, role, user, name: contextName } = await getContext()
 
   const [membersRes, invitesRes] = await Promise.all([
     supabase
@@ -17,8 +17,21 @@ export default async function IntegrantesPage() {
       .order('created_at', { ascending: false }),
   ])
 
-  const members = membersRes.data ?? []
+  let members = membersRes.data ?? []
   const invites = invitesRes.data ?? []
+
+  // Asegurar que el creador/usuario actual siempre figure en la lista de integrantes
+  if (user && !members.some((m) => m.user_id === user.id || m.name?.trim().toLowerCase() === contextName?.trim().toLowerCase())) {
+    const creatorMember = {
+      id: user.id,
+      family_id: familyId,
+      name: contextName || 'Administrador',
+      role: role === 'admin' ? 'Administrador' : 'Adulto',
+      type: 'adult',
+      user_id: user.id,
+    }
+    members = [creatorMember, ...members]
+  }
 
   return (
     <IntegrantesView

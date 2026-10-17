@@ -6,7 +6,7 @@ import SyncStatusBadge from '@/components/SyncStatusBadge'
 import { getCategoryTheme } from '@/lib/categoryColors'
 
 export default async function Inicio() {
-  const { supabase, familyId } = await getContext()
+  const { supabase, familyId, name: contextName, familyName } = await getContext()
   const today = todayStr()
 
   // Consultas paralelas a la base de datos
@@ -61,9 +61,10 @@ export default async function Inicio() {
   )
 
   const rawName =
+    contextName ||
     currentMember?.name ||
-    currentUser?.user_metadata?.full_name ||
     currentUser?.user_metadata?.name ||
+    currentUser?.user_metadata?.full_name ||
     (currentUser?.email ? currentUser.email.split('@')[0] : 'Familia')
 
   const displayName = rawName.charAt(0).toUpperCase() + rawName.slice(1)
@@ -228,9 +229,9 @@ export default async function Inicio() {
           >
             <span className="text-white font-bold">{initials}</span>
           </Link>
-          <div className="leading-tight">
-            <span className="text-sm font-normal text-neutral-400">Hola</span>
-            <h1 className="text-2xl font-black tracking-tight text-white">{displayName}</h1>
+          <div className="leading-tight flex flex-col">
+            <span className="text-xs font-bold text-[#F76911] tracking-wide">{familyName}</span>
+            <h1 className="text-2xl font-black tracking-tight text-white m-0">Hola, {displayName}</h1>
           </div>
         </div>
 

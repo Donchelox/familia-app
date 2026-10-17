@@ -2,14 +2,20 @@ import { Suspense } from 'react'
 import Nav from '@/components/Nav' // Tu componente de navegación original intacto
 import PreventContextMenu from '@/components/PreventContextMenu'
 import PageProgressBar from '@/components/PageProgressBar'
+import { getApiContext } from '@/lib/family'
+import ClientFamilyHydrator from '@/components/ClientFamilyHydrator'
 
-export default function AppLayout({
+export default async function AppLayout({
   children,
 }: {
   children: React.ReactNode
 }) {
+  const ctx = await getApiContext()
+  const familyId = ctx?.familyId || ''
+
   return (
     <div className="w-full min-h-screen bg-[#131313] text-white">
+      <ClientFamilyHydrator familyId={familyId} />
       <Suspense fallback={null}>
         <PageProgressBar />
       </Suspense>
