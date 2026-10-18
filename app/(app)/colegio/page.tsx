@@ -648,6 +648,15 @@ export default function ColegioPage() {
         </div>
 
         <div className="flex items-center gap-2">
+          <button
+            type="button"
+            onClick={openCreate}
+            style={orangeGradient}
+            className="px-3.5 py-1.5 rounded-full text-white text-xs font-bold shadow-md hover:scale-105 active:scale-95 transition-all cursor-pointer flex items-center gap-1.5"
+          >
+            <span className="text-sm font-black">+</span>
+            <span>Añadir</span>
+          </button>
           <SyncStatusBadge />
           <NotificationBell />
         </div>
@@ -803,7 +812,10 @@ export default function ColegioPage() {
 
                   <button
                     type="button"
-                    onClick={() => openEditTest(test)}
+                    onClick={(e) => {
+                      e.stopPropagation()
+                      openEditTest(test)
+                    }}
                     className="px-2.5 py-1.5 rounded-xl bg-neutral-800/60 hover:bg-neutral-800 border border-neutral-700/50 text-[#F76911] text-xs font-bold transition-all active:scale-95 cursor-pointer shrink-0"
                   >
                     Editar
@@ -875,14 +887,20 @@ export default function ColegioPage() {
                       <div className="flex items-center gap-2 shrink-0">
                         <button
                           type="button"
-                          onClick={() => openEditHw(hw)}
+                          onClick={(e) => {
+                            e.stopPropagation()
+                            openEditHw(hw)
+                          }}
                           className="px-2.5 py-1.5 rounded-xl bg-neutral-800/60 hover:bg-neutral-800 border border-neutral-700/50 text-[#F76911] text-xs font-bold transition-all active:scale-95 cursor-pointer"
                         >
                           Editar
                         </button>
                         <button
                           type="button"
-                          onClick={() => toggleHw(hw)}
+                          onClick={(e) => {
+                            e.stopPropagation()
+                            toggleHw(hw)
+                          }}
                           className="w-10 h-10 rounded-2xl border border-neutral-700 hover:border-[#F76911] flex items-center justify-center cursor-pointer transition-all active:scale-95"
                           title="Marcar como completada"
                         />
@@ -924,14 +942,20 @@ export default function ColegioPage() {
                       <div className="flex items-center gap-2 shrink-0">
                         <button
                           type="button"
-                          onClick={() => openEditHw(hw)}
+                          onClick={(e) => {
+                            e.stopPropagation()
+                            openEditHw(hw)
+                          }}
                           className="px-2.5 py-1.5 rounded-xl bg-neutral-800/40 hover:bg-neutral-800 border border-neutral-700/30 text-neutral-400 text-xs font-bold transition-all active:scale-95 cursor-pointer"
                         >
                           Editar
                         </button>
                         <button
                           type="button"
-                          onClick={() => toggleHw(hw)}
+                          onClick={(e) => {
+                            e.stopPropagation()
+                            toggleHw(hw)
+                          }}
                           style={orangeGradient}
                           className="w-10 h-10 rounded-2xl flex items-center justify-center text-white shadow-md cursor-pointer transition-all active:scale-95"
                           title="Marcar como pendiente"
@@ -965,8 +989,16 @@ export default function ColegioPage() {
 
       {/* BOTTOM SHEET CREAR / EDITAR */}
       {isSheetOpen && (
-        <div className="fixed inset-0 z-50 flex items-end sm:items-center justify-center bg-black/80 backdrop-blur-sm p-0 sm:p-4 animate-in fade-in duration-200">
-          <div className="w-full max-w-lg bg-[#1a1a1a] border border-neutral-800 rounded-t-[32px] sm:rounded-[32px] p-6 shadow-2xl flex flex-col gap-4 max-h-[90vh] overflow-y-auto">
+        <div
+          onClick={(e) => {
+            if (e.target === e.currentTarget) setIsSheetOpen(false)
+          }}
+          className="fixed inset-0 z-[60] flex items-end sm:items-center justify-center bg-black/80 backdrop-blur-sm p-0 sm:p-4 animate-in fade-in duration-200"
+        >
+          <div
+            onClick={(e) => e.stopPropagation()}
+            className="w-full max-w-lg bg-[#1a1a1a] border border-neutral-800 rounded-t-[32px] sm:rounded-[32px] p-6 shadow-2xl flex flex-col gap-4 max-h-[90vh] overflow-y-auto mb-20 sm:mb-0"
+          >
             <div className="flex items-center justify-between border-b border-neutral-800 pb-3">
               <h2 className="text-base font-black text-white m-0">
                 {editingId

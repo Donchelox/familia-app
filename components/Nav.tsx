@@ -184,8 +184,12 @@ export default function Nav({ family, role }: NavProps) {
             onClick={() => {
               setIsOpen(false)
               if (typeof window !== 'undefined') {
-                setTimeout(() => window.dispatchEvent(new CustomEvent('casa-action-param')), 50)
-                setTimeout(() => window.dispatchEvent(new CustomEvent('casa-action-param')), 200)
+                const actionParam = action.href.includes('action=')
+                  ? action.href.split('action=')[1].split('&')[0]
+                  : undefined
+                window.dispatchEvent(new CustomEvent('casa-action-param', { detail: { action: actionParam } }))
+                setTimeout(() => window.dispatchEvent(new CustomEvent('casa-action-param', { detail: { action: actionParam } })), 50)
+                setTimeout(() => window.dispatchEvent(new CustomEvent('casa-action-param', { detail: { action: actionParam } })), 200)
               }
             }}
             className="flex items-center gap-3.5 px-3 py-2.5 rounded-2xl hover:bg-neutral-800/60 active:scale-[0.98] hover:translate-x-1 transition-all duration-150 no-underline group cursor-pointer"

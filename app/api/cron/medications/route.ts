@@ -3,7 +3,16 @@ import { timingSafeEqual } from 'crypto'
 import { createClient } from '@supabase/supabase-js'
 import webpush from 'web-push'
 import { nowHHMM, todayStr, weekday } from '@/lib/dates'
-import { planReminders, type MedRow, type ReminderRow } from '@/lib/medReminders'
+import {
+  planReminders,
+  filterSubscriptionsForMedication,
+  type MedRow,
+  type ReminderRow,
+  type PushSubscriptionItem,
+  type FamilyMemberInfo,
+  type HouseMemberInfo,
+  type UserAuthMeta,
+} from '@/lib/medReminders'
 import { dispatchMorningSummary } from '@/lib/morningSummary'
 import { runModularNotificationsCron } from '@/lib/modularNotifications'
 
@@ -227,13 +236,84 @@ export async function GET(req: Request) {
   }
   if (!claimed.length) return NextResponse.json({ ok: true, hm, due: plan.length, sent: 0 })
 
-  // 7. Suscripciones de esas familias
-  const { data: subs, error: subsErr } = await supabase
-    .from('push_subscriptions')
-    .select('id, family_id, endpoint, p256dh, auth')
-    .in('family_id', [...new Set(claimed.map((p) => p.med.family_id))])
-  if (subsErr) {
-    console.error('cron push_subscriptions query error:', subsErr.message)
+  // 7. Suscripciones e integrantes para despacho selectivo (adultos vs niños/mascotas)
+  const targetFamilyIds = [...new Set(claimed.map((p) => p.med.family_id))]
+
+  const [subsRes, famMembersRes, houseMembersRes] = await Promise.all([
+    supabase
+      .from('push_subscriptions')
+      .select('id, user_id, family_id, endpoint, p256dh, auth')
+      .in('family_id', targetFamilyIds),
+    supabase
+      .from('family_members')
+      .select('id, family_id, name, type, role, user_id')
+      .in('family_id', targetFamilyIds),
+    supabase
+      .from('members')
+      .select('family_id, user_id, display_name, role')
+      .in('family_id', targetFamilyIds),
+  ])
+
+  if (subsRes.error) {
+    console.error('cron push_subscriptions query error:', subsRes.error.message)
+  }
+  if (famMembersRes.error) {
+    console.error('cron family_members query error:', famMembersRes.error.message)
+  }
+  if (houseMembersRes.error) {
+    console.error('cron members query error:', houseMembersRes.error.message)
+  }
+
+  const subs = (subsRes.data ?? []) as PushSubscriptionItem[]
+  const familyMembers = (famMembersRes.data ?? []) as FamilyMemberInfo[]
+  const houseMembers = (houseMembersRes.data ?? []) as HouseMemberInfo[]
+
+  // Metadatos de autenticación para resolver nombres de integrantes si no están vinculados directamente
+  const userMetaMap = new Map<string, UserAuthMeta>()
+  const uniqueUserIds = [...new Set(houseMembers.map((m) => m.user_id))]
+
+  await Promise.all(
+    uniqueUserIds.map(async (uid) => {
+      try {
+        const { data: u } = await supabase.auth.admin.getUserById(uid)
+        if (u?.user) {
+          userMetaMap.set(uid, {
+            name: u.user.user_metadata?.name,
+            fullName: u.user.user_metadata?.full_name,
+            email: u.user.email,
+          })
+        }
+      } catch {}
+    })
+  )
+
+  // Auto-heal en segundo plano: si un integrante adulto en family_members no tiene user_id, vincularlo
+  for (const fm of familyMembers) {
+    if (fm.type === 'adult' && !fm.user_id) {
+      const fmName = fm.name?.trim().toLowerCase()
+      const foundUser =
+        houseMembers.find(
+          (h) => h.family_id === fm.family_id && h.display_name?.trim().toLowerCase() === fmName
+        ) ||
+        [...userMetaMap.entries()].find(([uid, meta]) => {
+          const hm = houseMembers.find((h) => h.user_id === uid && h.family_id === fm.family_id)
+          return (
+            hm &&
+            (meta.name?.trim().toLowerCase() === fmName ||
+              meta.fullName?.trim().toLowerCase() === fmName)
+          )
+        })
+      if (foundUser) {
+        const uid =
+          typeof foundUser === 'object' && 'user_id' in foundUser
+            ? foundUser.user_id
+            : foundUser[0]
+        fm.user_id = uid
+        void Promise.resolve(
+          supabase.from('family_members').update({ user_id: uid }).eq('id', fm.id)
+        ).catch(() => {})
+      }
+    }
   }
 
   let sent = 0
@@ -269,7 +349,18 @@ export async function GET(req: Request) {
     // 3.1 webpush.sendNotification con { TTL: 1200, urgency: 'high', timeout: 10000 }
     const sendOptions = { TTL: 1200, urgency: 'high' as const, timeout: 10000 }
 
-    for (const sub of (subs ?? []).filter((s) => s.family_id === med.family_id)) {
+    // Filtrar destinatarios según regla de negocio:
+    // - Adultos asignados: se notifica ÚNICAMENTE a ese adulto.
+    // - Niños o mascotas: se notifica a TODOS los adultos del hogar.
+    const targetSubs = filterSubscriptionsForMedication({
+      med,
+      subs,
+      familyMembers,
+      houseMembers,
+      userMetaMap,
+    })
+
+    for (const sub of targetSubs) {
       jobs.push(
         webpush
           .sendNotification(

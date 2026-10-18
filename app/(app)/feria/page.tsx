@@ -496,6 +496,15 @@ export default function FeriaPage() {
         </div>
 
         <div className="flex items-center gap-2">
+          <button
+            type="button"
+            onClick={openCreate}
+            style={orangeGradient}
+            className="px-3.5 py-1.5 rounded-full text-white text-xs font-bold shadow-md hover:scale-105 active:scale-95 transition-all cursor-pointer flex items-center gap-1.5"
+          >
+            <span className="text-sm font-black">+</span>
+            <span>Producto</span>
+          </button>
           <SyncStatusBadge />
           <NotificationBell />
         </div>
@@ -634,14 +643,20 @@ export default function FeriaPage() {
                   <div className="flex items-center gap-2 shrink-0">
                     <button
                       type="button"
-                      onClick={() => openEdit(item)}
+                      onClick={(e) => {
+                        e.stopPropagation()
+                        openEdit(item)
+                      }}
                       className="px-2.5 py-1.5 rounded-xl bg-neutral-800/60 hover:bg-neutral-800 border border-neutral-700/50 text-[#F76911] text-xs font-bold transition-all active:scale-95 cursor-pointer"
                     >
                       Editar
                     </button>
                     <button
                       type="button"
-                      onClick={() => toggleDone(item)}
+                      onClick={(e) => {
+                        e.stopPropagation()
+                        toggleDone(item)
+                      }}
                       title="Marcar como comprado"
                       className="w-10 h-10 rounded-2xl border border-neutral-700 hover:border-[#F76911] flex items-center justify-center cursor-pointer transition-all active:scale-95"
                     />
@@ -712,7 +727,20 @@ export default function FeriaPage() {
                     <div className="flex items-center gap-2 shrink-0">
                       <button
                         type="button"
-                        onClick={() => toggleDone(item)}
+                        onClick={(e) => {
+                          e.stopPropagation()
+                          openEdit(item)
+                        }}
+                        className="px-2.5 py-1.5 rounded-xl bg-neutral-800/40 hover:bg-neutral-800 border border-neutral-700/30 text-neutral-400 text-xs font-bold transition-all active:scale-95 cursor-pointer"
+                      >
+                        Editar
+                      </button>
+                      <button
+                        type="button"
+                        onClick={(e) => {
+                          e.stopPropagation()
+                          toggleDone(item)
+                        }}
                         style={orangeGradient}
                         title="Desmarcar y volver a pendientes"
                         className="w-10 h-10 rounded-2xl flex items-center justify-center text-white shadow-md cursor-pointer transition-all active:scale-95"
@@ -737,7 +765,7 @@ export default function FeriaPage() {
         onClick={openCreate}
         aria-label="Añadir producto a la feria"
         style={orangeGradient}
-        className="fixed bottom-6 right-5 sm:bottom-8 sm:right-8 lg:right-12 w-14 h-14 rounded-full flex items-center justify-center text-white shadow-[0_8px_24px_rgba(247,105,17,0.5)] hover:scale-105 active:scale-90 transition-transform cursor-pointer z-50 border-2 border-white/20"
+        className="fixed bottom-24 right-5 sm:bottom-24 sm:right-8 lg:right-12 w-14 h-14 rounded-full flex items-center justify-center text-white shadow-[0_8px_24px_rgba(247,105,17,0.5)] hover:scale-105 active:scale-90 transition-transform cursor-pointer z-40 border-2 border-white/20"
       >
         <svg className="w-7 h-7 stroke-current stroke-2 fill-none pointer-events-none" viewBox="0 0 24 24">
           <path strokeLinecap="round" strokeLinejoin="round" d="M12 4v16m8-8H4" />
@@ -746,16 +774,15 @@ export default function FeriaPage() {
 
       {/* BOTTOM SHEET CREAR / EDITAR */}
       {isSheetOpen && (
-        <div className="fixed inset-0 z-50 flex items-end sm:items-center justify-center p-0 sm:p-4 animate-in fade-in duration-200">
-          {/* Backdrop con cierre al tocar afuera */}
-          <div
-            className="fixed inset-0 bg-black/80 backdrop-blur-sm cursor-pointer transition-opacity"
-            onClick={() => setIsSheetOpen(false)}
-          />
-
+        <div
+          onClick={(e) => {
+            if (e.target === e.currentTarget) setIsSheetOpen(false)
+          }}
+          className="fixed inset-0 z-[60] flex items-end sm:items-center justify-center bg-black/80 backdrop-blur-sm p-0 sm:p-4 animate-in fade-in duration-200"
+        >
           <div
             onClick={(e) => e.stopPropagation()}
-            className="relative z-10 w-full max-w-lg bg-[#1a1a1a] border border-neutral-800 rounded-t-[32px] sm:rounded-[32px] p-6 shadow-2xl flex flex-col gap-4 max-h-[90vh] overflow-y-auto"
+            className="relative w-full max-w-lg bg-[#1a1a1a] border border-neutral-800 rounded-t-[32px] sm:rounded-[32px] p-6 shadow-2xl flex flex-col gap-4 max-h-[90vh] overflow-y-auto mb-20 sm:mb-0"
           >
             
             <div className="flex items-center justify-between border-b border-neutral-800 pb-3">

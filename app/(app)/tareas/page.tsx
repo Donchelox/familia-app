@@ -44,7 +44,7 @@ export default function TareasPage() {
   const [isSheetOpen, setIsSheetOpen] = useState(false)
   const [editingTodo, setEditingTodo] = useState<TodoItem | null>(null)
   const [title, setTitle] = useState('')
-  const [assignedTo, setAssignedTo] = useState('')
+  const [selectedMembers, setSelectedMembers] = useState<string[]>([])
   const [dueDateTime, setDueDateTime] = useState('') // Formato YYYY-MM-DDTHH:mm
 
   const [saving, setSaving] = useState(false)
@@ -388,7 +388,7 @@ export default function TareasPage() {
   function openCreate() {
     setEditingTodo(null)
     setTitle('')
-    setAssignedTo('')
+    setSelectedMembers([])
     setDueDateTime('')
     setIsSheetOpen(true)
   }
@@ -396,9 +396,32 @@ export default function TareasPage() {
   function openEdit(todo: TodoItem) {
     setEditingTodo(todo)
     setTitle(todo.title || '')
-    setAssignedTo(todo.assigned_to || '')
+    const initialMembers = todo.assigned_to
+      ? todo.assigned_to
+          .split(',')
+          .map((s) => s.trim())
+          .filter(Boolean)
+      : []
+    setSelectedMembers(initialMembers)
     setDueDateTime(toDateTimeLocalValue(todo.due_date))
     setIsSheetOpen(true)
+  }
+
+  // Alternar selección de un integrante
+  function toggleMemberSelection(name: string) {
+    setSelectedMembers((prev) =>
+      prev.includes(name) ? prev.filter((m) => m !== name) : [...prev, name]
+    )
+  }
+
+  // Seleccionar todos los integrantes
+  function selectAllMembers() {
+    setSelectedMembers(allAvailableMembers)
+  }
+
+  // Desasignar (dejar para toda la familia)
+  function clearSelectedMembers() {
+    setSelectedMembers([])
   }
 
   // Guardar (Crear o Editar en 'todos')
@@ -410,11 +433,13 @@ export default function TareasPage() {
     const targetFamilyId = familyId || (await getOfflineFamilyId())
     const tempId = editingTodo?.id || safeUUID()
 
+    const assignedToString = selectedMembers.length > 0 ? selectedMembers.join(', ') : null
+
     const payload: TodoItem = {
       id: tempId,
       family_id: targetFamilyId,
       title: title.trim(),
-      assigned_to: assignedTo.trim() || null,
+      assigned_to: assignedToString,
       due_date: dueDateTime ? new Date(dueDateTime).toISOString() : null,
       done: editingTodo ? editingTodo.done : false,
       done_at: editingTodo ? editingTodo.done_at : null,
@@ -455,7 +480,7 @@ export default function TareasPage() {
     setIsSheetOpen(false)
     setTitle('')
     setDueDateTime('')
-    setAssignedTo('')
+    setSelectedMembers([])
     setSaving(false)
   }
 
@@ -487,13 +512,40 @@ export default function TareasPage() {
     setDeleting(false)
   }
 
+  function matchesFilter(todo: TodoItem, filter: string) {
+    if (filter === 'Todas') return true
+    if (filter === 'Sin asignar') return !todo.assigned_to || todo.assigned_to.trim() === ''
+    if (!todo.assigned_to) return false
+    const assignedList = todo.assigned_to
+      .split(',')
+      .map((s) => s.trim().toLowerCase())
+    return assignedList.includes(filter.toLowerCase())
+  }
+
   const pendingTodos = todos.filter((t) => !t.done)
   const completedTodos = todos.filter((t) => t.done)
 
-  const displayedPending = pendingTodos.filter((t) => {
-    if (selectedFilter === 'Todas') return true
-    return t.assigned_to === selectedFilter
-  })
+  const displayedPending = pendingTodos.filter((t) => matchesFilter(t, selectedFilter))
+  const displayedCompleted = completedTodos.filter((t) => matchesFilter(t, selectedFilter))
+
+  // Integrantes únicos para los chips de filtro (miembros registrados + asignados)
+  const filterMembers = Array.from(
+    new Set([
+      'Todas',
+      ...members.map((m) => m.name),
+      ...todos.flatMap((t) =>
+        t.assigned_to ? t.assigned_to.split(',').map((s) => s.trim()).filter(Boolean) : []
+      ),
+    ])
+  )
+
+  // Integrantes disponibles para asignación (miembros registrados + los que ya tenga la tarea)
+  const allAvailableMembers = Array.from(
+    new Set([
+      ...members.map((m) => m.name),
+      ...selectedMembers,
+    ])
+  )
 
   return (
     <div className="w-full flex flex-col gap-6 select-none">
@@ -514,6 +566,15 @@ export default function TareasPage() {
         </div>
 
         <div className="flex items-center gap-2">
+          <button
+            type="button"
+            onClick={openCreate}
+            style={orangeGradient}
+            className="px-3.5 py-1.5 rounded-full text-white text-xs font-bold shadow-sm hover:opacity-90 active:scale-95 transition-all cursor-pointer flex items-center gap-1.5"
+          >
+            <span className="text-sm font-black leading-none">+</span>
+            <span>Tarea</span>
+          </button>
           <SyncStatusBadge />
           <NotificationBell />
         </div>
@@ -524,13 +585,15 @@ export default function TareasPage() {
         <div className="flex items-center gap-2">
           <span className="text-xs text-neutral-400 font-medium">Por realizar:</span>
           <span className="px-3 py-1 rounded-full bg-[#131313] border border-neutral-800 text-xs font-bold text-neutral-200">
-            {pendingTodos.length} pendientes
+            {selectedFilter === 'Todas'
+              ? `${pendingTodos.length} pendientes`
+              : `${displayedPending.length} de ${selectedFilter}`}
           </span>
         </div>
 
         {/* CHIPS DE FILTRO */}
         <div className="flex items-center gap-2 overflow-x-auto pb-1 sm:pb-0 scrollbar-none">
-          {['Todas', ...members.map((m) => m.name)].map((f) => (
+          {filterMembers.map((f) => (
             <button
               key={f}
               type="button"
@@ -564,7 +627,7 @@ export default function TareasPage() {
               <div className="p-8 text-center bg-[#1a1a1a] rounded-[28px] border border-neutral-800/80 flex flex-col items-center">
                 <p className="text-sm font-bold text-neutral-300 m-0">No hay tareas pendientes</p>
                 <p className="text-xs text-neutral-500 mt-1 max-w-xs">
-                  {selectedFilter === 'Todas' ? '¡Todo al día en la casa!' : 'No hay tareas asignadas para este filtro.'}
+                  {selectedFilter === 'Todas' ? '¡Todo al día en la casa!' : `No hay tareas asignadas a "${selectedFilter}".`}
                 </p>
                 <button
                   type="button"
@@ -581,19 +644,31 @@ export default function TareasPage() {
             ) : (
               displayedPending.map((t) => {
                 const formattedDate = formatDateTime(t.due_date)
+                const assignedList = t.assigned_to
+                  ? t.assigned_to.split(',').map((s) => s.trim()).filter(Boolean)
+                  : []
+
                 return (
                   <article
                     key={t.id}
                     className="p-4 rounded-[24px] bg-[#1a1a1a] border border-neutral-800/80 hover:border-neutral-700 shadow-md transition-all flex items-center justify-between gap-3"
                   >
                     <div onClick={() => openEdit(t)} className="min-w-0 flex-1 cursor-pointer">
-                      {t.assigned_to && (
-                        <span className="text-[11px] font-semibold text-[#F76911] flex items-center gap-1">
-                          👤 {t.assigned_to}
-                        </span>
+                      {assignedList.length > 0 && (
+                        <div className="flex flex-wrap items-center gap-1.5 mb-1.5">
+                          {assignedList.map((person) => (
+                            <span
+                              key={person}
+                              className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full bg-[#F76911]/15 text-[#F76911] border border-[#F76911]/30 text-[11px] font-bold"
+                            >
+                              <span className="text-[10px]">👤</span>
+                              <span>{person}</span>
+                            </span>
+                          ))}
+                        </div>
                       )}
 
-                      <h3 className="text-sm font-bold text-white mt-1 truncate m-0">
+                      <h3 className="text-sm font-bold text-white truncate m-0">
                         {t.title}
                       </h3>
 
@@ -607,14 +682,20 @@ export default function TareasPage() {
                     <div className="flex items-center gap-2 shrink-0">
                       <button
                         type="button"
-                        onClick={() => openEdit(t)}
+                        onClick={(e) => {
+                          e.stopPropagation()
+                          openEdit(t)
+                        }}
                         className="px-2.5 py-1.5 rounded-xl bg-neutral-800/60 hover:bg-neutral-800 border border-neutral-700/50 text-[#F76911] text-xs font-bold transition-all duration-150 hover:scale-105 active:scale-95 cursor-pointer"
                       >
                         Editar
                       </button>
                       <button
                         type="button"
-                        onClick={() => toggleDone(t)}
+                        onClick={(e) => {
+                          e.stopPropagation()
+                          toggleDone(t)
+                        }}
                         className="w-10 h-10 rounded-2xl border border-neutral-700 hover:border-[#F76911] hover:scale-110 active:scale-90 flex items-center justify-center cursor-pointer transition-all duration-150"
                         title="Marcar como completada"
                       />
@@ -629,53 +710,78 @@ export default function TareasPage() {
         {/* COLUMNA COMPLETADAS */}
         <section className="flex flex-col gap-3">
           <h2 className="text-sm font-bold text-neutral-400 px-1 m-0">
-            Completadas ({completedTodos.length})
+            Completadas ({displayedCompleted.length})
           </h2>
 
           <div className="flex flex-col gap-2.5">
-            {completedTodos.length === 0 ? (
+            {displayedCompleted.length === 0 ? (
               <div className="p-8 text-center text-xs text-neutral-600 bg-[#151515] rounded-[28px] border border-neutral-800/40">
-                Aún no has completado tareas familiares.
+                {selectedFilter === 'Todas'
+                  ? 'Aún no has completado tareas familiares.'
+                  : `No hay tareas completadas para "${selectedFilter}".`}
               </div>
             ) : (
-              completedTodos.map((t) => (
-                <article
-                  key={t.id}
-                  className="p-4 rounded-[24px] bg-[#151515] border border-neutral-800/40 opacity-60 flex items-center justify-between gap-3"
-                >
-                  <div onClick={() => openEdit(t)} className="min-w-0 flex-1 cursor-pointer">
-                    <h3 className="text-sm font-bold text-neutral-400 line-through truncate m-0">
-                      {t.title}
-                    </h3>
-                    {t.assigned_to && (
-                      <p className="text-[11px] text-neutral-500 mt-0.5">
-                        Realizada por: {t.assigned_to}
-                      </p>
-                    )}
-                  </div>
+              displayedCompleted.map((t) => {
+                const assignedList = t.assigned_to
+                  ? t.assigned_to.split(',').map((s) => s.trim()).filter(Boolean)
+                  : []
 
-                  <div className="flex items-center gap-2 shrink-0">
-                    <button
-                      type="button"
-                      onClick={() => openEdit(t)}
-                      className="px-2.5 py-1.5 rounded-xl bg-neutral-800/40 hover:bg-neutral-800 border border-neutral-700/30 text-neutral-400 text-xs font-bold transition-all duration-150 hover:scale-105 active:scale-95 cursor-pointer"
-                    >
-                      Editar
-                    </button>
-                    <button
-                      type="button"
-                      onClick={() => toggleDone(t)}
-                      style={orangeGradient}
-                      className="w-10 h-10 rounded-2xl flex items-center justify-center text-white shadow-md cursor-pointer hover:scale-110 active:scale-90 transition-all duration-150"
-                      title="Marcar como pendiente"
-                    >
-                      <svg className="w-5 h-5 stroke-current stroke-2 fill-none" viewBox="0 0 24 24">
-                        <path strokeLinecap="round" strokeLinejoin="round" d="M5 13l4 4L19 7" />
-                      </svg>
-                    </button>
-                  </div>
-                </article>
-              ))
+                return (
+                  <article
+                    key={t.id}
+                    className="p-4 rounded-[24px] bg-[#151515] border border-neutral-800/40 opacity-60 flex items-center justify-between gap-3"
+                  >
+                    <div onClick={() => openEdit(t)} className="min-w-0 flex-1 cursor-pointer">
+                      <h3 className="text-sm font-bold text-neutral-400 line-through truncate m-0">
+                        {t.title}
+                      </h3>
+                      {assignedList.length > 0 && (
+                        <div className="flex flex-wrap items-center gap-1.5 mt-1.5">
+                          <span className="text-[11px] text-neutral-500 font-medium">
+                            Asignada a:
+                          </span>
+                          {assignedList.map((person) => (
+                            <span
+                              key={person}
+                              className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full bg-neutral-800/80 text-neutral-400 border border-neutral-700/40 text-[10px] font-medium"
+                            >
+                              <span>👤</span>
+                              <span>{person}</span>
+                            </span>
+                          ))}
+                        </div>
+                      )}
+                    </div>
+
+                    <div className="flex items-center gap-2 shrink-0">
+                      <button
+                        type="button"
+                        onClick={(e) => {
+                          e.stopPropagation()
+                          openEdit(t)
+                        }}
+                        className="px-2.5 py-1.5 rounded-xl bg-neutral-800/40 hover:bg-neutral-800 border border-neutral-700/30 text-neutral-400 text-xs font-bold transition-all duration-150 hover:scale-105 active:scale-95 cursor-pointer"
+                      >
+                        Editar
+                      </button>
+                      <button
+                        type="button"
+                        onClick={(e) => {
+                          e.stopPropagation()
+                          toggleDone(t)
+                        }}
+                        style={orangeGradient}
+                        className="w-10 h-10 rounded-2xl flex items-center justify-center text-white shadow-md cursor-pointer hover:scale-110 active:scale-90 transition-all duration-150"
+                        title="Marcar como pendiente"
+                      >
+                        <svg className="w-5 h-5 stroke-current stroke-2 fill-none" viewBox="0 0 24 24">
+                          <path strokeLinecap="round" strokeLinejoin="round" d="M5 13l4 4L19 7" />
+                        </svg>
+                      </button>
+                    </div>
+                  </article>
+                )
+              })
             )}
           </div>
         </section>
@@ -687,7 +793,7 @@ export default function TareasPage() {
         onClick={openCreate}
         aria-label="Añadir tarea"
         style={orangeGradient}
-        className="fixed bottom-6 right-5 sm:bottom-8 sm:right-8 lg:right-12 w-14 h-14 rounded-full flex items-center justify-center text-white shadow-[0_8px_24px_rgba(247,105,17,0.5)] hover:scale-105 active:scale-90 transition-transform cursor-pointer z-50 border-2 border-white/20"
+        className="fixed bottom-24 right-5 sm:bottom-24 sm:right-8 lg:right-12 w-14 h-14 rounded-full flex items-center justify-center text-white shadow-[0_8px_24px_rgba(247,105,17,0.5)] hover:scale-105 active:scale-90 transition-transform cursor-pointer z-40 border-2 border-white/20"
         title="Añadir tarea"
       >
         <svg className="w-7 h-7 stroke-current stroke-2 fill-none pointer-events-none" viewBox="0 0 24 24">
@@ -697,16 +803,15 @@ export default function TareasPage() {
 
       {/* BOTTOM SHEET CREAR / EDITAR */}
       {isSheetOpen && (
-        <div className="fixed inset-0 z-50 flex items-end sm:items-center justify-center p-0 sm:p-4 animate-in fade-in duration-200">
-          {/* Backdrop con cierre al tocar afuera */}
-          <div
-            className="fixed inset-0 bg-black/80 backdrop-blur-sm cursor-pointer transition-opacity"
-            onClick={() => setIsSheetOpen(false)}
-          />
-
+        <div
+          onClick={(e) => {
+            if (e.target === e.currentTarget) setIsSheetOpen(false)
+          }}
+          className="fixed inset-0 z-[60] flex items-end sm:items-center justify-center bg-black/80 backdrop-blur-sm p-0 sm:p-4 animate-in fade-in duration-200"
+        >
           <div
             onClick={(e) => e.stopPropagation()}
-            className="relative z-10 w-full max-w-lg bg-[#1a1a1a] border border-neutral-800 rounded-t-[32px] sm:rounded-[32px] p-6 shadow-2xl flex flex-col gap-4 max-h-[90vh] overflow-y-auto"
+            className="relative w-full max-w-lg bg-[#1a1a1a] border border-neutral-800 rounded-t-[32px] sm:rounded-[32px] p-6 shadow-2xl flex flex-col gap-4 max-h-[90vh] overflow-y-auto mb-20 sm:mb-0"
           >
             <div className="flex items-center justify-between border-b border-neutral-800 pb-3">
               <h2 className="text-base font-black text-white m-0">
@@ -735,29 +840,101 @@ export default function TareasPage() {
                 />
               </div>
 
-              {/* INTEGRANTE DE LA FAMILIA (SELECT) */}
-              <div className="flex flex-col gap-1">
-                <label className="text-[11px] font-bold text-neutral-300">Asignar a integrante</label>
-                <div className="relative">
-                  <select
-                    value={assignedTo}
-                    onChange={(e) => setAssignedTo(e.target.value)}
-                    className="w-full appearance-none bg-[#131313] border border-neutral-800 rounded-2xl px-4 py-3 text-sm text-white focus:outline-none focus:border-[#F76911] cursor-pointer"
-                  >
-                    <option value="" className="bg-[#1a1a1a] text-neutral-400">
-                      Sin asignar (Toda la familia)
-                    </option>
-                    {members.map((m) => (
-                      <option key={m.id} value={m.name} className="bg-[#1a1a1a] text-white">
-                        {m.name}
-                      </option>
-                    ))}
-                  </select>
-                  <div className="pointer-events-none absolute inset-y-0 right-4 flex items-center text-neutral-400">
-                    <svg className="w-4 h-4 stroke-current stroke-2 fill-none" viewBox="0 0 24 24">
-                      <path strokeLinecap="round" strokeLinejoin="round" d="M19 9l-7 7-7-7" />
-                    </svg>
+              {/* INTEGRANTES DE LA FAMILIA (1 O VARIOS) */}
+              <div className="flex flex-col gap-2">
+                <div className="flex items-center justify-between">
+                  <label className="text-[11px] font-bold text-neutral-300">
+                    Asignar a integrante(s)
+                  </label>
+                  <div className="flex items-center gap-2">
+                    {allAvailableMembers.length > 1 && (
+                      <button
+                        type="button"
+                        onClick={
+                          selectedMembers.length === allAvailableMembers.length
+                            ? clearSelectedMembers
+                            : selectAllMembers
+                        }
+                        className="text-[10px] text-[#F76911] hover:underline font-bold cursor-pointer"
+                      >
+                        {selectedMembers.length === allAvailableMembers.length
+                          ? 'Deseleccionar todos'
+                          : 'Seleccionar todos'}
+                      </button>
+                    )}
+                    {selectedMembers.length > 0 && selectedMembers.length !== allAvailableMembers.length && (
+                      <button
+                        type="button"
+                        onClick={clearSelectedMembers}
+                        className="text-[10px] text-neutral-400 hover:text-white font-medium cursor-pointer"
+                      >
+                        Limpiar
+                      </button>
+                    )}
                   </div>
+                </div>
+
+                <div className="p-3 bg-[#131313] border border-neutral-800 rounded-2xl flex flex-col gap-2.5">
+                  {allAvailableMembers.length === 0 ? (
+                    <p className="text-xs text-neutral-400 m-0">
+                      No hay integrantes configurados. La tarea quedará visible para todo el hogar.
+                    </p>
+                  ) : (
+                    <>
+                      <div className="flex flex-wrap gap-2">
+                        {/* Botón Toda la familia */}
+                        <button
+                          type="button"
+                          onClick={clearSelectedMembers}
+                          className={`px-3 py-1.5 rounded-xl text-xs font-bold transition-all cursor-pointer flex items-center gap-1.5 ${
+                            selectedMembers.length === 0
+                              ? 'bg-[#F76911] text-white shadow-md'
+                              : 'bg-neutral-800/60 text-neutral-400 hover:text-white border border-neutral-700/50 hover:bg-neutral-800'
+                          }`}
+                        >
+                          <span>🏠</span>
+                          <span>Toda la familia</span>
+                        </button>
+
+                        {/* Chips individuales para 1 o varios integrantes */}
+                        {allAvailableMembers.map((name) => {
+                          const isSelected = selectedMembers.includes(name)
+                          return (
+                            <button
+                              key={name}
+                              type="button"
+                              onClick={() => toggleMemberSelection(name)}
+                              style={isSelected ? orangeGradient : undefined}
+                              className={`px-3 py-1.5 rounded-xl text-xs font-bold transition-all cursor-pointer flex items-center gap-1.5 duration-150 ${
+                                isSelected
+                                  ? 'text-white shadow-md scale-[1.02]'
+                                  : 'bg-neutral-800/60 text-neutral-300 hover:text-white border border-neutral-700/50 hover:bg-neutral-800'
+                              }`}
+                            >
+                              <span>{isSelected ? '✓' : '👤'}</span>
+                              <span>{name}</span>
+                            </button>
+                          )
+                        })}
+                      </div>
+
+                      {/* Resumen explicativo dinámico */}
+                      <div className="text-[11px] text-neutral-400 pt-1 border-t border-neutral-800/60 flex items-center gap-1.5">
+                        <span className="font-semibold text-neutral-300">Asignación:</span>
+                        {selectedMembers.length === 0 ? (
+                          <span className="text-neutral-400">Sin asignar (Visible para toda la familia)</span>
+                        ) : selectedMembers.length === 1 ? (
+                          <span className="text-[#F76911] font-medium truncate">
+                            Asignada a {selectedMembers[0]}
+                          </span>
+                        ) : (
+                          <span className="text-[#F76911] font-medium truncate">
+                            Asignada a {selectedMembers.length} integrantes ({selectedMembers.join(', ')})
+                          </span>
+                        )}
+                      </div>
+                    </>
+                  )}
                 </div>
               </div>
 

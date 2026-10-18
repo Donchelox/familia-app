@@ -173,7 +173,7 @@ export default async function Inicio() {
       id: `todo-${todo.id}`,
       category: 'Tareas',
       title: todo.title,
-      description: 'Pendiente en casa',
+      description: todo.assigned_to ? `Para: ${todo.assigned_to}` : 'Pendiente en casa',
       href: '/tareas',
       sortTimestamp: isNaN(todoDate.getTime()) ? Date.now() + 43200000 : todoDate.getTime(),
     })

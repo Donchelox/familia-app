@@ -2,7 +2,7 @@ import type { Metadata, Viewport } from 'next'
 import './globals.css'
 import PreventContextMenu from '@/components/PreventContextMenu'
 import PWARegister from '@/components/PWARegister'
-import { Analytics } from '@vercel/analytics/next'
+import { Analytics } from '@vercel/analytics/react'
 
 export const viewport: Viewport = {
   themeColor: '#131313',

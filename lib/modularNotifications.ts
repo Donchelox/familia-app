@@ -1,6 +1,14 @@
 import { SupabaseClient } from '@supabase/supabase-js'
 import { nowHHMM, todayStr, weekday, isSchoolTestActive, isTimeDueToday } from '@/lib/dates'
 
+export {
+  filterSubscriptionsForMedication,
+  type PushSubscriptionItem,
+  type FamilyMemberInfo,
+  type HouseMemberInfo,
+  type UserAuthMeta,
+} from '@/lib/medReminders'
+
 const WEEKDAY_NAMES = [
   '',
   'Lunes',

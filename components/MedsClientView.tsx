@@ -147,7 +147,31 @@ export default function MedsClientView({
   }, [familyId, initialMeds])
 
   // Formulario Crear / Editar
-  const defaultMemberName = members[0]?.name || ''
+  const [membersList, setMembersList] = useState<Member[]>(members || [])
+
+  useEffect(() => {
+    try {
+      const cached = localStorage.getItem('casa_family_members')
+      if (cached) {
+        const parsed = JSON.parse(cached)
+        if (Array.isArray(parsed) && parsed.length > 0) {
+          setMembersList((prev) => {
+            const map = new Map<string, Member>()
+            prev.forEach((m) => map.set(m.name.toLowerCase(), m))
+            parsed.forEach((m: any, idx: number) => {
+              const mName = typeof m === 'string' ? m : m?.name
+              if (mName && !map.has(mName.toLowerCase())) {
+                map.set(mName.toLowerCase(), { id: m?.id || `cached-${idx}`, name: mName })
+              }
+            })
+            return Array.from(map.values())
+          })
+        }
+      }
+    } catch {}
+  }, [])
+
+  const defaultMemberName = membersList[0]?.name || members[0]?.name || ''
   const [editingId, setEditingId] = useState<string | null>(null)
   const [name, setName] = useState('')
   const [dose, setDose] = useState('')
@@ -191,17 +215,18 @@ export default function MedsClientView({
   useActionParam({ new: openCreateModal })
 
   function openEditModal(med: Medication) {
+    if (!med) return
     setEditingId(med.id)
-    setName(med.name)
+    setName(med.name || '')
     setDose(med.dose || '')
     setPerson(med.person || defaultMemberName)
-    setTime(med.times?.[0] || '08:00')
+    setTime(Array.isArray(med.times) && med.times.length > 0 ? med.times[0] : '08:00')
     setEndDate(med.end_date || '')
 
     if (med.frequency?.startsWith('days:')) {
       setFrequency('custom_days')
-      const days = med.frequency.replace('days:', '').split(',').map(Number)
-      setSelectedDays(days)
+      const days = med.frequency.replace('days:', '').split(',').map(Number).filter(Boolean)
+      setSelectedDays(days.length > 0 ? days : [1, 3, 5])
     } else {
       setFrequency(med.frequency || 'daily')
       setSelectedDays([1, 3, 5])
@@ -251,9 +276,17 @@ export default function MedsClientView({
 
   const availableFilterPersons = Array.from(
     new Set([
-      ...members.map((m) => m.name),
+      ...membersList.map((m) => m.name),
       ...meds.map((m) => m.person).filter(Boolean),
     ])
+  )
+
+  const allSelectableMembers = Array.from(
+    new Set([
+      ...membersList.map((m) => m.name),
+      person,
+      defaultMemberName,
+    ].filter(Boolean))
   )
 
   // Marcar / desmarcar toma
@@ -409,6 +442,15 @@ export default function MedsClientView({
         </div>
 
         <div className="flex items-center gap-2">
+          <button
+            type="button"
+            onClick={openCreateModal}
+            style={orangeGradient}
+            className="px-3.5 py-1.5 rounded-full text-white text-xs font-bold shadow-sm hover:opacity-90 active:scale-95 transition-all cursor-pointer flex items-center gap-1.5"
+          >
+            <span className="text-sm font-black leading-none">+</span>
+            <span>Medicamento</span>
+          </button>
           <SyncStatusBadge />
           <NotificationBell />
         </div>
@@ -518,12 +560,15 @@ export default function MedsClientView({
               <div className="flex items-center gap-2 shrink-0">
                 <button
                   type="button"
-                  onClick={() => openEditModal(dose.med)}
-                  className="px-2.5 py-1.5 rounded-xl bg-neutral-800/60 hover:bg-neutral-800 border border-neutral-700/50 text-[#F76911] text-xs font-bold transition-all duration-150 hover:scale-105 active:scale-95 cursor-pointer flex items-center gap-1"
+                  onClick={(e) => {
+                    e.stopPropagation()
+                    openEditModal(dose.med)
+                  }}
+                  className="px-2.5 py-1.5 rounded-xl bg-neutral-800/80 hover:bg-neutral-800 border border-neutral-700/60 text-[#F76911] text-xs font-bold transition-all duration-150 hover:scale-105 active:scale-95 cursor-pointer flex items-center gap-1.5 shrink-0"
                   title="Modificar recordatorio"
                 >
                   <svg className="w-3.5 h-3.5 stroke-current stroke-2 fill-none" viewBox="0 0 24 24">
-                    <path strokeLinecap="round" strokeLinejoin="round" d="M15.232 5.232l3.536 3.536m-2.036-5.036a2.5 2.5 0 113.536 3.536L6.5 21.036H3v-3.572L16.732 3.732z" />
+                    <path strokeLinecap="round" strokeLinejoin="round" d="M15.232 5.232l3.536m-2.036-5.036a2.5 2.5 0 113.536 3.536L6.5 21.036H3v-3.572L16.732 3.732z" />
                   </svg>
                   <span>Editar</span>
                 </button>
@@ -531,7 +576,10 @@ export default function MedsClientView({
                 <button
                   type="button"
                   disabled={loadingAction === dose.key}
-                  onClick={() => toggleDose(dose.medId, dose.time, dose.isTaken)}
+                  onClick={(e) => {
+                    e.stopPropagation()
+                    toggleDose(dose.medId, dose.time, dose.isTaken)
+                  }}
                   style={dose.isTaken ? undefined : orangeGradient}
                   className={`w-10 h-10 rounded-2xl flex items-center justify-center shrink-0 cursor-pointer hover:scale-110 active:scale-90 transition-all duration-150 ${
                     dose.isTaken
@@ -563,7 +611,7 @@ export default function MedsClientView({
         onClick={openCreateModal}
         aria-label="Añadir medicamento"
         style={orangeGradient}
-        className="fixed bottom-6 right-5 sm:bottom-8 sm:right-8 lg:right-12 w-14 h-14 rounded-full flex items-center justify-center text-white shadow-[0_8px_24px_rgba(247,105,17,0.5)] hover:scale-105 active:scale-90 transition-transform cursor-pointer z-50 border-2 border-white/20"
+        className="fixed bottom-24 right-5 sm:bottom-24 sm:right-8 lg:right-12 w-14 h-14 rounded-full flex items-center justify-center text-white shadow-[0_8px_24px_rgba(247,105,17,0.5)] hover:scale-105 active:scale-90 transition-transform cursor-pointer z-40 border-2 border-white/20"
       >
         <svg className="w-7 h-7 stroke-current stroke-2 fill-none pointer-events-none" viewBox="0 0 24 24">
           <path strokeLinecap="round" strokeLinejoin="round" d="M12 4v16m8-8H4" />
@@ -571,16 +619,15 @@ export default function MedsClientView({
       </button>
 
       {isModalOpen && (
-        <div className="fixed inset-0 z-50 flex items-end sm:items-center justify-center p-0 sm:p-4 animate-in fade-in duration-200">
-          {/* Backdrop con cierre al tocar afuera */}
-          <div
-            className="fixed inset-0 bg-black/80 backdrop-blur-sm cursor-pointer transition-opacity"
-            onClick={() => setIsModalOpen(false)}
-          />
-
+        <div
+          onClick={(e) => {
+            if (e.target === e.currentTarget) setIsModalOpen(false)
+          }}
+          className="fixed inset-0 z-[60] flex items-end sm:items-center justify-center bg-black/80 backdrop-blur-sm p-0 sm:p-4 animate-in fade-in duration-200"
+        >
           <div
             onClick={(e) => e.stopPropagation()}
-            className="relative z-10 w-full max-w-lg bg-[#1a1a1a] border border-neutral-800 rounded-t-[32px] sm:rounded-[32px] p-6 shadow-2xl flex flex-col gap-4 max-h-[90vh] overflow-y-auto"
+            className="relative w-full max-w-lg bg-[#1a1a1a] border border-neutral-800 rounded-t-[32px] sm:rounded-[32px] p-6 shadow-2xl flex flex-col gap-4 max-h-[90vh] overflow-y-auto mb-20 sm:mb-0"
           >
             <div className="flex items-center justify-between border-b border-neutral-800 pb-3">
               <h2 className="text-base font-black text-white m-0">
@@ -640,13 +687,13 @@ export default function MedsClientView({
                     onChange={(e) => setPerson(e.target.value)}
                     className="w-full appearance-none bg-[#131313] border border-neutral-800 rounded-2xl px-4 py-3 text-sm text-white focus:outline-none focus:border-[#F76911] cursor-pointer"
                   >
-                    {members.map((member) => (
+                    {allSelectableMembers.map((mName) => (
                       <option
-                        key={member.id}
-                        value={member.name}
+                        key={mName}
+                        value={mName}
                         className="bg-[#1a1a1a] text-white"
                       >
-                        {member.name}
+                        {mName}
                       </option>
                     ))}
                   </select>
