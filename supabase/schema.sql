@@ -87,6 +87,11 @@ create table shopping_items (
   family_id uuid not null references families on delete cascade,
   list text not null default 'super' check (list in ('super','feria')),
   name text not null,
+  category text,
+  quantity text,
+  is_recurring boolean not null default false,
+  recurrence_interval_days integer default null,
+  last_notified_at timestamptz,
   done boolean not null default false,
   done_at timestamptz,
   created_at timestamptz not null default now()

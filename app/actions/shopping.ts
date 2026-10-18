@@ -36,18 +36,25 @@ export async function addShoppingItem(formData: FormData) {
   const { supabase, familyId, role } = await getContext()
   if (role === 'viewer') return { ok: false, error: 'Sin permiso de edición' }
 
+  const isRecurringRaw = formData.get('is_recurring')
+  const is_recurring = isRecurringRaw === 'true' || isRecurringRaw === '1' || isRecurringRaw === 'on'
+  const recurrenceDaysRaw = formData.get('recurrence_interval_days')
+  const recurrence_interval_days = recurrenceDaysRaw ? Number(recurrenceDaysRaw) : null
+
   const parsed = AddShoppingItemSchema.safeParse({
     name: formData.get('name'),
     list: (formData.get('list') as string)?.trim()?.toLowerCase() || 'super',
     category: formData.get('category') || null,
     quantity: formData.get('quantity') || null,
+    is_recurring,
+    recurrence_interval_days: is_recurring ? recurrence_interval_days || 7 : null,
   })
 
   if (!parsed.success) {
     return { ok: false, error: parsed.error.issues[0]?.message || 'Datos inválidos' }
   }
 
-  const { name, list, category, quantity } = parsed.data
+  const { name, list, category, quantity, is_recurring: finalRecurring, recurrence_interval_days: finalInterval } = parsed.data
 
   const userRes = await supabase.auth.getUser()
   const actorName = await getActorName(supabase, userRes.data?.user, familyId)
@@ -58,6 +65,8 @@ export async function addShoppingItem(formData: FormData) {
     list,
     category,
     quantity,
+    is_recurring: finalRecurring,
+    recurrence_interval_days: finalInterval,
     done: false,
   }
 
@@ -80,9 +89,9 @@ export async function addShoppingItem(formData: FormData) {
       entity: 'shopping',
       entityId: newItem.id,
       action: 'create',
-      title: `Agregado a ${listLabel}: ${newItem.name}${quantity ? ` (${quantity})` : ''}`,
+      title: `Agregado a ${listLabel}: ${newItem.name}${quantity ? ` (${quantity})` : ''}${finalRecurring ? ` (Recurrente: c/${finalInterval}d)` : ''}`,
       scheduledAt: null,
-      details: { list: newItem.list, quantity, category },
+      details: { list: newItem.list, quantity, category, is_recurring: finalRecurring, recurrence_interval_days: finalInterval },
     })
   }
 
@@ -92,10 +101,16 @@ export async function addShoppingItem(formData: FormData) {
   return { ok: true }
 }
 
-// 2. ACTUALIZAR ÍTEM (Nombre, cantidad o categoría)
+// 2. ACTUALIZAR ÍTEM (Nombre, cantidad, categoría o recurrencia)
 export async function updateShoppingItem(
   arg1: string | FormData,
-  arg2?: { name?: string; quantity?: string | null; category?: string | null }
+  arg2?: {
+    name?: string
+    quantity?: string | null
+    category?: string | null
+    is_recurring?: boolean
+    recurrence_interval_days?: number | null
+  }
 ) {
   const { supabase, familyId, role } = await getContext()
   if (role === 'viewer') return
@@ -108,16 +123,26 @@ export async function updateShoppingItem(
     const name = (arg1.get('name') as string)?.trim()
     const quantity = (arg1.get('quantity') as string)?.trim()
     const category = (arg1.get('category') as string)?.trim()
+    const isRecurringRaw = arg1.get('is_recurring')
+    const recurrenceDaysRaw = arg1.get('recurrence_interval_days')
 
     if (name) rawUpdates.name = name
     if (quantity !== undefined) rawUpdates.quantity = quantity || null
     if (category !== undefined) rawUpdates.category = category || null
+    if (isRecurringRaw !== null) {
+      rawUpdates.is_recurring = isRecurringRaw === 'true' || isRecurringRaw === '1' || isRecurringRaw === 'on'
+      rawUpdates.recurrence_interval_days = rawUpdates.is_recurring
+        ? recurrenceDaysRaw ? Number(recurrenceDaysRaw) : 7
+        : null
+    }
   } else {
     rawId = arg1
     if (arg2) {
       if (arg2.name !== undefined) rawUpdates.name = arg2.name.trim()
       if (arg2.quantity !== undefined) rawUpdates.quantity = arg2.quantity
       if (arg2.category !== undefined) rawUpdates.category = arg2.category
+      if (arg2.is_recurring !== undefined) rawUpdates.is_recurring = arg2.is_recurring
+      if (arg2.recurrence_interval_days !== undefined) rawUpdates.recurrence_interval_days = arg2.recurrence_interval_days
     }
   }
 

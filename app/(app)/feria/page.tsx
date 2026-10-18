@@ -20,6 +20,31 @@ interface FeriaItem {
   done?: boolean
   family_id?: string
   list?: string
+  is_recurring?: boolean
+  recurrence_interval_days?: number | null
+  last_notified_at?: string | null
+  done_at?: string | null
+  created_at?: string
+}
+
+function formatRecurrenceShort(days?: number | null): string {
+  const d = days || 7
+  if (d === 1) return 'Diario'
+  if (d === 3) return 'Cada 3 días'
+  if (d === 7) return 'Semanal (7d)'
+  if (d === 14 || d === 15) return 'Quincenal (15d)'
+  if (d === 30 || d === 31) return 'Mensual (30d)'
+  return `Cada ${d} días`
+}
+
+function getCompletedRecurrenceStatus(item: FeriaItem): { label: string; isDue: boolean } {
+  const days = item.recurrence_interval_days || 7
+  if (!item.done_at) return { label: `Cada ${days}d`, isDue: false }
+  const daysSince = Math.floor((Date.now() - new Date(item.done_at).getTime()) / (1000 * 60 * 60 * 24))
+  const remaining = days - daysSince
+  if (remaining <= 0) return { label: 'Toca reponer', isDue: true }
+  if (remaining === 1) return { label: 'Reponer mañana', isDue: false }
+  return { label: `Reponer en ${remaining}d`, isDue: false }
 }
 
 const COMMON_UNITS = ['1 kg', '2 kg', '500g', '1 atado', '1 malla', '1 docena', '1 unidad']
@@ -32,12 +57,15 @@ export default function FeriaPage() {
   const [items, setItems] = useState<FeriaItem[]>([])
   const [loading, setLoading] = useState(true)
   const [familyId, setFamilyId] = useState<string>('')
+  const [filterType, setFilterType] = useState<'all' | 'recurring' | 'sporadic'>('all')
 
   // Estado del Bottom Sheet
   const [isSheetOpen, setIsSheetOpen] = useState(false)
   const [editingItem, setEditingItem] = useState<FeriaItem | null>(null)
   const [name, setName] = useState('')
   const [quantity, setQuantity] = useState('1 kg')
+  const [isRecurring, setIsRecurring] = useState(false)
+  const [recurrenceDays, setRecurrenceDays] = useState(7)
   const [saving, setSaving] = useState(false)
   const [deleting, setDeleting] = useState(false)
 
@@ -56,13 +84,70 @@ export default function FeriaPage() {
       const localData = fallbackFamId
         ? await offlineDB.shopping_lists.where('family_id').equals(fallbackFamId).toArray()
         : await offlineDB.shopping_lists.toArray()
+
+      const nowMs = Date.now()
+      const reactivatedItems: FeriaItem[] = []
+
       const localFeria = localData
         .filter((i) => i.list === 'feria')
-        .map((i) => ({ ...i, quantity: (i as any).quantity || '1 kg' }))
+        .map((i) => {
+          const isRec = Boolean(i.is_recurring)
+          const interval = i.recurrence_interval_days || 7
+          const qty = (i as any).quantity || '1 kg'
+
+          // Si es recurrente, estaba comprado pero ya transcurrieron los días de intervalo, reactivarlo
+          if (isRec && i.done && i.done_at) {
+            const daysSince = Math.floor((nowMs - new Date(i.done_at).getTime()) / (1000 * 60 * 60 * 24))
+            if (daysSince >= interval) {
+              const reactivated = {
+                ...i,
+                quantity: qty,
+                done: false,
+                done_at: null,
+                is_recurring: isRec,
+                recurrence_interval_days: interval,
+              }
+              reactivatedItems.push(reactivated)
+              return reactivated
+            }
+          }
+
+          return {
+            ...i,
+            quantity: qty,
+            is_recurring: isRec,
+            recurrence_interval_days: i.recurrence_interval_days ?? null,
+            done_at: i.done_at ?? null,
+          }
+        })
+
       if (localFeria.length > 0) {
         setItems(localFeria)
         if (localFeria[0].family_id && !familyId) setFamilyId(localFeria[0].family_id)
         setLoading(false)
+
+        // Sincronizar reactivaciones locales a Dexie
+        if (reactivatedItems.length > 0) {
+          reactivatedItems.forEach((it) => {
+            mutate({
+              familyId: it.family_id || fallbackFamId || '',
+              entity: 'shopping_lists',
+              action: 'UPDATE',
+              entityId: it.id,
+              payload: {
+                id: it.id,
+                family_id: it.family_id || fallbackFamId,
+                name: it.name,
+                quantity: it.quantity || '1 kg',
+                list: 'feria',
+                done: false,
+                done_at: null,
+                is_recurring: true,
+                recurrence_interval_days: it.recurrence_interval_days,
+              },
+            }).catch(() => {})
+          })
+        }
       }
     } catch (e) {
       console.warn('[Offline] Error leyendo feria local:', e)
@@ -122,10 +207,42 @@ export default function FeriaPage() {
           const unsyncedFeria = currentLocal.filter((i) => i.list === 'feria' && !i._synced)
           const unsyncedMap = new Map(unsyncedFeria.map((i) => [i.id, i]))
 
+          const nowMs = Date.now()
           const mergedMap = new Map<string, FeriaItem>()
-          unsyncedFeria.forEach((i) => mergedMap.set(i.id, i as any))
+          unsyncedFeria.forEach((i) =>
+            mergedMap.set(i.id, {
+              ...i,
+              quantity: (i as any).quantity || '1 kg',
+              is_recurring: Boolean(i.is_recurring),
+              recurrence_interval_days: i.recurrence_interval_days ?? null,
+            } as any)
+          )
+
           feriaOnly.forEach((rem: any) => {
-            if (!unsyncedMap.has(rem.id)) mergedMap.set(rem.id, rem)
+            if (!unsyncedMap.has(rem.id)) {
+              const isRec = Boolean(rem.is_recurring)
+              const interval = rem.recurrence_interval_days || 7
+              let isDone = rem.done || false
+              let doneAt = rem.done_at
+
+              // Auto-reactivación si el tiempo venció
+              if (isRec && isDone && doneAt) {
+                const daysSince = Math.floor((nowMs - new Date(doneAt).getTime()) / (1000 * 60 * 60 * 24))
+                if (daysSince >= interval) {
+                  isDone = false
+                  doneAt = null
+                }
+              }
+
+              mergedMap.set(rem.id, {
+                ...rem,
+                quantity: rem.quantity || '1 kg',
+                done: isDone,
+                done_at: doneAt,
+                is_recurring: isRec,
+                recurrence_interval_days: rem.recurrence_interval_days ?? null,
+              })
+            }
           })
 
           const finalItems = Array.from(mergedMap.values())
@@ -155,6 +272,9 @@ export default function FeriaPage() {
               quantity: item.quantity || '1 kg',
               done: item.done || false,
               done_at: item.done_at,
+              is_recurring: Boolean(item.is_recurring),
+              recurrence_interval_days: item.recurrence_interval_days ?? null,
+              last_notified_at: item.last_notified_at ?? null,
               created_at: item.created_at,
               _synced: true,
             }))
@@ -188,16 +308,35 @@ export default function FeriaPage() {
     }
   }, [])
 
+  function openCreate() {
+    setEditingItem(null)
+    setName('')
+    setQuantity('1 kg')
+    setIsRecurring(false)
+    setRecurrenceDays(7)
+    setIsSheetOpen(true)
+  }
+
+  function openEdit(item: FeriaItem) {
+    setEditingItem(item)
+    setName(item.name)
+    setQuantity(item.quantity || '1 kg')
+    setIsRecurring(Boolean(item.is_recurring))
+    setRecurrenceDays(item.recurrence_interval_days || 7)
+    setIsSheetOpen(true)
+  }
+
   // Abre el sheet si viene del botón + (?action=new)
   useActionParam({ new: openCreate })
 
   async function toggleDone(item: FeriaItem) {
     const nextDone = !item.done
     const targetFamId = item.family_id || familyId || (await getOfflineFamilyId())
+    const nextDoneAt = nextDone ? new Date().toISOString() : null
 
     // Optimistic UI inmediato
     setItems((prev) =>
-      prev.map((it) => (it.id === item.id ? { ...it, done: nextDone } : it))
+      prev.map((it) => (it.id === item.id ? { ...it, done: nextDone, done_at: nextDoneAt } : it))
     )
 
     // Mutación Offline-First
@@ -213,23 +352,11 @@ export default function FeriaPage() {
         quantity: item.quantity || '1 kg',
         list: 'feria',
         done: nextDone,
-        done_at: nextDone ? new Date().toISOString() : null,
+        done_at: nextDoneAt,
+        is_recurring: Boolean(item.is_recurring),
+        recurrence_interval_days: item.recurrence_interval_days ?? null,
       },
     })
-  }
-
-  function openCreate() {
-    setEditingItem(null)
-    setName('')
-    setQuantity('1 kg')
-    setIsSheetOpen(true)
-  }
-
-  function openEdit(item: FeriaItem) {
-    setEditingItem(item)
-    setName(item.name)
-    setQuantity(item.quantity || '1 kg')
-    setIsSheetOpen(true)
   }
 
   async function handleSave(e: React.FormEvent) {
@@ -246,7 +373,15 @@ export default function FeriaPage() {
       // Actualización optimista local
       setItems((prev) =>
         prev.map((it) =>
-          it.id === editingItem.id ? { ...it, name: trimmedName, quantity: trimmedQty } : it
+          it.id === editingItem.id
+            ? {
+                ...it,
+                name: trimmedName,
+                quantity: trimmedQty,
+                is_recurring: isRecurring,
+                recurrence_interval_days: isRecurring ? recurrenceDays : null,
+              }
+            : it
         )
       )
 
@@ -261,6 +396,8 @@ export default function FeriaPage() {
           name: trimmedName,
           list: 'feria',
           quantity: trimmedQty,
+          is_recurring: isRecurring,
+          recurrence_interval_days: isRecurring ? recurrenceDays : null,
         },
       })
     } else {
@@ -273,6 +410,8 @@ export default function FeriaPage() {
         done: false,
         family_id: targetFamId,
         list: 'feria',
+        is_recurring: isRecurring,
+        recurrence_interval_days: isRecurring ? recurrenceDays : null,
       }
 
       // Inserción optimista local
@@ -290,6 +429,8 @@ export default function FeriaPage() {
           list: 'feria',
           quantity: trimmedQty,
           done: false,
+          is_recurring: isRecurring,
+          recurrence_interval_days: isRecurring ? recurrenceDays : null,
           created_at: new Date().toISOString(),
         },
       })
@@ -323,6 +464,18 @@ export default function FeriaPage() {
   const pendingItems = items.filter((i) => !i.done)
   const completedItems = items.filter((i) => i.done)
 
+  const recurringCount = items.filter((i) => i.is_recurring).length
+  const sporadicCount = items.filter((i) => !i.is_recurring).length
+
+  function filterByRecurrence(list: FeriaItem[]) {
+    if (filterType === 'recurring') return list.filter((i) => i.is_recurring)
+    if (filterType === 'sporadic') return list.filter((i) => !i.is_recurring)
+    return list
+  }
+
+  const displayedPending = filterByRecurrence(pendingItems)
+  const displayedCompleted = filterByRecurrence(completedItems)
+
   return (
     <div className="w-full flex flex-col gap-5 select-none">
       
@@ -343,15 +496,6 @@ export default function FeriaPage() {
         </div>
 
         <div className="flex items-center gap-2">
-          <button
-            type="button"
-            onClick={openCreate}
-            style={orangeGradient}
-            className="px-3 py-1.5 rounded-full text-white text-xs font-bold shadow-sm hover:opacity-90 active:scale-95 transition-all cursor-pointer flex items-center gap-1"
-          >
-            <span className="text-sm leading-none">+</span>
-            <span>Producto</span>
-          </button>
           <SyncStatusBadge />
           <NotificationBell />
         </div>
@@ -373,12 +517,53 @@ export default function FeriaPage() {
         </Link>
       </nav>
 
-      {/* BARRA DE ESTADO */}
-      <div className="flex items-center justify-between bg-[#1a1a1a] p-4 rounded-[28px] border border-neutral-800/80">
-        <span className="text-xs text-neutral-400 font-medium">Compras frescas para la feria:</span>
-        <span className="px-3 py-1 rounded-full bg-[#131313] border border-neutral-800 text-xs font-bold text-neutral-200">
-          {pendingItems.length} por comprar
-        </span>
+      {/* BARRA DE ESTADO Y FILTRO DE RECURRENCIA */}
+      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2.5 bg-[#1a1a1a] p-4 rounded-[28px] border border-neutral-800/80">
+        <div className="flex items-center gap-2">
+          <span className="text-xs text-neutral-400 font-medium">Compras de feria:</span>
+          <span className="px-3 py-1 rounded-full bg-[#131313] border border-neutral-800 text-xs font-bold text-neutral-200">
+            {pendingItems.length} por comprar
+          </span>
+        </div>
+
+        {/* FILTRO TIPO DE PRODUCTO: TODOS / RECURRENTES / ESPORÁDICOS */}
+        <div className="flex items-center gap-1.5 p-1 bg-[#131313] border border-neutral-800/80 rounded-2xl overflow-x-auto scrollbar-none">
+          <button
+            type="button"
+            onClick={() => setFilterType('all')}
+            className={`px-3 py-1.5 rounded-xl text-xs font-bold whitespace-nowrap transition-all cursor-pointer ${
+              filterType === 'all'
+                ? 'bg-[#F76911] text-white shadow-sm'
+                : 'text-neutral-400 hover:text-white'
+            }`}
+          >
+            Todos ({items.length})
+          </button>
+          <button
+            type="button"
+            onClick={() => setFilterType('recurring')}
+            className={`px-3 py-1.5 rounded-xl text-xs font-bold whitespace-nowrap transition-all cursor-pointer flex items-center gap-1.5 ${
+              filterType === 'recurring'
+                ? 'bg-emerald-600 text-white shadow-sm'
+                : 'text-neutral-400 hover:text-white'
+            }`}
+          >
+            <span>🔄</span>
+            <span>Recurrentes ({recurringCount})</span>
+          </button>
+          <button
+            type="button"
+            onClick={() => setFilterType('sporadic')}
+            className={`px-3 py-1.5 rounded-xl text-xs font-bold whitespace-nowrap transition-all cursor-pointer flex items-center gap-1.5 ${
+              filterType === 'sporadic'
+                ? 'bg-neutral-700 text-white shadow-sm'
+                : 'text-neutral-400 hover:text-white'
+            }`}
+          >
+            <span>🥬</span>
+            <span>Esporádicos ({sporadicCount})</span>
+          </button>
+        </div>
       </div>
 
       {/* LISTADOS RESPONSIVOS EN GRID */}
@@ -386,16 +571,23 @@ export default function FeriaPage() {
         
         {/* PENDIENTES */}
         <section className="flex flex-col gap-3">
-          <h2 className="text-sm font-bold text-neutral-300 px-1 m-0">
-            Por comprar ({pendingItems.length})
-          </h2>
+          <div className="flex items-center justify-between px-1">
+            <h2 className="text-sm font-bold text-neutral-300 m-0">
+              Por comprar ({displayedPending.length})
+            </h2>
+            {filterType !== 'all' && (
+              <span className="text-[11px] text-neutral-500">
+                Filtrado por: {filterType === 'recurring' ? 'Recurrentes' : 'Esporádicos'}
+              </span>
+            )}
+          </div>
 
           <div className="flex flex-col gap-2.5">
             {loading ? (
               <div className="p-8 text-center text-xs text-neutral-500 bg-[#1a1a1a] rounded-[28px] border border-neutral-800/80">
                 Cargando lista de feria...
               </div>
-            ) : pendingItems.length === 0 ? (
+            ) : displayedPending.length === 0 ? (
               <div className="p-8 text-center bg-[#1a1a1a] rounded-[28px] border border-neutral-800/80 flex flex-col items-center justify-center gap-3">
                 <span className="text-3xl">🥬</span>
                 <p className="text-xs text-neutral-400 m-0">¡Lista de feria completada o vacía!</p>
@@ -409,7 +601,7 @@ export default function FeriaPage() {
                 </button>
               </div>
             ) : (
-              pendingItems.map((item) => (
+              displayedPending.map((item) => (
                 <article
                   key={item.id}
                   className="p-4 rounded-[24px] bg-[#1a1a1a] border border-neutral-800/80 hover:border-neutral-700 flex items-center justify-between gap-3 shadow-md transition-all"
@@ -418,9 +610,22 @@ export default function FeriaPage() {
                     onClick={() => openEdit(item)}
                     className="flex-1 min-w-0 cursor-pointer"
                   >
-                    <h3 className="text-sm font-bold text-white truncate m-0">
-                      {item.name}
-                    </h3>
+                    <div className="flex items-center gap-2 flex-wrap">
+                      <h3 className="text-sm font-bold text-white truncate m-0">
+                        {item.name}
+                      </h3>
+                      {item.is_recurring ? (
+                        <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-lg bg-emerald-950/60 border border-emerald-800/60 text-emerald-300 text-[10px] font-bold">
+                          <span>🔄</span>
+                          <span>{formatRecurrenceShort(item.recurrence_interval_days)}</span>
+                        </span>
+                      ) : (
+                        <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-lg bg-neutral-800/80 border border-neutral-700/60 text-neutral-400 text-[10px] font-medium">
+                          <span>🥬</span>
+                          <span>Esporádico</span>
+                        </span>
+                      )}
+                    </div>
                     <p className="text-[11px] text-[#F76911] font-semibold mt-0.5 truncate">
                       {item.quantity || '1 kg'}
                     </p>
@@ -437,6 +642,7 @@ export default function FeriaPage() {
                     <button
                       type="button"
                       onClick={() => toggleDone(item)}
+                      title="Marcar como comprado"
                       className="w-10 h-10 rounded-2xl border border-neutral-700 hover:border-[#F76911] flex items-center justify-center cursor-pointer transition-all active:scale-95"
                     />
                   </div>
@@ -448,47 +654,77 @@ export default function FeriaPage() {
 
         {/* COMPRADOS */}
         <section className="flex flex-col gap-3">
-          <h2 className="text-sm font-bold text-neutral-400 px-1 m-0">
-            Comprados ({completedItems.length})
-          </h2>
+          <div className="flex items-center justify-between px-1">
+            <h2 className="text-sm font-bold text-neutral-400 m-0">
+              Comprados ({displayedCompleted.length})
+            </h2>
+            {filterType !== 'all' && (
+              <span className="text-[11px] text-neutral-500">
+                Filtrado por: {filterType === 'recurring' ? 'Recurrentes' : 'Esporádicos'}
+              </span>
+            )}
+          </div>
 
           <div className="flex flex-col gap-2.5">
-            {completedItems.length === 0 ? (
+            {displayedCompleted.length === 0 ? (
               <div className="p-8 text-center text-xs text-neutral-600 bg-[#151515] rounded-[28px] border border-neutral-800/40">
                 Ninguna verdura o fruta comprada aún.
               </div>
             ) : (
-              completedItems.map((item) => (
-                <article
-                  key={item.id}
-                  className="p-4 rounded-[24px] bg-[#151515] border border-neutral-800/40 opacity-60 flex items-center justify-between gap-3"
-                >
-                  <div
-                    onClick={() => openEdit(item)}
-                    className="flex-1 min-w-0 cursor-pointer"
+              displayedCompleted.map((item) => {
+                const recurrenceStatus = item.is_recurring ? getCompletedRecurrenceStatus(item) : null
+                return (
+                  <article
+                    key={item.id}
+                    className="p-4 rounded-[24px] bg-[#151515] border border-neutral-800/40 opacity-70 hover:opacity-100 flex items-center justify-between gap-3 transition-opacity"
                   >
-                    <h3 className="text-sm font-bold text-neutral-400 line-through truncate m-0">
-                      {item.name}
-                    </h3>
-                    <p className="text-[11px] text-neutral-500 mt-0.5 truncate">
-                      {item.quantity || '1 kg'}
-                    </p>
-                  </div>
-
-                  <div className="flex items-center gap-2 shrink-0">
-                    <button
-                      type="button"
-                      onClick={() => toggleDone(item)}
-                      style={orangeGradient}
-                      className="w-10 h-10 rounded-2xl flex items-center justify-center text-white shadow-md cursor-pointer transition-all active:scale-95"
+                    <div
+                      onClick={() => openEdit(item)}
+                      className="flex-1 min-w-0 cursor-pointer"
                     >
-                      <svg className="w-5 h-5 stroke-current stroke-2 fill-none" viewBox="0 0 24 24">
-                        <path strokeLinecap="round" strokeLinejoin="round" d="M5 13l4 4L19 7" />
-                      </svg>
-                    </button>
-                  </div>
-                </article>
-              ))
+                      <div className="flex items-center gap-2 flex-wrap">
+                        <h3 className="text-sm font-bold text-neutral-400 line-through truncate m-0">
+                          {item.name}
+                        </h3>
+                        {item.is_recurring && recurrenceStatus ? (
+                          <span
+                            className={`inline-flex items-center gap-1 px-2 py-0.5 rounded-lg text-[10px] font-semibold border ${
+                              recurrenceStatus.isDue
+                                ? 'bg-amber-950/70 border-amber-800 text-amber-300'
+                                : 'bg-emerald-950/40 border-emerald-900/40 text-emerald-400'
+                            }`}
+                          >
+                            <span>🔄</span>
+                            <span>{recurrenceStatus.label}</span>
+                          </span>
+                        ) : (
+                          <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-lg bg-neutral-800/50 border border-neutral-700/40 text-neutral-500 text-[10px]">
+                            <span>🥬</span>
+                            <span>Esporádico</span>
+                          </span>
+                        )}
+                      </div>
+                      <p className="text-[11px] text-neutral-500 mt-0.5 truncate">
+                        {item.quantity || '1 kg'}
+                      </p>
+                    </div>
+
+                    <div className="flex items-center gap-2 shrink-0">
+                      <button
+                        type="button"
+                        onClick={() => toggleDone(item)}
+                        style={orangeGradient}
+                        title="Desmarcar y volver a pendientes"
+                        className="w-10 h-10 rounded-2xl flex items-center justify-center text-white shadow-md cursor-pointer transition-all active:scale-95"
+                      >
+                        <svg className="w-5 h-5 stroke-current stroke-2 fill-none" viewBox="0 0 24 24">
+                          <path strokeLinecap="round" strokeLinejoin="round" d="M5 13l4 4L19 7" />
+                        </svg>
+                      </button>
+                    </div>
+                  </article>
+                )
+              })
             )}
           </div>
         </section>
@@ -499,18 +735,28 @@ export default function FeriaPage() {
       <button
         type="button"
         onClick={openCreate}
+        aria-label="Añadir producto a la feria"
         style={orangeGradient}
-        className="fixed bottom-24 right-5 sm:right-8 lg:right-12 w-14 h-14 rounded-full flex items-center justify-center text-white shadow-[0_8px_20px_rgba(247,105,17,0.4)] active:scale-90 transition-transform cursor-pointer z-40"
+        className="fixed bottom-6 right-5 sm:bottom-8 sm:right-8 lg:right-12 w-14 h-14 rounded-full flex items-center justify-center text-white shadow-[0_8px_24px_rgba(247,105,17,0.5)] hover:scale-105 active:scale-90 transition-transform cursor-pointer z-50 border-2 border-white/20"
       >
-        <svg className="w-7 h-7 stroke-current stroke-2 fill-none" viewBox="0 0 24 24">
+        <svg className="w-7 h-7 stroke-current stroke-2 fill-none pointer-events-none" viewBox="0 0 24 24">
           <path strokeLinecap="round" strokeLinejoin="round" d="M12 4v16m8-8H4" />
         </svg>
       </button>
 
       {/* BOTTOM SHEET CREAR / EDITAR */}
       {isSheetOpen && (
-        <div className="fixed inset-0 z-50 flex items-end sm:items-center justify-center bg-black/80 backdrop-blur-sm p-0 sm:p-4 animate-in fade-in duration-200">
-          <div className="w-full max-w-lg bg-[#1a1a1a] border border-neutral-800 rounded-t-[32px] sm:rounded-[32px] p-6 shadow-2xl flex flex-col gap-4">
+        <div className="fixed inset-0 z-50 flex items-end sm:items-center justify-center p-0 sm:p-4 animate-in fade-in duration-200">
+          {/* Backdrop con cierre al tocar afuera */}
+          <div
+            className="fixed inset-0 bg-black/80 backdrop-blur-sm cursor-pointer transition-opacity"
+            onClick={() => setIsSheetOpen(false)}
+          />
+
+          <div
+            onClick={(e) => e.stopPropagation()}
+            className="relative z-10 w-full max-w-lg bg-[#1a1a1a] border border-neutral-800 rounded-t-[32px] sm:rounded-[32px] p-6 shadow-2xl flex flex-col gap-4 max-h-[90vh] overflow-y-auto"
+          >
             
             <div className="flex items-center justify-between border-b border-neutral-800 pb-3">
               <h2 className="text-base font-black text-white m-0">
@@ -561,6 +807,125 @@ export default function FeriaPage() {
                   ))}
                 </div>
               </div>
+
+              {/* FRECUENCIA DE COMPRA: ESPORÁDICO VS RECURRENTE */}
+              <div className="flex flex-col gap-1.5 pt-1">
+                <label className="text-[11px] font-bold text-neutral-300">
+                  Tipo de producto
+                </label>
+                
+                <div className="grid grid-cols-2 gap-2">
+                  <button
+                    type="button"
+                    onClick={() => setIsRecurring(false)}
+                    className={`flex flex-col items-start p-3 rounded-2xl border text-left transition-all cursor-pointer ${
+                      !isRecurring
+                        ? 'bg-[#221c17] border-[#F76911] text-white shadow-sm ring-1 ring-[#F76911]/30'
+                        : 'bg-[#131313] border-neutral-800 text-neutral-400 hover:text-white hover:border-neutral-700'
+                    }`}
+                  >
+                    <div className="flex items-center gap-1.5">
+                      <span className="text-base">🥬</span>
+                      <span className="text-xs font-bold text-white">Esporádico</span>
+                    </div>
+                    <span className="text-[10px] text-neutral-400 mt-0.5">
+                      Compra puntual / de paso
+                    </span>
+                  </button>
+
+                  <button
+                    type="button"
+                    onClick={() => setIsRecurring(true)}
+                    className={`flex flex-col items-start p-3 rounded-2xl border text-left transition-all cursor-pointer ${
+                      isRecurring
+                        ? 'bg-[#14221a] border-emerald-500 text-white shadow-sm ring-1 ring-emerald-500/30'
+                        : 'bg-[#131313] border-neutral-800 text-neutral-400 hover:text-white hover:border-neutral-700'
+                    }`}
+                  >
+                    <div className="flex items-center gap-1.5">
+                      <span className="text-base">🔄</span>
+                      <span className="text-xs font-bold text-white">Recurrente</span>
+                    </div>
+                    <span className="text-[10px] text-neutral-400 mt-0.5">
+                      Se compra con frecuencia
+                    </span>
+                  </button>
+                </div>
+              </div>
+
+              {/* DETALLES DE RECURRENCIA (SI ES RECURRENTE) */}
+              {isRecurring && (
+                <div className="flex flex-col gap-2.5 p-3.5 bg-[#141d17] border border-emerald-900/60 rounded-2xl animate-in fade-in slide-in-from-top-1 duration-200">
+                  <div className="flex items-center justify-between">
+                    <label className="text-[11px] font-bold text-emerald-300 flex items-center gap-1.5">
+                      <svg className="w-3.5 h-3.5 stroke-current stroke-2 fill-none" viewBox="0 0 24 24">
+                        <path strokeLinecap="round" strokeLinejoin="round" d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z" />
+                      </svg>
+                      ¿Cada cuánto notificar su compra?
+                    </label>
+                    <span className="text-xs font-bold text-emerald-300 bg-emerald-950/80 px-2.5 py-0.5 rounded-full border border-emerald-800/60">
+                      Cada {recurrenceDays} {recurrenceDays === 1 ? 'día' : 'días'}
+                    </span>
+                  </div>
+
+                  {/* CHIPS RÁPIDOS */}
+                  <div className="grid grid-cols-4 gap-1.5">
+                    {[
+                      { label: 'Semanal', days: 7 },
+                      { label: '3 días', days: 3 },
+                      { label: '15 días', days: 15 },
+                      { label: 'Mensual', days: 30 },
+                    ].map((opt) => (
+                      <button
+                        key={opt.days}
+                        type="button"
+                        onClick={() => setRecurrenceDays(opt.days)}
+                        className={`py-1.5 px-2 rounded-xl text-[11px] font-bold transition-all cursor-pointer text-center ${
+                          recurrenceDays === opt.days
+                            ? 'bg-emerald-600 text-white shadow-sm'
+                            : 'bg-[#18231c] text-neutral-300 border border-emerald-900/40 hover:text-white'
+                        }`}
+                      >
+                        {opt.label}
+                      </button>
+                    ))}
+                  </div>
+
+                  {/* INPUT / STEPPER PERSONALIZADO */}
+                  <div className="flex items-center gap-2 pt-1">
+                    <span className="text-[11px] text-neutral-400 shrink-0">O personalizar días:</span>
+                    <div className="flex items-center gap-1.5 flex-1">
+                      <button
+                        type="button"
+                        onClick={() => setRecurrenceDays((prev) => Math.max(1, prev - 1))}
+                        className="w-8 h-8 rounded-xl bg-[#1b2820] text-neutral-300 hover:text-white border border-emerald-900/50 flex items-center justify-center font-bold text-sm cursor-pointer active:scale-95"
+                      >
+                        -
+                      </button>
+                      <input
+                        type="number"
+                        min={1}
+                        max={365}
+                        value={recurrenceDays}
+                        onChange={(e) => setRecurrenceDays(Math.max(1, Math.min(365, parseInt(e.target.value) || 1)))}
+                        className="w-16 text-center bg-[#101712] border border-emerald-900/60 rounded-xl py-1.5 text-xs font-bold text-white focus:outline-none focus:border-emerald-500"
+                      />
+                      <button
+                        type="button"
+                        onClick={() => setRecurrenceDays((prev) => Math.min(365, prev + 1))}
+                        className="w-8 h-8 rounded-xl bg-[#1b2820] text-neutral-300 hover:text-white border border-emerald-900/50 flex items-center justify-center font-bold text-sm cursor-pointer active:scale-95"
+                      >
+                        +
+                      </button>
+                      <span className="text-[11px] text-neutral-400 ml-1">días</span>
+                    </div>
+                  </div>
+
+                  <p className="text-[10px] text-emerald-400/80 m-0 pt-0.5">
+                    💡 Tras comprarlo, te avisaremos automáticamente al cumplirse {recurrenceDays} días para ir a la feria a reponerlo.
+                  </p>
+                </div>
+              )}
 
               <div className="flex flex-col gap-2 pt-3">
                 <div className="flex items-center gap-2">

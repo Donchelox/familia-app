@@ -371,6 +371,9 @@ class SyncManager {
             quantity: s.quantity || undefined,
             done: s.done || false,
             done_at: s.done_at,
+            is_recurring: s.is_recurring ?? false,
+            recurrence_interval_days: s.recurrence_interval_days ?? null,
+            last_notified_at: s.last_notified_at ?? null,
             created_at: s.created_at,
             _synced: true,
           }))

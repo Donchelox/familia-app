@@ -11,6 +11,8 @@ export const AddShoppingItemSchema = z.object({
   list: z.enum(['super', 'feria']).default('super'),
   category: z.string().trim().max(100).nullable().optional(),
   quantity: z.string().trim().max(50).nullable().optional(),
+  is_recurring: z.boolean().optional().default(false),
+  recurrence_interval_days: z.coerce.number().int().min(1).max(365).nullable().optional(),
 })
 
 export const UpdateShoppingItemSchema = z.object({
@@ -18,6 +20,8 @@ export const UpdateShoppingItemSchema = z.object({
   name: z.string().trim().min(1).max(120).optional(),
   category: z.string().trim().max(100).nullable().optional(),
   quantity: z.string().trim().max(50).nullable().optional(),
+  is_recurring: z.boolean().optional(),
+  recurrence_interval_days: z.coerce.number().int().min(1).max(365).nullable().optional(),
 })
 
 export const AddMultipleShoppingItemsSchema = z.object({

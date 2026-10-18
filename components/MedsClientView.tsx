@@ -409,15 +409,6 @@ export default function MedsClientView({
         </div>
 
         <div className="flex items-center gap-2">
-          <button
-            type="button"
-            onClick={openCreateModal}
-            style={orangeGradient}
-            className="px-3 py-1.5 rounded-full text-white text-xs font-bold shadow-sm hover:opacity-90 active:scale-95 transition-all cursor-pointer flex items-center gap-1"
-          >
-            <span className="text-sm leading-none">+</span>
-            <span>Medicamento</span>
-          </button>
           <SyncStatusBadge />
           <NotificationBell />
         </div>
@@ -570,17 +561,27 @@ export default function MedsClientView({
       <button
         type="button"
         onClick={openCreateModal}
+        aria-label="Añadir medicamento"
         style={orangeGradient}
-        className="fixed bottom-24 right-5 sm:right-8 lg:right-12 w-14 h-14 rounded-full flex items-center justify-center text-white shadow-[0_8px_20px_rgba(247,105,17,0.4)] active:scale-90 transition-transform cursor-pointer z-40"
+        className="fixed bottom-6 right-5 sm:bottom-8 sm:right-8 lg:right-12 w-14 h-14 rounded-full flex items-center justify-center text-white shadow-[0_8px_24px_rgba(247,105,17,0.5)] hover:scale-105 active:scale-90 transition-transform cursor-pointer z-50 border-2 border-white/20"
       >
-        <svg className="w-7 h-7 stroke-current stroke-2 fill-none" viewBox="0 0 24 24">
+        <svg className="w-7 h-7 stroke-current stroke-2 fill-none pointer-events-none" viewBox="0 0 24 24">
           <path strokeLinecap="round" strokeLinejoin="round" d="M12 4v16m8-8H4" />
         </svg>
       </button>
 
       {isModalOpen && (
-        <div className="fixed inset-0 z-50 flex items-end sm:items-center justify-center bg-black/80 backdrop-blur-sm p-0 sm:p-4 animate-in fade-in duration-200">
-          <div className="w-full max-w-lg bg-[#1a1a1a] border border-neutral-800 rounded-t-[32px] sm:rounded-[32px] p-6 shadow-2xl flex flex-col gap-4 max-h-[90vh] overflow-y-auto">
+        <div className="fixed inset-0 z-50 flex items-end sm:items-center justify-center p-0 sm:p-4 animate-in fade-in duration-200">
+          {/* Backdrop con cierre al tocar afuera */}
+          <div
+            className="fixed inset-0 bg-black/80 backdrop-blur-sm cursor-pointer transition-opacity"
+            onClick={() => setIsModalOpen(false)}
+          />
+
+          <div
+            onClick={(e) => e.stopPropagation()}
+            className="relative z-10 w-full max-w-lg bg-[#1a1a1a] border border-neutral-800 rounded-t-[32px] sm:rounded-[32px] p-6 shadow-2xl flex flex-col gap-4 max-h-[90vh] overflow-y-auto"
+          >
             <div className="flex items-center justify-between border-b border-neutral-800 pb-3">
               <h2 className="text-base font-black text-white m-0">
                 {editingId ? 'Editar recordatorio' : 'Nuevo medicamento'}

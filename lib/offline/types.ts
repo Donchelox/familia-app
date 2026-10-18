@@ -84,6 +84,9 @@ export interface LocalShoppingItem {
   quantity?: string
   done: boolean
   done_at?: string | null
+  is_recurring?: boolean
+  recurrence_interval_days?: number | null
+  last_notified_at?: string | null
   created_at?: string
   _synced?: boolean
   _updated_at?: number

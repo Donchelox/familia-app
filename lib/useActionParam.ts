@@ -28,7 +28,7 @@ export function useActionParam(handlers: Record<string, () => void>) {
           params.delete('action')
           const qs = params.toString()
           const cleanUrl = window.location.pathname + (qs ? `?${qs}` : '')
-          window.history.replaceState(null, '', cleanUrl)
+          window.history.replaceState(window.history.state, '', cleanUrl)
         }
       } catch (err) {
         console.debug('[useActionParam] Error procesando parámetro de acción:', err)

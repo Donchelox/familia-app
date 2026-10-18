@@ -456,6 +456,137 @@ export async function dispatchSuperReminders(
 }
 
 /**
+ * Despacha recordatorios de productos recurrentes que ya cumplieron su intervalo de compra.
+ * Reactiva automáticamente el producto poniéndolo en pendientes y enviando push notification a la familia.
+ */
+export async function dispatchRecurringShoppingReminders(
+  supabase: SupabaseClient,
+  currentHM?: string,
+  currentDay?: string,
+  webpushInstance?: any
+): Promise<number> {
+  const day = currentDay || todayStr()
+
+  // Buscar todos los productos recurrentes
+  const { data: recurringItems, error } = await supabase
+    .from('shopping_items')
+    .select('id, family_id, name, list, category, quantity, done, done_at, recurrence_interval_days, last_notified_at')
+    .eq('is_recurring', true)
+
+  if (error || !recurringItems || recurringItems.length === 0) {
+    return 0
+  }
+
+  const nowMs = Date.now()
+  const dueItems: typeof recurringItems = []
+
+  for (const item of recurringItems) {
+    const intervalDays = item.recurrence_interval_days || 7
+    const intervalMs = intervalDays * 24 * 60 * 60 * 1000
+
+    // Caso: Estaba comprado (done = true) y ya transcurrió el intervalo desde done_at
+    if (item.done && item.done_at) {
+      const doneMs = new Date(item.done_at).getTime()
+      if (nowMs - doneMs >= intervalMs) {
+        dueItems.push(item)
+      }
+    }
+  }
+
+  if (dueItems.length === 0) {
+    return 0
+  }
+
+  // Deduplicación por día para no enviar más de una notificación al día por producto
+  const famIds = [...new Set(dueItems.map((i) => i.family_id))]
+  const dedupTags = dueItems.map((i) => `recurring_due_${i.id}_${day}`)
+
+  const { data: existingLogs } = await supabase
+    .from('activity_log')
+    .select('item')
+    .eq('module', 'Compras Recurrentes')
+    .eq('action', 'notificado')
+    .in('item', dedupTags)
+
+  const alreadySentTags = new Set((existingLogs ?? []).map((l) => l.item))
+  const itemsToNotify = dueItems.filter((i) => !alreadySentTags.has(`recurring_due_${i.id}_${day}`))
+
+  // Reactivar en Supabase todos los ítems vencidos para que aparezcan en pendientes
+  await supabase
+    .from('shopping_items')
+    .update({
+      done: false,
+      done_at: null,
+      last_notified_at: new Date().toISOString(),
+    })
+    .in('id', dueItems.map((i) => i.id))
+
+  if (itemsToNotify.length === 0 || !webpushInstance) {
+    return 0
+  }
+
+  // Obtener suscripciones push de las familias afectadas
+  const { data: subs } = await supabase
+    .from('push_subscriptions')
+    .select('id, family_id, endpoint, p256dh, auth')
+    .in('family_id', famIds)
+
+  let sent = 0
+  const jobs: Promise<void>[] = []
+
+  for (const item of itemsToNotify) {
+    const isFeria = item.list === 'feria'
+    const listLabel = isFeria ? 'Feria Libre' : 'Supermercado'
+    const icon = isFeria ? '🥬' : '🛒'
+    const days = item.recurrence_interval_days || 7
+
+    const title = `${icon} Toca reponer: ${item.name}`
+    const body = `Han pasado ${days} días desde tu última compra. Ya se reactivó en tu lista de ${listLabel}.`
+    const payload = JSON.stringify({
+      title,
+      body,
+      url: isFeria ? '/feria' : '/super',
+      tag: `recurring-${item.id}-${day}`,
+    })
+
+    const famSubs = (subs ?? []).filter((s) => s.family_id === item.family_id)
+
+    for (const sub of famSubs) {
+      jobs.push(
+        webpushInstance
+          .sendNotification(
+            { endpoint: sub.endpoint, keys: { p256dh: sub.p256dh, auth: sub.auth } },
+            payload
+          )
+          .then(() => {
+            sent++
+          })
+          .catch(async (err: any) => {
+            if (err?.statusCode === 404 || err?.statusCode === 410) {
+              await supabase.from('push_subscriptions').delete().eq('id', sub.id)
+            }
+          })
+      )
+    }
+
+    jobs.push(
+      (async () => {
+        await supabase.from('activity_log').insert({
+          family_id: item.family_id,
+          user_name: 'Sistema',
+          module: 'Compras Recurrentes',
+          action: 'notificado',
+          item: `recurring_due_${item.id}_${day}`,
+        })
+      })()
+    )
+  }
+
+  await Promise.all(jobs)
+  return sent
+}
+
+/**
  * Función central que ejecuta la limpieza de pruebas a las 8:00 PM y despacha los avisos modulares
  */
 export async function runModularNotificationsCron(
@@ -491,10 +622,11 @@ export async function runModularNotificationsCron(
   }
 
   // 4. Despachar avisos concurrentes
-  const [schoolSent, feriaSent, superSent] = await Promise.all([
+  const [schoolSent, feriaSent, superSent, recurringSent] = await Promise.all([
     dispatchSchoolReminders(supabase, prefsMap, hm, day, webpush.default),
     dispatchFeriaReminders(supabase, prefsMap, hm, day, currentWeekdayName, webpush.default),
     dispatchSuperReminders(supabase, prefsMap, hm, day, webpush.default),
+    dispatchRecurringShoppingReminders(supabase, hm, day, webpush.default),
   ])
 
   return {
@@ -504,5 +636,6 @@ export async function runModularNotificationsCron(
     schoolSent,
     feriaSent,
     superSent,
+    recurringSent,
   }
 }
