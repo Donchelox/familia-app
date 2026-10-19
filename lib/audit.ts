@@ -55,14 +55,28 @@ export async function recordActivity(supabase: SupabaseClient, payload: AuditPay
       itemDesc = `${payload.title} · ${payload.scheduledAt}`
     }
 
-    await supabase.from('activity_log').insert({
-      family_id: payload.familyId,
-      user_name: payload.actorName || 'Familiar',
-      module: moduleName,
-      action: actionName,
-      item: itemDesc,
-    })
+    await Promise.allSettled([
+      supabase.from('activity_log').insert({
+        family_id: payload.familyId,
+        user_name: payload.actorName || 'Familiar',
+        module: moduleName,
+        action: actionName,
+        item: itemDesc,
+      }),
+      supabase.from('change_logs').insert({
+        family_id: payload.familyId,
+        actor_name: payload.actorName || 'Familiar',
+        entity: payload.entity,
+        entity_id: payload.entityId,
+        action: payload.action,
+        details: {
+          title: payload.title,
+          scheduled_at: payload.scheduledAt,
+          ...(payload.details || {}),
+        },
+      }),
+    ])
   } catch (error) {
-    console.error('Error al registrar auditoría en activity_log:', error)
+    console.error('Error al registrar auditoría en activity_log / change_logs:', error)
   }
 }

@@ -106,10 +106,18 @@ export const getApiContext = cache(async () => {
   const fam = Array.isArray(m.families) ? m.families[0] : m.families
   const preferredName = (m.display_name?.trim() || user.user_metadata?.name?.trim() || user.user_metadata?.full_name?.trim() || user.email?.split('@')[0] || 'Familia') as string
 
-  // Auto-heal: Garantizar que el usuario autenticado figure en la tabla 'family_members'
-  if (m.family_id) {
+  // Auto-heal: Garantizar que el usuario autenticado figure en la tabla 'family_members' sin duplicados
+  if (m.family_id && user) {
     try {
-      const { data: fmUser } = await supabase
+      const serviceKey = process.env.SUPABASE_SERVICE_ROLE_KEY
+      const url = process.env.NEXT_PUBLIC_SUPABASE_URL
+      const adminClient =
+        serviceKey && url
+          ? createAdminClient(url, serviceKey, { auth: { persistSession: false, autoRefreshToken: false } })
+          : supabase
+
+      // 1. Verificar si ya existe este usuario registrado en family_members
+      const { data: fmUser } = await adminClient
         .from('family_members')
         .select('id, name')
         .eq('family_id', m.family_id)
@@ -118,13 +126,7 @@ export const getApiContext = cache(async () => {
         .maybeSingle()
 
       if (!fmUser) {
-        const serviceKey = process.env.SUPABASE_SERVICE_ROLE_KEY
-        const url = process.env.NEXT_PUBLIC_SUPABASE_URL
-        const adminClient =
-          serviceKey && url
-            ? createAdminClient(url, serviceKey, { auth: { persistSession: false, autoRefreshToken: false } })
-            : supabase
-
+        // 2. Buscar si ya existe una ficha con su nombre para vincularla sin duplicar
         const { data: fmByName } = await adminClient
           .from('family_members')
           .select('id')
@@ -139,6 +141,7 @@ export const getApiContext = cache(async () => {
             .update({ user_id: user.id })
             .eq('id', fmByName.id)
         } else {
+          // 3. Si no existe, insertar de forma segura
           await adminClient.from('family_members').insert({
             family_id: m.family_id,
             name: preferredName,

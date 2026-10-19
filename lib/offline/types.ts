@@ -51,6 +51,7 @@ export interface LocalSchoolTask {
   task: string
   due: string
   due_date?: string | null
+  due_time?: string | null
   done: boolean
   done_at?: string | null
   created_at?: string
@@ -103,6 +104,8 @@ export interface LocalTodo {
   due_date?: string | null
   done: boolean
   done_at?: string | null
+  is_recurring?: boolean
+  recurrence_interval_days?: number | null
   created_at?: string
   _synced?: boolean
   _updated_at?: number

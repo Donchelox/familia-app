@@ -49,6 +49,7 @@ export const AddHomeworkSchema = z.object({
   subject: z.string().trim().min(1).max(100),
   task: z.string().trim().min(1).max(200),
   due: DATE_SCHEMA,
+  due_time: z.string().trim().regex(/^([01]\d|2[0-3]):([0-5]\d)$/).nullable().optional(),
 })
 
 export const AddSchoolBlockSchema = z.object({
@@ -90,7 +91,7 @@ export const SetRoleSchema = z.object({
 export const FamilyMemberSchema = z.object({
   name: z.string().trim().min(1).max(100),
   role: z.string().trim().max(50).default('hijo'),
-  type: z.enum(['adult', 'child']).default('child'),
+  type: z.enum(['adult', 'child', 'pet', 'person']).default('child'),
   email: EMAIL_SCHEMA.optional().or(z.literal('')),
 })
 

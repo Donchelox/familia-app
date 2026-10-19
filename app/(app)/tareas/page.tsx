@@ -20,12 +20,35 @@ interface TodoItem {
   due_date?: string | null
   done: boolean
   done_at?: string | null
+  is_recurring?: boolean
+  recurrence_interval_days?: number | null
   created_at?: string
 }
 
 interface FamilyMember {
   id: string
   name: string
+}
+
+function formatRecurrenceShort(days?: number | null): string {
+  const d = days || 7
+  if (d === 1) return 'Diario'
+  if (d === 2) return 'Cada 2 días'
+  if (d === 3) return 'Cada 3 días'
+  if (d === 7) return 'Semanal (7d)'
+  if (d === 14 || d === 15) return 'Quincenal (15d)'
+  if (d === 30 || d === 31) return 'Mensual (30d)'
+  return `Cada ${d} días`
+}
+
+function getCompletedRecurrenceStatus(item: TodoItem): { label: string; isDue: boolean } {
+  const days = item.recurrence_interval_days || 7
+  if (!item.done_at) return { label: `Cada ${days}d`, isDue: false }
+  const daysSince = Math.floor((Date.now() - new Date(item.done_at).getTime()) / (1000 * 60 * 60 * 24))
+  const remaining = days - daysSince
+  if (remaining <= 0) return { label: 'Toca realizar', isDue: true }
+  if (remaining === 1) return { label: 'Toca mañana', isDue: false }
+  return { label: `En ${remaining}d`, isDue: false }
 }
 
 export default function TareasPage() {
@@ -37,8 +60,9 @@ export default function TareasPage() {
   const [familyId, setFamilyId] = useState<string | null>(null)
   const [loading, setLoading] = useState(true)
 
-  // Filtro
+  // Filtros
   const [selectedFilter, setSelectedFilter] = useState<string>('Todas')
+  const [recurrenceFilter, setRecurrenceFilter] = useState<'all' | 'recurring' | 'sporadic'>('all')
 
   // Estado del Bottom Sheet
   const [isSheetOpen, setIsSheetOpen] = useState(false)
@@ -46,6 +70,8 @@ export default function TareasPage() {
   const [title, setTitle] = useState('')
   const [selectedMembers, setSelectedMembers] = useState<string[]>([])
   const [dueDateTime, setDueDateTime] = useState('') // Formato YYYY-MM-DDTHH:mm
+  const [isRecurring, setIsRecurring] = useState(false)
+  const [recurrenceDays, setRecurrenceDays] = useState(7)
 
   const [saving, setSaving] = useState(false)
   const [deleting, setDeleting] = useState(false)
@@ -73,6 +99,22 @@ export default function TareasPage() {
       return `${datePart}, ${timePart} hrs`
     } catch {
       return dateStr
+    }
+  }
+
+  // Comprobar si una tarea ya superó su fecha y hora límite
+  function isTaskOverdue(dateStr?: string | null): boolean {
+    if (!dateStr) return false
+    try {
+      if (dateStr.length === 10 && /^\d{4}-\d{2}-\d{2}$/.test(dateStr)) {
+        const endOfDay = new Date(`${dateStr}T23:59:59`)
+        return !isNaN(endOfDay.getTime()) && endOfDay.getTime() < Date.now()
+      }
+      const d = new Date(dateStr)
+      if (isNaN(d.getTime())) return false
+      return d.getTime() < Date.now()
+    } catch {
+      return false
     }
   }
 
@@ -125,16 +167,57 @@ export default function TareasPage() {
           : await offlineDB.todos.toArray()
 
         if (stored && stored.length > 0) {
-          const localTodos = stored.map((t) => ({
-            id: t.id,
-            family_id: t.family_id,
-            title: t.title,
-            assigned_to: t.assigned_to,
-            due_date: t.due_date,
-            done: t.done,
-            done_at: t.done_at,
-            created_at: t.created_at,
-          }))
+          const nowMs = Date.now()
+          const reactivatedTodos: TodoItem[] = []
+
+          const localTodos = stored.map((t) => {
+            const isRec = Boolean(t.is_recurring)
+            const interval = t.recurrence_interval_days || 7
+            let isDone = t.done || false
+            let doneAt = t.done_at
+            let dueDate = t.due_date
+
+            // Auto-reactivación si el intervalo de recurrencia ya pasó
+            if (isRec && isDone && doneAt) {
+              const daysSince = Math.floor((nowMs - new Date(doneAt).getTime()) / (1000 * 60 * 60 * 24))
+              if (daysSince >= interval) {
+                isDone = false
+                doneAt = null
+                if (dueDate) {
+                  const oldDate = new Date(dueDate)
+                  if (!isNaN(oldDate.getTime())) {
+                    dueDate = new Date(Date.now() + interval * 86400000).toISOString()
+                  }
+                }
+                reactivatedTodos.push({
+                  id: t.id,
+                  family_id: t.family_id,
+                  title: t.title,
+                  assigned_to: t.assigned_to,
+                  due_date: dueDate,
+                  done: false,
+                  done_at: null,
+                  is_recurring: true,
+                  recurrence_interval_days: interval,
+                  created_at: t.created_at,
+                })
+              }
+            }
+
+            return {
+              id: t.id,
+              family_id: t.family_id,
+              title: t.title,
+              assigned_to: t.assigned_to,
+              due_date: dueDate,
+              done: isDone,
+              done_at: doneAt,
+              is_recurring: isRec,
+              recurrence_interval_days: interval,
+              created_at: t.created_at,
+            }
+          })
+
           setTodos(localTodos)
           if (stored[0]?.family_id && !currentFamId) {
             currentFamId = stored[0].family_id
@@ -142,6 +225,19 @@ export default function TareasPage() {
             saveOfflineFamilyId(stored[0].family_id)
           }
           setLoading(false)
+
+          // Sincronizar reactivaciones locales
+          if (reactivatedTodos.length > 0 && currentFamId) {
+            reactivatedTodos.forEach((item) => {
+              mutate({
+                familyId: currentFamId!,
+                entity: 'todos',
+                action: 'UPDATE',
+                entityId: item.id,
+                payload: item,
+              }).catch(() => {})
+            })
+          }
         }
       } catch (err) {
         console.warn('[Offline] Error cargando tareas locales:', err)
@@ -270,6 +366,10 @@ export default function TareasPage() {
             : await offlineDB.todos.toArray()
           const unsyncedItems = currentLocal.filter((t) => !t._synced)
           const unsyncedMap = new Map(unsyncedItems.map((t) => [t.id, t]))
+          const localMap = new Map(currentLocal.map((t) => [t.id, t]))
+
+          const nowMs = Date.now()
+          const reactivatedTodos: TodoItem[] = []
 
           const mergedMap = new Map<string, TodoItem>()
           unsyncedItems.forEach((it) => {
@@ -281,13 +381,63 @@ export default function TareasPage() {
               due_date: it.due_date,
               done: it.done,
               done_at: it.done_at,
+              is_recurring: it.is_recurring,
+              recurrence_interval_days: it.recurrence_interval_days,
               created_at: it.created_at,
             })
           })
 
           todosRes.forEach((rem: any) => {
             if (!unsyncedMap.has(rem.id)) {
-              mergedMap.set(rem.id, rem)
+              const localIt = localMap.get(rem.id)
+              const isRec =
+                rem.is_recurring !== undefined && rem.is_recurring !== null
+                  ? Boolean(rem.is_recurring)
+                  : Boolean(localIt?.is_recurring)
+              const interval = (rem.recurrence_interval_days ?? localIt?.recurrence_interval_days) || 7
+
+              let isDone = rem.done || false
+              let doneAt = rem.done_at
+              let dueDate = rem.due_date
+
+              if (isRec && isDone && doneAt) {
+                const daysSince = Math.floor((nowMs - new Date(doneAt).getTime()) / (1000 * 60 * 60 * 24))
+                if (daysSince >= interval) {
+                  isDone = false
+                  doneAt = null
+                  if (dueDate) {
+                    const oldDate = new Date(dueDate)
+                    if (!isNaN(oldDate.getTime())) {
+                      dueDate = new Date(Date.now() + interval * 86400000).toISOString()
+                    }
+                  }
+                  reactivatedTodos.push({
+                    id: rem.id,
+                    family_id: rem.family_id,
+                    title: rem.title,
+                    assigned_to: rem.assigned_to,
+                    due_date: dueDate,
+                    done: false,
+                    done_at: null,
+                    is_recurring: true,
+                    recurrence_interval_days: interval,
+                    created_at: rem.created_at,
+                  })
+                }
+              }
+
+              mergedMap.set(rem.id, {
+                id: rem.id,
+                family_id: rem.family_id,
+                title: rem.title,
+                assigned_to: rem.assigned_to,
+                due_date: dueDate,
+                done: isDone,
+                done_at: doneAt,
+                is_recurring: isRec,
+                recurrence_interval_days: interval,
+                created_at: rem.created_at,
+              })
             }
           })
 
@@ -306,20 +456,41 @@ export default function TareasPage() {
           // Respaldar servidor en Dexie sin sobrescribir los no sincronizados
           const serverToStore = todosRes
             .filter((rem: any) => !unsyncedMap.has(rem.id))
-            .map((rem: any) => ({
-              id: rem.id,
-              family_id: rem.family_id,
-              title: rem.title,
-              assigned_to: rem.assigned_to,
-              due_date: rem.due_date,
-              done: rem.done || false,
-              done_at: rem.done_at,
-              created_at: rem.created_at,
-              _synced: true,
-            }))
+            .map((rem: any) => {
+              const localIt = localMap.get(rem.id)
+              return {
+                id: rem.id,
+                family_id: rem.family_id,
+                title: rem.title,
+                assigned_to: rem.assigned_to,
+                due_date: rem.due_date,
+                done: rem.done || false,
+                done_at: rem.done_at,
+                is_recurring:
+                  rem.is_recurring !== undefined && rem.is_recurring !== null
+                    ? Boolean(rem.is_recurring)
+                    : Boolean(localIt?.is_recurring),
+                recurrence_interval_days:
+                  (rem.recurrence_interval_days ?? localIt?.recurrence_interval_days) || null,
+                created_at: rem.created_at,
+                _synced: true,
+              }
+            })
 
           if (serverToStore.length > 0) {
             await offlineDB.todos.bulkPut(serverToStore)
+          }
+
+          if (reactivatedTodos.length > 0 && currentFamId) {
+            reactivatedTodos.forEach((item) => {
+              mutate({
+                familyId: currentFamId!,
+                entity: 'todos',
+                action: 'UPDATE',
+                entityId: item.id,
+                payload: item,
+              }).catch(() => {})
+            })
           }
         }
       } catch (err) {
@@ -377,6 +548,8 @@ export default function TareasPage() {
           due_date: todo.due_date,
           done: nextDone,
           done_at: nextDoneAt,
+          is_recurring: todo.is_recurring ?? false,
+          recurrence_interval_days: todo.recurrence_interval_days ?? null,
         },
       })
     } catch (e) {
@@ -390,6 +563,8 @@ export default function TareasPage() {
     setTitle('')
     setSelectedMembers([])
     setDueDateTime('')
+    setIsRecurring(false)
+    setRecurrenceDays(7)
     setIsSheetOpen(true)
   }
 
@@ -404,6 +579,8 @@ export default function TareasPage() {
       : []
     setSelectedMembers(initialMembers)
     setDueDateTime(toDateTimeLocalValue(todo.due_date))
+    setIsRecurring(Boolean(todo.is_recurring))
+    setRecurrenceDays(todo.recurrence_interval_days || 7)
     setIsSheetOpen(true)
   }
 
@@ -443,6 +620,8 @@ export default function TareasPage() {
       due_date: dueDateTime ? new Date(dueDateTime).toISOString() : null,
       done: editingTodo ? editingTodo.done : false,
       done_at: editingTodo ? editingTodo.done_at : null,
+      is_recurring: isRecurring,
+      recurrence_interval_days: isRecurring ? (recurrenceDays || 7) : null,
       created_at: editingTodo?.created_at || new Date().toISOString(),
     }
 
@@ -470,6 +649,8 @@ export default function TareasPage() {
           due_date: payload.due_date,
           done: payload.done,
           done_at: payload.done_at,
+          is_recurring: payload.is_recurring,
+          recurrence_interval_days: payload.recurrence_interval_days,
           created_at: payload.created_at,
         },
       })
@@ -481,6 +662,8 @@ export default function TareasPage() {
     setTitle('')
     setDueDateTime('')
     setSelectedMembers([])
+    setIsRecurring(false)
+    setRecurrenceDays(7)
     setSaving(false)
   }
 
@@ -522,11 +705,25 @@ export default function TareasPage() {
     return assignedList.includes(filter.toLowerCase())
   }
 
+  function matchesRecurrence(todo: TodoItem, filter: 'all' | 'recurring' | 'sporadic') {
+    if (filter === 'all') return true
+    if (filter === 'recurring') return Boolean(todo.is_recurring)
+    if (filter === 'sporadic') return !todo.is_recurring
+    return true
+  }
+
   const pendingTodos = todos.filter((t) => !t.done)
   const completedTodos = todos.filter((t) => t.done)
 
-  const displayedPending = pendingTodos.filter((t) => matchesFilter(t, selectedFilter))
-  const displayedCompleted = completedTodos.filter((t) => matchesFilter(t, selectedFilter))
+  const recurringCount = todos.filter((t) => t.is_recurring).length
+  const sporadicCount = todos.filter((t) => !t.is_recurring).length
+
+  const displayedPending = pendingTodos.filter(
+    (t) => matchesFilter(t, selectedFilter) && matchesRecurrence(t, recurrenceFilter)
+  )
+  const displayedCompleted = completedTodos.filter(
+    (t) => matchesFilter(t, selectedFilter) && matchesRecurrence(t, recurrenceFilter)
+  )
 
   // Integrantes únicos para los chips de filtro (miembros registrados + asignados)
   const filterMembers = Array.from(
@@ -566,39 +763,72 @@ export default function TareasPage() {
         </div>
 
         <div className="flex items-center gap-2">
-          <button
-            type="button"
-            onClick={openCreate}
-            style={orangeGradient}
-            className="px-3.5 py-1.5 rounded-full text-white text-xs font-bold shadow-sm hover:opacity-90 active:scale-95 transition-all cursor-pointer flex items-center gap-1.5"
-          >
-            <span className="text-sm font-black leading-none">+</span>
-            <span>Tarea</span>
-          </button>
           <SyncStatusBadge />
           <NotificationBell />
         </div>
       </header>
 
-      {/* BARRA DE ESTADO Y FILTRO POR INTEGRANTE */}
-      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 bg-[#1a1a1a] p-4 rounded-[28px] border border-neutral-800/80">
-        <div className="flex items-center gap-2">
-          <span className="text-xs text-neutral-400 font-medium">Por realizar:</span>
-          <span className="px-3 py-1 rounded-full bg-[#131313] border border-neutral-800 text-xs font-bold text-neutral-200">
-            {selectedFilter === 'Todas'
-              ? `${pendingTodos.length} pendientes`
-              : `${displayedPending.length} de ${selectedFilter}`}
-          </span>
+      {/* BARRA DE ESTADO Y FILTROS */}
+      <div className="flex flex-col gap-3 bg-[#1a1a1a] p-4 rounded-[28px] border border-neutral-800/80">
+        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+          <div className="flex items-center gap-2">
+            <span className="text-xs text-neutral-400 font-medium">Por realizar:</span>
+            <span className="px-3 py-1 rounded-full bg-[#131313] border border-neutral-800 text-xs font-bold text-neutral-200">
+              {selectedFilter === 'Todas' && recurrenceFilter === 'all'
+                ? `${pendingTodos.length} pendientes`
+                : `${displayedPending.length} pendientes`}
+            </span>
+          </div>
+
+          {/* TABS RECURRENTE / PUNTUAL / TODAS */}
+          <div className="flex items-center gap-1 bg-[#131313] p-1 rounded-2xl border border-neutral-800/80 self-start sm:self-auto overflow-x-auto max-w-full scrollbar-none">
+            <button
+              type="button"
+              onClick={() => setRecurrenceFilter('all')}
+              className={`px-3 py-1.5 rounded-xl text-xs font-bold whitespace-nowrap transition-all cursor-pointer ${
+                recurrenceFilter === 'all'
+                  ? 'bg-neutral-700 text-white shadow-sm'
+                  : 'text-neutral-400 hover:text-white'
+              }`}
+            >
+              Todas ({todos.length})
+            </button>
+            <button
+              type="button"
+              onClick={() => setRecurrenceFilter('recurring')}
+              className={`px-3 py-1.5 rounded-xl text-xs font-bold whitespace-nowrap transition-all cursor-pointer flex items-center gap-1.5 ${
+                recurrenceFilter === 'recurring'
+                  ? 'bg-emerald-600 text-white shadow-sm'
+                  : 'text-neutral-400 hover:text-white'
+              }`}
+            >
+              <span>🔄</span>
+              <span>Recurrentes ({recurringCount})</span>
+            </button>
+            <button
+              type="button"
+              onClick={() => setRecurrenceFilter('sporadic')}
+              className={`px-3 py-1.5 rounded-xl text-xs font-bold whitespace-nowrap transition-all cursor-pointer flex items-center gap-1.5 ${
+                recurrenceFilter === 'sporadic'
+                  ? 'bg-[#F76911] text-white shadow-sm'
+                  : 'text-neutral-400 hover:text-white'
+              }`}
+            >
+              <span>📌</span>
+              <span>Puntuales ({sporadicCount})</span>
+            </button>
+          </div>
         </div>
 
-        {/* CHIPS DE FILTRO */}
-        <div className="flex items-center gap-2 overflow-x-auto pb-1 sm:pb-0 scrollbar-none">
+        {/* CHIPS DE FILTRO POR INTEGRANTE */}
+        <div className="flex items-center gap-2 overflow-x-auto pt-2 pb-1 sm:pb-0 scrollbar-none border-t border-neutral-800/60">
+          <span className="text-[11px] text-neutral-400 font-semibold shrink-0">Asignada:</span>
           {filterMembers.map((f) => (
             <button
               key={f}
               type="button"
               onClick={() => setSelectedFilter(f)}
-              className={`px-3.5 py-1.5 rounded-xl text-xs font-bold whitespace-nowrap transition-all duration-150 hover:scale-105 active:scale-95 cursor-pointer ${
+              className={`px-3 py-1 rounded-xl text-xs font-bold whitespace-nowrap transition-all duration-150 hover:scale-105 active:scale-95 cursor-pointer ${
                 selectedFilter === f
                   ? 'bg-[#F76911] text-white shadow-md'
                   : 'bg-[#131313] text-neutral-400 border border-neutral-800 hover:text-white'
@@ -644,6 +874,7 @@ export default function TareasPage() {
             ) : (
               displayedPending.map((t) => {
                 const formattedDate = formatDateTime(t.due_date)
+                const isOverdue = isTaskOverdue(t.due_date)
                 const assignedList = t.assigned_to
                   ? t.assigned_to.split(',').map((s) => s.trim()).filter(Boolean)
                   : []
@@ -651,30 +882,45 @@ export default function TareasPage() {
                 return (
                   <article
                     key={t.id}
-                    className="p-4 rounded-[24px] bg-[#1a1a1a] border border-neutral-800/80 hover:border-neutral-700 shadow-md transition-all flex items-center justify-between gap-3"
+                    className={`p-4 rounded-[24px] bg-[#1a1a1a] border shadow-md transition-all flex items-center justify-between gap-3 ${
+                      isOverdue
+                        ? 'border-red-900/60 hover:border-red-700/80 bg-gradient-to-r from-red-950/20 to-[#1a1a1a]'
+                        : 'border-neutral-800/80 hover:border-neutral-700'
+                    }`}
                   >
                     <div onClick={() => openEdit(t)} className="min-w-0 flex-1 cursor-pointer">
-                      {assignedList.length > 0 && (
-                        <div className="flex flex-wrap items-center gap-1.5 mb-1.5">
-                          {assignedList.map((person) => (
-                            <span
-                              key={person}
-                              className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full bg-[#F76911]/15 text-[#F76911] border border-[#F76911]/30 text-[11px] font-bold"
-                            >
-                              <span className="text-[10px]">👤</span>
-                              <span>{person}</span>
-                            </span>
-                          ))}
-                        </div>
-                      )}
+                      <div className="flex flex-wrap items-center gap-1.5 mb-1.5">
+                        {isOverdue && (
+                          <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full bg-red-950/90 text-red-400 border border-red-800/80 text-[10px] font-black uppercase tracking-wider shadow-sm">
+                            <span>⚠️</span>
+                            <span>Tarea vencida</span>
+                          </span>
+                        )}
+                        {t.is_recurring && (
+                          <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full bg-emerald-950/70 text-emerald-300 border border-emerald-800/60 text-[10px] font-bold">
+                            <span>🔄</span>
+                            <span>{formatRecurrenceShort(t.recurrence_interval_days)}</span>
+                          </span>
+                        )}
+                        {assignedList.map((person) => (
+                          <span
+                            key={person}
+                            className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full bg-[#F76911]/15 text-[#F76911] border border-[#F76911]/30 text-[11px] font-bold"
+                          >
+                            <span className="text-[10px]">👤</span>
+                            <span>{person}</span>
+                          </span>
+                        ))}
+                      </div>
 
                       <h3 className="text-sm font-bold text-white truncate m-0">
                         {t.title}
                       </h3>
 
                       {formattedDate && (
-                        <p className="text-[11px] text-neutral-400 mt-1 flex items-center gap-1 font-medium">
-                          ⏰ Límite: {formattedDate}
+                        <p className={`text-[11px] mt-1 flex items-center gap-1 font-medium ${isOverdue ? 'text-red-400' : 'text-neutral-400'}`}>
+                          <span>⏰ Límite: {formattedDate}</span>
+                          {isOverdue && <span className="font-bold text-red-400">• Venció</span>}
                         </p>
                       )}
                     </div>
@@ -725,16 +971,31 @@ export default function TareasPage() {
                 const assignedList = t.assigned_to
                   ? t.assigned_to.split(',').map((s) => s.trim()).filter(Boolean)
                   : []
+                const recurrenceStatus = t.is_recurring ? getCompletedRecurrenceStatus(t) : null
 
                 return (
                   <article
                     key={t.id}
-                    className="p-4 rounded-[24px] bg-[#151515] border border-neutral-800/40 opacity-60 flex items-center justify-between gap-3"
+                    className="p-4 rounded-[24px] bg-[#151515] border border-neutral-800/40 opacity-70 flex items-center justify-between gap-3"
                   >
                     <div onClick={() => openEdit(t)} className="min-w-0 flex-1 cursor-pointer">
-                      <h3 className="text-sm font-bold text-neutral-400 line-through truncate m-0">
-                        {t.title}
-                      </h3>
+                      <div className="flex items-center gap-2">
+                        <h3 className="text-sm font-bold text-neutral-400 line-through truncate m-0">
+                          {t.title}
+                        </h3>
+                        {t.is_recurring && recurrenceStatus && (
+                          <span
+                            className={`inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full border text-[10px] font-bold shrink-0 ${
+                              recurrenceStatus.isDue
+                                ? 'bg-amber-950/70 border-amber-800/60 text-amber-300'
+                                : 'bg-neutral-800/80 border-neutral-700/60 text-emerald-400'
+                            }`}
+                          >
+                            <span>🔄</span>
+                            <span>{recurrenceStatus.label}</span>
+                          </span>
+                        )}
+                      </div>
                       {assignedList.length > 0 && (
                         <div className="flex flex-wrap items-center gap-1.5 mt-1.5">
                           <span className="text-[11px] text-neutral-500 font-medium">
@@ -938,6 +1199,127 @@ export default function TareasPage() {
                 </div>
               </div>
 
+              {/* TIPO DE TAREA: PUNTUAL VS RECURRENTE */}
+              <div className="flex flex-col gap-1.5 pt-1">
+                <label className="text-[11px] font-bold text-neutral-300">
+                  Tipo de tarea
+                </label>
+
+                <div className="grid grid-cols-2 gap-2">
+                  <button
+                    type="button"
+                    onClick={() => setIsRecurring(false)}
+                    className={`flex flex-col items-start p-3 rounded-2xl border text-left transition-all cursor-pointer ${
+                      !isRecurring
+                        ? 'bg-[#221c17] border-[#F76911] text-white shadow-sm ring-1 ring-[#F76911]/30'
+                        : 'bg-[#131313] border-neutral-800 text-neutral-400 hover:text-white hover:border-neutral-700'
+                    }`}
+                  >
+                    <div className="flex items-center gap-1.5">
+                      <span className="text-base">📌</span>
+                      <span className="text-xs font-bold text-white">Puntual</span>
+                    </div>
+                    <span className="text-[10px] text-neutral-400 mt-0.5">
+                      Tarea única de una sola vez
+                    </span>
+                  </button>
+
+                  <button
+                    type="button"
+                    onClick={() => setIsRecurring(true)}
+                    className={`flex flex-col items-start p-3 rounded-2xl border text-left transition-all cursor-pointer ${
+                      isRecurring
+                        ? 'bg-[#14221a] border-emerald-500 text-white shadow-sm ring-1 ring-emerald-500/30'
+                        : 'bg-[#131313] border-neutral-800 text-neutral-400 hover:text-white hover:border-neutral-700'
+                    }`}
+                  >
+                    <div className="flex items-center gap-1.5">
+                      <span className="text-base">🔄</span>
+                      <span className="text-xs font-bold text-white">Recurrente</span>
+                    </div>
+                    <span className="text-[10px] text-neutral-400 mt-0.5">
+                      Se repite cada X días
+                    </span>
+                  </button>
+                </div>
+              </div>
+
+              {/* DETALLES DE RECURRENCIA (SI ES RECURRENTE) */}
+              {isRecurring && (
+                <div className="flex flex-col gap-2.5 p-3.5 bg-[#141d17] border border-emerald-900/60 rounded-2xl animate-in fade-in slide-in-from-top-1 duration-200">
+                  <div className="flex items-center justify-between">
+                    <label className="text-[11px] font-bold text-emerald-300 flex items-center gap-1.5">
+                      <svg className="w-3.5 h-3.5 stroke-current stroke-2 fill-none" viewBox="0 0 24 24">
+                        <path strokeLinecap="round" strokeLinejoin="round" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
+                      </svg>
+                      ¿Cada cuántos días se repite?
+                    </label>
+                    <span className="text-xs font-bold text-emerald-300 bg-emerald-950/80 px-2.5 py-0.5 rounded-full border border-emerald-800/60">
+                      {formatRecurrenceShort(recurrenceDays)}
+                    </span>
+                  </div>
+
+                  {/* CHIPS RÁPIDOS */}
+                  <div className="grid grid-cols-3 sm:grid-cols-6 gap-1.5">
+                    {[
+                      { label: '1 día', days: 1 },
+                      { label: '2 días', days: 2 },
+                      { label: '3 días', days: 3 },
+                      { label: 'Semanal', days: 7 },
+                      { label: '15 días', days: 15 },
+                      { label: '30 días', days: 30 },
+                    ].map((opt) => (
+                      <button
+                        key={opt.days}
+                        type="button"
+                        onClick={() => setRecurrenceDays(opt.days)}
+                        className={`py-1.5 px-2 rounded-xl text-[11px] font-bold transition-all cursor-pointer text-center ${
+                          recurrenceDays === opt.days
+                            ? 'bg-emerald-600 text-white shadow-sm'
+                            : 'bg-[#18231c] text-neutral-300 border border-emerald-900/40 hover:text-white'
+                        }`}
+                      >
+                        {opt.label}
+                      </button>
+                    ))}
+                  </div>
+
+                  {/* INPUT / STEPPER PERSONALIZADO */}
+                  <div className="flex items-center gap-2 pt-1">
+                    <span className="text-[11px] text-neutral-400 shrink-0">O personalizar días:</span>
+                    <div className="flex items-center gap-1.5 flex-1">
+                      <button
+                        type="button"
+                        onClick={() => setRecurrenceDays((prev) => Math.max(1, prev - 1))}
+                        className="w-8 h-8 rounded-xl bg-[#1b2820] text-neutral-300 hover:text-white border border-emerald-900/50 flex items-center justify-center font-bold text-sm cursor-pointer active:scale-95"
+                      >
+                        -
+                      </button>
+                      <input
+                        type="number"
+                        min={1}
+                        max={365}
+                        value={recurrenceDays}
+                        onChange={(e) => setRecurrenceDays(Math.max(1, Math.min(365, parseInt(e.target.value) || 1)))}
+                        className="w-16 text-center bg-[#101712] border border-emerald-900/60 rounded-xl py-1.5 text-xs font-bold text-white focus:outline-none focus:border-emerald-500"
+                      />
+                      <button
+                        type="button"
+                        onClick={() => setRecurrenceDays((prev) => Math.min(365, prev + 1))}
+                        className="w-8 h-8 rounded-xl bg-[#1b2820] text-neutral-300 hover:text-white border border-emerald-900/50 flex items-center justify-center font-bold text-sm cursor-pointer active:scale-95"
+                      >
+                        +
+                      </button>
+                      <span className="text-[11px] text-neutral-400 ml-1">días</span>
+                    </div>
+                  </div>
+
+                  <p className="text-[10px] text-emerald-400/80 m-0 pt-0.5">
+                    💡 Al completar la tarea, se reactivará automáticamente después de {recurrenceDays} {recurrenceDays === 1 ? 'día' : 'días'} para realizarla de nuevo.
+                  </p>
+                </div>
+              )}
+
               {/* FECHA Y HORA (CALENDARIO COMPLETO TIPO DATETIME-LOCAL) */}
               <div className="flex flex-col gap-1">
                 <div className="flex items-center justify-between">
@@ -963,6 +1345,12 @@ export default function TareasPage() {
                 <p className="text-[10px] text-neutral-500 m-0">
                   Define el día, mes, hora y minutos desde el selector interactivo.
                 </p>
+                {dueDateTime && isTaskOverdue(dueDateTime) && (
+                  <p className="text-[11px] text-red-400 font-bold m-0 flex items-center gap-1.5 mt-1">
+                    <span>⚠️</span>
+                    <span>Esta fecha y hora ya pasaron (Tarea vencida).</span>
+                  </p>
+                )}
               </div>
 
               {/* BOTONES */}

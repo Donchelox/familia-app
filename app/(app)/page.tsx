@@ -167,15 +167,24 @@ export default async function Inicio() {
 
   // C) Tareas del hogar
   ;(todosRes.data ?? []).forEach((todo: any) => {
-    const todoDateStr = todo.due_date ? `${todo.due_date}T20:00:00` : `${today}T21:00:00`
+    let isOverdue = false
+    if (todo.due_date) {
+      const d = new Date(todo.due_date)
+      if (!isNaN(d.getTime())) {
+        isOverdue = d.getTime() < Date.now()
+      }
+    }
+    const todoDateStr = todo.due_date ? (todo.due_date.includes('T') ? todo.due_date : `${todo.due_date}T20:00:00`) : `${today}T21:00:00`
     const todoDate = new Date(todoDateStr)
     rawEvents.push({
       id: `todo-${todo.id}`,
       category: 'Tareas',
       title: todo.title,
-      description: todo.assigned_to ? `Para: ${todo.assigned_to}` : 'Pendiente en casa',
+      description: isOverdue
+        ? '⚠️ Tarea vencida'
+        : (todo.assigned_to ? `Para: ${todo.assigned_to}` : 'Pendiente en casa'),
       href: '/tareas',
-      sortTimestamp: isNaN(todoDate.getTime()) ? Date.now() + 43200000 : todoDate.getTime(),
+      sortTimestamp: isOverdue ? 0 : (isNaN(todoDate.getTime()) ? Date.now() + 43200000 : todoDate.getTime()),
     })
   })
 

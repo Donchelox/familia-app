@@ -178,7 +178,7 @@ export async function dispatchSchoolReminders(
       .in('family_id', targetIds),
     supabase
       .from('school_homework')
-      .select('id, family_id, subject, title, due_date, done')
+      .select('id, family_id, subject, task, due_date, due, due_time, done')
       .eq('due_date', currentDay)
       .or('done.eq.false,done.is.null')
       .in('family_id', targetIds),
@@ -249,6 +249,114 @@ export async function dispatchSchoolReminders(
           action: 'notificado',
           item: dedupTag,
         })
+      })()
+    )
+  }
+
+  await Promise.all(jobs)
+  return sent
+}
+
+/**
+ * Despacha avisos push puntuales de tareas de colegio en su horario específico programado
+ */
+export async function dispatchPunctualHomeworkReminders(
+  supabase: SupabaseClient,
+  currentHM: string,
+  currentDay: string,
+  webpush: any
+): Promise<number> {
+  if (!webpush) return 0
+
+  // Consultar tareas pendientes de hoy
+  const { data: homeworkList } = await supabase
+    .from('school_homework')
+    .select('id, family_id, subject, task, due_date, due, due_time, done, last_notified_at')
+    .or('done.eq.false,done.is.null')
+
+  if (!homeworkList || homeworkList.length === 0) return 0
+
+  // Filtrar tareas que vencen hoy y cuyo horario coincide con el actual dentro de 60 min
+  const dueTasks = homeworkList.filter((h) => {
+    const taskDate = h.due_date || h.due
+    if (taskDate !== currentDay) return false
+    const taskTime = (h.due_time || '').trim()
+    if (!taskTime) return false
+    return isTimeDueToday(taskTime, currentHM, 60)
+  })
+
+  if (dueTasks.length === 0) return 0
+
+  // Deduplicación por id de tarea y día
+  const dedupTags = dueTasks.map((t) => `hw_punctual_${t.id}_${currentDay}`)
+  const { data: existingLogs } = await supabase
+    .from('activity_log')
+    .select('item')
+    .eq('module', 'Colegio')
+    .eq('action', 'notificado_hora')
+    .in('item', dedupTags)
+
+  const alreadySent = new Set((existingLogs ?? []).map((l) => l.item))
+  const tasksToNotify = dueTasks.filter((t) => !alreadySent.has(`hw_punctual_${t.id}_${currentDay}`))
+
+  if (tasksToNotify.length === 0) return 0
+
+  const famIds = [...new Set(tasksToNotify.map((t) => t.family_id))]
+  const { data: subs } = await supabase
+    .from('push_subscriptions')
+    .select('id, family_id, endpoint, p256dh, auth')
+    .in('family_id', famIds)
+
+  let sent = 0
+  const jobs: Promise<void>[] = []
+
+  for (const task of tasksToNotify) {
+    const taskTag = `hw_punctual_${task.id}_${currentDay}`
+    const famSubs = (subs ?? []).filter((s) => s.family_id === task.family_id)
+    if (famSubs.length === 0) continue
+
+    const title = `📖 Tarea de Colegio: ${task.subject}`
+    const body = `Recordatorio de las ${task.due_time} hrs: ${task.task}. ¡Recuerda entregarla hoy!`
+    const payload = JSON.stringify({
+      title,
+      body,
+      url: '/colegio',
+      tag: `school-hw-${task.id}-${currentDay}`,
+    })
+
+    for (const sub of famSubs) {
+      jobs.push(
+        webpush
+          .sendNotification(
+            { endpoint: sub.endpoint, keys: { p256dh: sub.p256dh, auth: sub.auth } },
+            payload
+          )
+          .then(() => {
+            sent++
+          })
+          .catch(async (err: any) => {
+            if (err?.statusCode === 404 || err?.statusCode === 410) {
+              await supabase.from('push_subscriptions').delete().eq('id', sub.id)
+            }
+          })
+      )
+    }
+
+    jobs.push(
+      (async () => {
+        await Promise.allSettled([
+          supabase.from('activity_log').insert({
+            family_id: task.family_id,
+            user_name: 'Sistema',
+            module: 'Colegio',
+            action: 'notificado_hora',
+            item: taskTag,
+          }),
+          supabase
+            .from('school_homework')
+            .update({ last_notified_at: new Date().toISOString() })
+            .eq('id', task.id),
+        ])
       })()
     )
   }
@@ -490,12 +598,14 @@ export async function dispatchRecurringShoppingReminders(
 
   for (const item of recurringItems) {
     const intervalDays = item.recurrence_interval_days || 7
-    const intervalMs = intervalDays * 24 * 60 * 60 * 1000
+    const daysBefore = intervalDays >= 3 ? 2 : (intervalDays === 2 ? 1 : 0)
+    const thresholdDays = intervalDays - daysBefore
+    const thresholdMs = thresholdDays * 24 * 60 * 60 * 1000
 
-    // Caso: Estaba comprado (done = true) y ya transcurrió el intervalo desde done_at
+    // Caso: Estaba comprado (done = true) y ya está dentro de 2 o 1 día antes del ciclo
     if (item.done && item.done_at) {
       const doneMs = new Date(item.done_at).getTime()
-      if (nowMs - doneMs >= intervalMs) {
+      if (nowMs - doneMs >= thresholdMs) {
         dueItems.push(item)
       }
     }
@@ -547,9 +657,11 @@ export async function dispatchRecurringShoppingReminders(
     const listLabel = isFeria ? 'Feria Libre' : 'Supermercado'
     const icon = isFeria ? '🥬' : '🛒'
     const days = item.recurrence_interval_days || 7
+    const daysBefore = days >= 3 ? 2 : (days === 2 ? 1 : 0)
 
-    const title = `${icon} Toca reponer: ${item.name}`
-    const body = `Han pasado ${days} días desde tu última compra. Ya se reactivó en tu lista de ${listLabel}.`
+    const title = `${icon} Toca reponer pronto: ${item.name}`
+    const daysNotice = daysBefore > 0 ? `Quedan ${daysBefore} días para tu ciclo habitual de ${days} días.` : `Se cumplieron los ${days} días de tu ciclo.`
+    const body = `${daysNotice} Ya volvió a tu lista de ${listLabel} para que lo compres con tiempo.`
     const payload = JSON.stringify({
       title,
       body,
@@ -630,8 +742,9 @@ export async function runModularNotificationsCron(
   }
 
   // 4. Despachar avisos concurrentes
-  const [schoolSent, feriaSent, superSent, recurringSent] = await Promise.all([
+  const [schoolSent, punctualHwSent, feriaSent, superSent, recurringSent] = await Promise.all([
     dispatchSchoolReminders(supabase, prefsMap, hm, day, webpush.default),
+    dispatchPunctualHomeworkReminders(supabase, hm, day, webpush.default),
     dispatchFeriaReminders(supabase, prefsMap, hm, day, currentWeekdayName, webpush.default),
     dispatchSuperReminders(supabase, prefsMap, hm, day, webpush.default),
     dispatchRecurringShoppingReminders(supabase, hm, day, webpush.default),
@@ -642,6 +755,7 @@ export async function runModularNotificationsCron(
     day,
     cleanedCount,
     schoolSent,
+    punctualHwSent,
     feriaSent,
     superSent,
     recurringSent,

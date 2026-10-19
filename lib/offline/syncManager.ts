@@ -27,6 +27,17 @@ type SyncListener = (status: {
   lastSyncTime: Date | null
 }) => void
 
+function extractMissingColumn(errMsg?: string): string | null {
+  if (!errMsg) return null
+  const m1 = errMsg.match(/Could not find the '([^']+)' column/i)
+  if (m1) return m1[1]
+  const m2 = errMsg.match(/column\s+(?:\w+\.)?["']?(\w+)["']?\s+does not exist/i)
+  if (m2) return m2[1]
+  const m3 = errMsg.match(/column\s+["']?(\w+)["']?\s+of relation/i)
+  if (m3) return m3[1]
+  return null
+}
+
 class SyncManager {
   private isSyncing = false
   private lastSyncTime: Date | null = null
@@ -128,6 +139,11 @@ class SyncManager {
     let errorCount = 0
 
     try {
+      // Recuperar cualquier elemento que haya quedado trabado en 'syncing' por refresco o desconexión previa
+      try {
+        await offlineDB.sync_queue.where('status').equals('syncing').modify({ status: 'pending' })
+      } catch {}
+
       // Obtener items pendientes ordenados por timestamp
       const pendingItems = await offlineDB.sync_queue
         .where('status')
@@ -163,15 +179,130 @@ class SyncManager {
           let error: any = null
 
           // Limpiar metadatos locales antes de enviar a Supabase
-          const cleanPayload = { ...item.payload }
+          const cleanPayload: Record<string, any> = { ...item.payload }
           delete cleanPayload._synced
           delete cleanPayload._updated_at
 
-          if (item.action === 'INSERT' || item.action === 'UPDATE') {
-            const { error: upsertErr } = await supabase
-              .from(tableName)
-              .upsert(cleanPayload, { onConflict: 'id' })
-            error = upsertErr
+          // Asegurar family_id válido para políticas de RLS
+          if (!cleanPayload.family_id && item.familyId) {
+            cleanPayload.family_id = item.familyId
+          }
+
+          if (item.action === 'UPDATE') {
+            let currentPayload = { ...cleanPayload }
+            let attempts = 0
+            let updateSuccess = false
+
+            while (attempts < 6) {
+              attempts++
+              const { data, error: updErr } = await supabase
+                .from(tableName)
+                .update(currentPayload)
+                .eq('id', item.entityId)
+                .select('id')
+
+              if (updErr) {
+                if (
+                  updErr.code === 'PGRST204' ||
+                  updErr.code === '42703' ||
+                  updErr.message?.includes('schema cache') ||
+                  updErr.message?.includes('does not exist')
+                ) {
+                  const missingCol = extractMissingColumn(updErr.message)
+                  if (missingCol && missingCol in currentPayload) {
+                    delete currentPayload[missingCol]
+                    continue
+                  } else {
+                    delete currentPayload.is_recurring
+                    delete currentPayload.recurrence_interval_days
+                    delete currentPayload.last_notified_at
+                    delete currentPayload.due_time
+                    continue
+                  }
+                }
+                error = updErr
+                break
+              }
+
+              // Si se actualizaron 0 filas, el registro fue creado localmente y no existe aún en Supabase
+              if (!data || data.length === 0) {
+                updateSuccess = false
+              } else {
+                updateSuccess = true
+                error = null
+              }
+              break
+            }
+
+            // Si el registro no existía en el servidor, proceder a upsert
+            if (!updateSuccess && !error) {
+              attempts = 0
+              while (attempts < 6) {
+                attempts++
+                const { error: upsertErr } = await supabase
+                  .from(tableName)
+                  .upsert(currentPayload, { onConflict: 'id' })
+
+                if (upsertErr) {
+                  if (
+                    upsertErr.code === 'PGRST204' ||
+                    upsertErr.code === '42703' ||
+                    upsertErr.message?.includes('schema cache') ||
+                    upsertErr.message?.includes('does not exist')
+                  ) {
+                    const missingCol = extractMissingColumn(upsertErr.message)
+                    if (missingCol && missingCol in currentPayload) {
+                      delete currentPayload[missingCol]
+                      continue
+                    } else {
+                      delete currentPayload.is_recurring
+                      delete currentPayload.recurrence_interval_days
+                      delete currentPayload.last_notified_at
+                      delete currentPayload.due_time
+                      continue
+                    }
+                  }
+                  error = upsertErr
+                  break
+                }
+                error = null
+                break
+              }
+            }
+          } else if (item.action === 'INSERT') {
+            let currentPayload = { ...cleanPayload }
+            let attempts = 0
+            while (attempts < 6) {
+              attempts++
+              const { error: upsertErr } = await supabase
+                .from(tableName)
+                .upsert(currentPayload, { onConflict: 'id' })
+
+              if (upsertErr) {
+                if (
+                  upsertErr.code === 'PGRST204' ||
+                  upsertErr.code === '42703' ||
+                  upsertErr.message?.includes('schema cache') ||
+                  upsertErr.message?.includes('does not exist')
+                ) {
+                  const missingCol = extractMissingColumn(upsertErr.message)
+                  if (missingCol && missingCol in currentPayload) {
+                    delete currentPayload[missingCol]
+                    continue
+                  } else {
+                    delete currentPayload.is_recurring
+                    delete currentPayload.recurrence_interval_days
+                    delete currentPayload.last_notified_at
+                    delete currentPayload.due_time
+                    continue
+                  }
+                }
+                error = upsertErr
+                break
+              }
+              error = null
+              break
+            }
           } else if (item.action === 'DELETE') {
             const { error: deleteErr } = await supabase
               .from(tableName)
@@ -196,13 +327,18 @@ class SyncManager {
 
           processedCount++
         } catch (err: any) {
-          console.error(`[SyncManager] Error sincronizando ${item.entity} (${item.action}):`, err)
+          const errMsg =
+            err?.message ||
+            err?.details ||
+            err?.code ||
+            (typeof err === 'object' ? JSON.stringify(err) : String(err))
+          console.error(`[SyncManager] Error sincronizando ${item.entity} (${item.action}): ${errMsg}`, err)
           errorCount++
           const retries = (item.retries || 0) + 1
           await offlineDB.sync_queue.update(item.id!, {
-            status: retries >= 5 ? 'failed' : 'pending',
+            status: retries >= 8 ? 'failed' : 'pending',
             retries,
-            lastError: err?.message || String(err),
+            lastError: errMsg,
           })
 
           // Si es un error de autenticación o RLS grave, pausar reintentos continuos
@@ -308,6 +444,7 @@ class SyncManager {
             task: t.task,
             due: t.due || t.due_date || '',
             due_date: t.due_date || t.due,
+            due_time: t.due_time || null,
             done: t.done || false,
             done_at: t.done_at,
             created_at: t.created_at,
@@ -360,23 +497,31 @@ class SyncManager {
           await offlineDB.shopping_lists.bulkDelete(toDelete)
         }
 
+        const currentShopMap = new Map(currentShop.map((s) => [s.id, s]))
         const localShopping: LocalShoppingItem[] = shoppingRes.data
           .filter((s: any) => !unsyncedIds.has(s.id))
-          .map((s: any) => ({
-            id: s.id,
-            family_id: s.family_id,
-            list: s.list as 'super' | 'feria',
-            name: s.name,
-            category: s.category || undefined,
-            quantity: s.quantity || undefined,
-            done: s.done || false,
-            done_at: s.done_at,
-            is_recurring: s.is_recurring ?? false,
-            recurrence_interval_days: s.recurrence_interval_days ?? null,
-            last_notified_at: s.last_notified_at ?? null,
-            created_at: s.created_at,
-            _synced: true,
-          }))
+          .map((s: any) => {
+            const localIt = currentShopMap.get(s.id)
+            return {
+              id: s.id,
+              family_id: s.family_id,
+              list: s.list as 'super' | 'feria',
+              name: s.name,
+              category: s.category || undefined,
+              quantity: s.quantity || undefined,
+              done: s.done || false,
+              done_at: s.done_at,
+              is_recurring:
+                s.is_recurring !== undefined && s.is_recurring !== null
+                  ? Boolean(s.is_recurring)
+                  : Boolean(localIt?.is_recurring),
+              recurrence_interval_days:
+                (s.recurrence_interval_days ?? localIt?.recurrence_interval_days) || null,
+              last_notified_at: s.last_notified_at ?? localIt?.last_notified_at ?? null,
+              created_at: s.created_at,
+              _synced: true,
+            }
+          })
         if (localShopping.length > 0) {
           await offlineDB.shopping_lists.bulkPut(localShopping)
         }
@@ -395,19 +540,29 @@ class SyncManager {
           await offlineDB.todos.bulkDelete(toDelete)
         }
 
+        const currentTodosMap = new Map(currentTodos.map((t) => [t.id, t]))
         const localTodos: LocalTodo[] = todosRes.data
           .filter((t: any) => !unsyncedIds.has(t.id))
-          .map((t: any) => ({
-            id: t.id,
-            family_id: t.family_id,
-            title: t.title,
-            assigned_to: t.assigned_to,
-            due_date: t.due_date,
-            done: t.done || false,
-            done_at: t.done_at,
-            created_at: t.created_at,
-            _synced: true,
-          }))
+          .map((t: any) => {
+            const localIt = currentTodosMap.get(t.id)
+            return {
+              id: t.id,
+              family_id: t.family_id,
+              title: t.title,
+              assigned_to: t.assigned_to,
+              due_date: t.due_date,
+              done: t.done || false,
+              done_at: t.done_at,
+              is_recurring:
+                t.is_recurring !== undefined && t.is_recurring !== null
+                  ? Boolean(t.is_recurring)
+                  : Boolean(localIt?.is_recurring),
+              recurrence_interval_days:
+                (t.recurrence_interval_days ?? localIt?.recurrence_interval_days) || null,
+              created_at: t.created_at,
+              _synced: true,
+            }
+          })
         if (localTodos.length > 0) {
           await offlineDB.todos.bulkPut(localTodos)
         }

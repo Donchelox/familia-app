@@ -118,6 +118,8 @@ export async function addFamilyMember(formData: FormData): Promise<MemberActionR
     name,
     role,
     type,
+    is_child: type === 'child',
+    is_pet: type === 'pet',
   })
   if (insErr) return { ok: false, error: 'No se pudo guardar el integrante.' }
 
@@ -158,18 +160,37 @@ export async function updateFamilyMember(formData: FormData): Promise<MemberActi
   if (!parsed.success) return { ok: false, error: 'Datos del integrante inválidos.' }
 
   const { memberId, name, role, type, email } = parsed.data
-  const invite = type === 'adult' && Boolean(email)
+  const isAdult = type === 'adult'
+  let shouldSendInvite = false
+  if (isAdult && email && email.trim()) {
+    const cleanEmail = email.trim().toLowerCase()
+    // Verificar si ya existe este usuario registrado en la familia
+    const { data: existingMember } = await supabase
+      .from('members')
+      .select('email, user_id')
+      .eq('family_id', familyId)
+      .ilike('email', cleanEmail)
+      .maybeSingle()
 
-  if (invite && email) {
-    const { error: invErr } = await supabase
-      .from('invites')
-      .upsert({ family_id: familyId, email, role: 'editor' }, { onConflict: 'family_id,email' })
-    if (invErr) return { ok: false, error: 'No se pudo crear la invitación.' }
+    // Solo crear/actualizar invitación y mandar correo si aún no es miembro activo
+    if (!existingMember) {
+      const { error: invErr } = await supabase
+        .from('invites')
+        .upsert({ family_id: familyId, email: cleanEmail, role: 'editor' }, { onConflict: 'family_id,email' })
+      if (invErr) return { ok: false, error: 'No se pudo crear la invitación.' }
+      shouldSendInvite = true
+    }
   }
 
   const { error: updErr } = await supabase
     .from('family_members')
-    .update({ name, role, type })
+    .update({
+      name,
+      role,
+      type,
+      is_child: type === 'child',
+      is_pet: type === 'pet',
+    })
     .eq('id', memberId)
     .eq('family_id', familyId)
   if (updErr) return { ok: false, error: 'No se pudo actualizar el integrante.' }
@@ -186,15 +207,15 @@ export async function updateFamilyMember(formData: FormData): Promise<MemberActi
   revalidatePath('/ajustes/integrantes')
   revalidatePath('/')
 
-  if (invite && email) {
+  if (shouldSendInvite && email) {
     const mailErr = await sendInviteEmail(email)
     if (mailErr) {
       console.error('invite email:', mailErr)
-      return { ok: true, message: `Invitación creada, pero no se pudo enviar el correo. ${name} puede entrar igual con ${email}.` }
+      return { ok: true, message: `Invitación actualizada, pero no se pudo enviar el correo. ${name} puede entrar con ${email}.` }
     }
     return { ok: true, message: `Invitación enviada a ${email}.` }
   }
-  return { ok: true }
+  return { ok: true, message: 'Integrante actualizado con éxito.' }
 }
 
 export async function deleteFamilyMember(formData: FormData) {

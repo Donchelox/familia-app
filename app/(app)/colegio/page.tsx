@@ -40,6 +40,7 @@ interface SchoolHomework {
   task: string
   due?: string | null
   due_date?: string | null
+  due_time?: string | null
   done?: boolean
   done_at?: string | null
   family_id?: string
@@ -83,7 +84,8 @@ export default function ColegioPage() {
     return 'Lunes'
   })
 
-  // Bottom Sheet Estados
+  // Modal Horario y Bottom Sheet Estados
+  const [isScheduleModalOpen, setIsScheduleModalOpen] = useState(false)
   const [isSheetOpen, setIsSheetOpen] = useState(false)
   const [modalType, setModalType] = useState<'test' | 'homework' | 'schedule'>('homework')
   const [editingId, setEditingId] = useState<string | null>(null)
@@ -92,6 +94,7 @@ export default function ColegioPage() {
   const [subject, setSubject] = useState('Lenguaje y Comunicación')
   const [taskOrTopic, setTaskOrTopic] = useState('')
   const [dateVal, setDateVal] = useState('')
+  const [dueTimeVal, setDueTimeVal] = useState('08:00')
 
   // Campos para Bloque de Horario
   const [schedDay, setSchedDay] = useState('Lunes')
@@ -140,6 +143,7 @@ export default function ColegioPage() {
               task: t.task,
               due: t.due,
               due_date: t.due_date || t.due,
+              due_time: t.due_time || null,
               done: t.done,
               done_at: t.done_at,
             }))
@@ -291,6 +295,7 @@ export default function ColegioPage() {
             task: t.task,
             due: t.due,
             due_date: t.due_date || t.due,
+            due_time: t.due_time || null,
             done: t.done,
             done_at: t.done_at,
           })
@@ -322,6 +327,7 @@ export default function ColegioPage() {
             task: h.task,
             due: h.due || h.due_date || '',
             due_date: h.due_date || h.due,
+            due_time: h.due_time || null,
             done: h.done || false,
             done_at: h.done_at,
             _synced: true,
@@ -398,6 +404,7 @@ export default function ColegioPage() {
     setSubject('Lenguaje y Comunicación')
     setTaskOrTopic('')
     setDateVal('')
+    setDueTimeVal('08:00')
     setIsSheetOpen(true)
   }
 
@@ -427,6 +434,7 @@ export default function ColegioPage() {
     setSubject(hw.subject)
     setTaskOrTopic(hw.task)
     setDateVal(hw.due || hw.due_date || '')
+    setDueTimeVal(hw.due_time || '08:00')
     setIsSheetOpen(true)
   }
 
@@ -547,6 +555,7 @@ export default function ColegioPage() {
         task: taskOrTopic.trim(),
         due: dateVal || null,
         due_date: dateVal || null,
+        due_time: dateVal ? (dueTimeVal || '08:00') : null,
         done: isDone,
         family_id: targetFamilyId || undefined,
       }
@@ -624,6 +633,16 @@ export default function ColegioPage() {
     setIsSheetOpen(false)
   }
 
+  const todayDayName = (() => {
+    const dayIdx = new Date().getDay()
+    if (dayIdx >= 1 && dayIdx <= 5) return SCHEDULE_DAYS[dayIdx - 1]
+    return 'Lunes'
+  })()
+
+  const todayBlocks = schedule
+    .filter((b) => b.day === todayDayName)
+    .sort((a, b) => a.time_start.localeCompare(b.time_start))
+
   const currentDayBlocks = schedule
     .filter((b) => b.day === selectedDay)
     .sort((a, b) => a.time_start.localeCompare(b.time_start))
@@ -648,109 +667,12 @@ export default function ColegioPage() {
         </div>
 
         <div className="flex items-center gap-2">
-          <button
-            type="button"
-            onClick={openCreate}
-            style={orangeGradient}
-            className="px-3.5 py-1.5 rounded-full text-white text-xs font-bold shadow-md hover:scale-105 active:scale-95 transition-all cursor-pointer flex items-center gap-1.5"
-          >
-            <span className="text-sm font-black">+</span>
-            <span>Añadir</span>
-          </button>
           <SyncStatusBadge />
           <NotificationBell />
         </div>
       </header>
 
-      {/* SECCIÓN 1: HORARIO ESCOLAR */}
-      <section className="flex flex-col gap-3">
-        <div className="flex items-center justify-between px-1">
-          <div className="flex items-center gap-2">
-            <span className="text-[#F76911]">
-              <svg className="w-5 h-5 stroke-current stroke-2 fill-none" viewBox="0 0 24 24">
-                <path strokeLinecap="round" strokeLinejoin="round" d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z" />
-              </svg>
-            </span>
-            <h2 className="text-base font-bold text-white m-0">Horario escolar</h2>
-          </div>
-          <div className="flex items-center gap-2">
-            {schedule.length > 0 && (
-              <span className="text-[11px] text-[#F76911] font-bold bg-[#F76911]/10 px-2 py-0.5 rounded-md border border-[#F76911]/20">
-                Vigente hasta 31 Dic
-              </span>
-            )}
-            <button
-              type="button"
-              onClick={openCreateSchedule}
-              className="text-xs font-bold text-neutral-400 hover:text-white px-2 py-1 rounded-lg bg-neutral-900 border border-neutral-800 cursor-pointer"
-            >
-              + Bloque
-            </button>
-          </div>
-        </div>
-
-        {/* SELECTOR DE DÍAS */}
-        <div className="flex items-center gap-2 overflow-x-auto pb-1 scrollbar-none">
-          {SCHEDULE_DAYS.map((day) => (
-            <button
-              key={day}
-              type="button"
-              onClick={() => setSelectedDay(day)}
-              className={`px-4 py-2 rounded-2xl text-xs font-bold whitespace-nowrap transition-all cursor-pointer ${
-                selectedDay === day
-                  ? 'bg-[#F76911] text-white shadow-md'
-                  : 'bg-[#1a1a1a] text-neutral-400 border border-neutral-800/80 hover:text-white'
-              }`}
-            >
-              {day}
-            </button>
-          ))}
-        </div>
-
-        {/* LISTADO DE BLOQUES DEL DÍA SELECCIONADO */}
-        <div className="p-4 rounded-[28px] bg-[#1a1a1a] border border-neutral-800/80 shadow-lg flex flex-col divide-y divide-neutral-800/80">
-          {currentDayBlocks.length === 0 ? (
-            <div className="py-6 text-center text-xs text-neutral-500">
-              No hay clases registradas para este día.
-            </div>
-          ) : (
-            currentDayBlocks.map((block, idx) => (
-              <div
-                key={block.id || idx}
-                onClick={() => openEditSchedule(block)}
-                className="py-3 first:pt-0 last:pb-0 flex items-center justify-between gap-3 cursor-pointer group hover:opacity-90 transition-opacity"
-              >
-                <div className="flex items-center gap-3.5 min-w-0">
-                  <div className="w-10 h-10 rounded-2xl bg-neutral-900 border border-neutral-800 flex items-center justify-center font-bold text-xs text-[#F76911] shrink-0">
-                    {idx + 1}°
-                  </div>
-                  <div className="min-w-0">
-                    <h3 className="text-sm font-bold text-white truncate m-0 group-hover:text-[#F2A957] transition-colors">
-                      {block.subject}
-                    </h3>
-                    <p className="text-xs text-neutral-400 mt-0.5">
-                      {block.time_start} - {block.time_end}
-                    </p>
-                  </div>
-                </div>
-
-                <div className="flex items-center gap-2 shrink-0">
-                  {block.teacher_initials && (
-                    <span className="w-7 h-7 rounded-full bg-neutral-800 border border-neutral-700/80 text-[10px] font-black text-neutral-300 flex items-center justify-center">
-                      {block.teacher_initials}
-                    </span>
-                  )}
-                  <span className="text-[11px] font-bold text-[#F76911] opacity-0 group-hover:opacity-100 transition-opacity">
-                    Editar
-                  </span>
-                </div>
-              </div>
-            ))
-          )}
-        </div>
-      </section>
-
-      {/* SECCIÓN 2: GRID EVALUACIONES Y TAREAS */}
+      {/* SECCIÓN 1: GRID EVALUACIONES Y TAREAS */}
       <div className="grid grid-cols-1 md:grid-cols-2 gap-6 items-start">
         {/* COLUMNA PRUEBAS */}
         <section className="flex flex-col gap-3">
@@ -880,7 +802,17 @@ export default function ColegioPage() {
                         <span className="text-[10px] font-bold text-[#F76911]">{hw.subject}</span>
                         <h3 className="text-sm font-bold text-white m-0 truncate">{hw.task}</h3>
                         {displayDate && (
-                          <p className="text-[11px] text-neutral-400 mt-0.5">Entrega: {displayDate}</p>
+                          <div className="flex flex-wrap items-center gap-1.5 mt-1">
+                            <span className="text-[11px] text-neutral-400">Entrega: {displayDate}</span>
+                            {hw.due_time && (
+                              <span className="text-[10px] font-bold text-[#F76911] bg-[#F76911]/10 px-1.5 py-0.5 rounded border border-[#F76911]/20 flex items-center gap-1">
+                                <svg className="w-2.5 h-2.5 stroke-current stroke-2 fill-none" viewBox="0 0 24 24">
+                                  <path strokeLinecap="round" strokeLinejoin="round" d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z" />
+                                </svg>
+                                <span>{hw.due_time} hrs</span>
+                              </span>
+                            )}
+                          </div>
                         )}
                       </div>
 
@@ -935,7 +867,14 @@ export default function ColegioPage() {
                         <span className="text-[10px] font-bold text-neutral-500">{hw.subject}</span>
                         <h3 className="text-sm font-bold text-neutral-400 line-through m-0 truncate">{hw.task}</h3>
                         {displayDate && (
-                          <p className="text-[11px] text-neutral-600 mt-0.5">Entrega: {displayDate}</p>
+                          <div className="flex flex-wrap items-center gap-1.5 mt-1">
+                            <span className="text-[11px] text-neutral-600">Entrega: {displayDate}</span>
+                            {hw.due_time && (
+                              <span className="text-[10px] text-neutral-500 bg-neutral-800/40 px-1.5 py-0.5 rounded border border-neutral-700/30">
+                                {hw.due_time} hrs
+                              </span>
+                            )}
+                          </div>
                         )}
                       </div>
 
@@ -974,6 +913,49 @@ export default function ColegioPage() {
         </section>
       </div>
 
+      {/* SECCIÓN 2: MINIBANNER INTERACTIVO DE HORARIO ESCOLAR */}
+      <section className="flex flex-col gap-2">
+        <div
+          onClick={() => setIsScheduleModalOpen(true)}
+          className="p-4 sm:p-5 rounded-[28px] bg-gradient-to-r from-[#1f1913] via-[#1a1a1a] to-[#161616] border border-neutral-800/90 hover:border-[#F76911]/50 shadow-lg hover:shadow-[0_4px_24px_rgba(247,105,17,0.12)] transition-all cursor-pointer group flex flex-col sm:flex-row sm:items-center justify-between gap-4"
+        >
+          <div className="flex items-center gap-3.5 min-w-0">
+            <div
+              style={orangeGradient}
+              className="w-12 h-12 rounded-2xl flex items-center justify-center text-white shadow-md shrink-0 group-hover:scale-105 transition-transform"
+            >
+              <svg className="w-6 h-6 stroke-current stroke-2 fill-none" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z" />
+              </svg>
+            </div>
+            <div className="min-w-0">
+              <div className="flex items-center gap-2">
+                <h2 className="text-base font-bold text-white m-0 group-hover:text-[#F2A957] transition-colors">
+                  Horario escolar
+                </h2>
+                <span className="text-[10px] font-bold text-[#F76911] bg-[#F76911]/10 px-2 py-0.5 rounded-md border border-[#F76911]/20">
+                  {schedule.length} {schedule.length === 1 ? 'bloque' : 'bloques'}
+                </span>
+              </div>
+              <p className="text-xs text-neutral-400 mt-1 truncate">
+                {todayBlocks.length > 0
+                  ? `Hoy (${todayDayName}): ${todayBlocks.length} clases • ${todayBlocks.map((b) => b.subject).slice(0, 3).join(', ')}${todayBlocks.length > 3 ? '...' : ''}`
+                  : `Semana completa • Toca para revisar las clases de Lunes a Viernes`}
+              </p>
+            </div>
+          </div>
+
+          <div className="flex items-center gap-2 self-end sm:self-auto shrink-0">
+            <span className="text-xs font-bold text-[#F76911] group-hover:text-white transition-colors flex items-center gap-1.5 bg-[#F76911]/10 group-hover:bg-[#F76911] px-3.5 py-2 rounded-xl border border-[#F76911]/30 shadow-sm">
+              <span>Ver horario</span>
+              <svg className="w-4 h-4 stroke-current stroke-2 fill-none group-hover:translate-x-0.5 transition-transform" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" d="M9 5l7 7-7 7" />
+              </svg>
+            </span>
+          </div>
+        </div>
+      </section>
+
       {/* BOTÓN FLOTANTE (FAB) */}
       <button
         type="button"
@@ -986,6 +968,129 @@ export default function ColegioPage() {
           <path strokeLinecap="round" strokeLinejoin="round" d="M12 4v16m8-8H4" />
         </svg>
       </button>
+
+      {/* MODAL HORARIO ESCOLAR COMPLETO */}
+      {isScheduleModalOpen && (
+        <div
+          onClick={(e) => {
+            if (e.target === e.currentTarget) setIsScheduleModalOpen(false)
+          }}
+          className="fixed inset-0 z-50 flex items-end sm:items-center justify-center bg-black/80 backdrop-blur-md p-0 sm:p-4 animate-in fade-in duration-200"
+        >
+          <div
+            onClick={(e) => e.stopPropagation()}
+            className="w-full max-w-xl bg-[#181818] border border-neutral-800 rounded-t-[32px] sm:rounded-[32px] p-5 sm:p-6 shadow-2xl flex flex-col gap-4 max-h-[88vh] overflow-y-auto mb-16 sm:mb-0"
+          >
+            {/* ENCABEZADO DEL MODAL */}
+            <div className="flex items-center justify-between border-b border-neutral-800 pb-3">
+              <div className="flex items-center gap-2.5">
+                <span className="text-[#F76911]">
+                  <svg className="w-5 h-5 stroke-current stroke-2 fill-none" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z" />
+                  </svg>
+                </span>
+                <h2 className="text-base font-bold text-white m-0">Horario escolar</h2>
+                {schedule.length > 0 && (
+                  <span className="text-[10px] text-[#F76911] font-bold bg-[#F76911]/10 px-2 py-0.5 rounded-md border border-[#F76911]/20 hidden sm:inline-block">
+                    Vigente hasta 31 Dic
+                  </span>
+                )}
+              </div>
+
+              <div className="flex items-center gap-2">
+                <button
+                  type="button"
+                  onClick={() => {
+                    setSchedDay(selectedDay)
+                    openCreateSchedule()
+                  }}
+                  className="text-xs font-bold text-[#F76911] hover:text-white px-3 py-1.5 rounded-xl bg-neutral-900 border border-[#F76911]/30 hover:bg-[#F76911] cursor-pointer transition-all active:scale-95"
+                >
+                  + Bloque
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setIsScheduleModalOpen(false)}
+                  className="w-8 h-8 rounded-full bg-neutral-800 text-neutral-400 hover:text-white flex items-center justify-center cursor-pointer text-sm font-bold"
+                  title="Cerrar horario"
+                >
+                  ✕
+                </button>
+              </div>
+            </div>
+
+            {/* SELECTOR DE DÍAS */}
+            <div className="flex items-center gap-2 overflow-x-auto pb-1 scrollbar-none">
+              {SCHEDULE_DAYS.map((day) => (
+                <button
+                  key={day}
+                  type="button"
+                  onClick={() => setSelectedDay(day)}
+                  className={`px-4 py-2 rounded-2xl text-xs font-bold whitespace-nowrap transition-all cursor-pointer ${
+                    selectedDay === day
+                      ? 'bg-[#F76911] text-white shadow-md'
+                      : 'bg-[#141414] text-neutral-400 border border-neutral-800 hover:text-white'
+                  }`}
+                >
+                  {day}
+                </button>
+              ))}
+            </div>
+
+            {/* LISTADO DE BLOQUES DEL DÍA SELECCIONADO */}
+            <div className="p-4 rounded-[24px] bg-[#121212] border border-neutral-800/80 flex flex-col divide-y divide-neutral-800/80">
+              {currentDayBlocks.length === 0 ? (
+                <div className="py-10 text-center flex flex-col items-center">
+                  <p className="text-xs text-neutral-500 m-0">No hay clases registradas para el {selectedDay}.</p>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setSchedDay(selectedDay)
+                      openCreateSchedule()
+                    }}
+                    className="mt-3 px-3.5 py-1.5 rounded-xl bg-neutral-800 hover:bg-neutral-700 text-[#F76911] text-xs font-bold border border-neutral-700 cursor-pointer active:scale-95 transition-all"
+                  >
+                    + Añadir clase para {selectedDay}
+                  </button>
+                </div>
+              ) : (
+                currentDayBlocks.map((block, idx) => (
+                  <div
+                    key={block.id || idx}
+                    onClick={() => openEditSchedule(block)}
+                    className="py-3 first:pt-0 last:pb-0 flex items-center justify-between gap-3 cursor-pointer group hover:opacity-90 transition-opacity"
+                  >
+                    <div className="flex items-center gap-3.5 min-w-0">
+                      <div className="w-10 h-10 rounded-2xl bg-neutral-900 border border-neutral-800 flex items-center justify-center font-bold text-xs text-[#F76911] shrink-0">
+                        {idx + 1}°
+                      </div>
+                      <div className="min-w-0">
+                        <h3 className="text-sm font-bold text-white truncate m-0 group-hover:text-[#F2A957] transition-colors">
+                          {block.subject}
+                        </h3>
+                        <p className="text-xs text-neutral-400 mt-0.5">
+                          {block.time_start} - {block.time_end}
+                        </p>
+                      </div>
+                    </div>
+
+                    <div className="flex items-center gap-2 shrink-0">
+                      {block.teacher_initials && (
+                        <span className="w-7 h-7 rounded-full bg-neutral-800 border border-neutral-700/80 text-[10px] font-black text-neutral-300 flex items-center justify-center">
+                          {block.teacher_initials}
+                        </span>
+                      )}
+                      <span className="text-[11px] font-bold text-[#F76911] opacity-75 group-hover:opacity-100 transition-opacity">
+                        Editar
+                      </span>
+                    </div>
+                  </div>
+                ))
+              )}
+            </div>
+          </div>
+        </div>
+      )}
 
       {/* BOTTOM SHEET CREAR / EDITAR */}
       {isSheetOpen && (
@@ -1151,10 +1256,10 @@ export default function ColegioPage() {
                     />
                   </div>
 
-                  <div className="flex flex-col gap-1">
+                  <div className="flex flex-col gap-1.5">
                     <div className="flex items-center justify-between">
                       <label className="text-[11px] font-bold text-neutral-300">
-                        {modalType === 'test' ? 'Fecha de la prueba' : 'Fecha de entrega'}
+                        {modalType === 'test' ? 'Fecha de la prueba' : 'Fecha y hora de entrega'}
                       </label>
                       {modalType === 'homework' && dateVal && (
                         <button
@@ -1166,13 +1271,57 @@ export default function ColegioPage() {
                         </button>
                       )}
                     </div>
-                    <input
-                      type="date"
-                      required={modalType === 'test'}
-                      value={dateVal}
-                      onChange={(e) => setDateVal(e.target.value)}
-                      className="w-full bg-[#131313] border border-neutral-800 rounded-2xl px-4 py-3 text-sm text-white focus:outline-none focus:border-[#F76911]"
-                    />
+
+                    {modalType === 'homework' ? (
+                      <div className="flex flex-col gap-2">
+                        <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                          <div className="flex flex-col gap-1">
+                            <span className="text-[10px] font-semibold text-neutral-400">Día de entrega</span>
+                            <input
+                              type="date"
+                              value={dateVal}
+                              onChange={(e) => setDateVal(e.target.value)}
+                              className="w-full bg-[#131313] border border-neutral-800 rounded-2xl px-4 py-3 text-sm text-white focus:outline-none focus:border-[#F76911]"
+                            />
+                          </div>
+                          <div className="flex flex-col gap-1">
+                            <div className="flex items-center justify-between">
+                              <span className="text-[10px] font-semibold text-neutral-400">Horario a notificar</span>
+                              <span className="text-[9px] font-bold text-[#F76911] bg-[#F76911]/10 px-1.5 py-0.5 rounded border border-[#F76911]/20">
+                                Aviso push
+                              </span>
+                            </div>
+                            <input
+                              type="time"
+                              value={dueTimeVal}
+                              onChange={(e) => setDueTimeVal(e.target.value)}
+                              disabled={!dateVal}
+                              className={`w-full bg-[#131313] border border-neutral-800 rounded-2xl px-4 py-3 text-sm text-white focus:outline-none focus:border-[#F76911] ${
+                                !dateVal ? 'opacity-40 cursor-not-allowed' : ''
+                              }`}
+                            />
+                          </div>
+                        </div>
+
+                        {dateVal && (
+                          <div className="p-2.5 rounded-xl bg-neutral-900/80 border border-neutral-800/80 flex items-center gap-2 text-[11px] text-neutral-300">
+                            <span className="text-[#F76911] text-xs">🔔</span>
+                            <span>
+                              Te avisaremos el <strong className="text-white">{dateVal}</strong> a las{' '}
+                              <strong className="text-[#F76911]">{dueTimeVal || '08:00'} hrs</strong>.
+                            </span>
+                          </div>
+                        )}
+                      </div>
+                    ) : (
+                      <input
+                        type="date"
+                        required
+                        value={dateVal}
+                        onChange={(e) => setDateVal(e.target.value)}
+                        className="w-full bg-[#131313] border border-neutral-800 rounded-2xl px-4 py-3 text-sm text-white focus:outline-none focus:border-[#F76911]"
+                      />
+                    )}
                   </div>
                 </>
               )}

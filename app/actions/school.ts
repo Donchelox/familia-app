@@ -108,10 +108,11 @@ export async function addHomework(fd: FormData) {
     subject: fd.get('subject'),
     task: fd.get('task'),
     due: fd.get('due'),
+    due_time: fd.get('due_time') || null,
   })
   if (!parsed.success) return
 
-  const { subject, task, due } = parsed.data
+  const { subject, task, due, due_time } = parsed.data
 
   const { data: inserted } = await ctx.supabase
     .from('school_homework')
@@ -120,6 +121,7 @@ export async function addHomework(fd: FormData) {
       subject,
       task,
       due,
+      due_time: due_time || null,
     })
     .select('id')
     .maybeSingle()
@@ -133,8 +135,8 @@ export async function addHomework(fd: FormData) {
     entityId: inserted?.id,
     action: 'create',
     title: `Tarea escolar: ${subject} · ${task}`,
-    scheduledAt: due ? `Entrega: ${due}` : null,
-    details: { subject, task, due },
+    scheduledAt: due ? `Entrega: ${due}${due_time ? ` (${due_time} hrs)` : ''}` : null,
+    details: { subject, task, due, due_time },
   })
 
   refresh()

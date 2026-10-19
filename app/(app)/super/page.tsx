@@ -42,8 +42,10 @@ function getCompletedRecurrenceStatus(item: ShoppingItem): { label: string; isDu
   if (!item.done_at) return { label: `Cada ${days}d`, isDue: false }
   const daysSince = Math.floor((Date.now() - new Date(item.done_at).getTime()) / (1000 * 60 * 60 * 24))
   const remaining = days - daysSince
-  if (remaining <= 0) return { label: 'Toca reponer', isDue: true }
-  if (remaining === 1) return { label: 'Reponer mañana', isDue: false }
+  const daysBefore = days >= 3 ? 2 : (days === 2 ? 1 : 0)
+
+  if (remaining <= daysBefore) return { label: 'Toca reponer', isDue: true }
+  if (remaining - daysBefore === 1) return { label: 'Vuelve mañana a lista', isDue: false }
   return { label: `Reponer en ${remaining}d`, isDue: false }
 }
 
@@ -164,10 +166,12 @@ export default function SuperPage() {
           const isRec = Boolean(i.is_recurring)
           const interval = i.recurrence_interval_days || 7
 
-          // Si es recurrente, estaba comprado pero ya transcurrieron los días de intervalo, reactivarlo
+          // Si es recurrente, estaba comprado pero ya está dentro de 2 o 1 día antes del ciclo, reactivarlo a pendientes
           if (isRec && i.done && i.done_at) {
+            const daysBefore = interval >= 3 ? 2 : (interval === 2 ? 1 : 0)
+            const daysThreshold = interval - daysBefore
             const daysSince = Math.floor((nowMs - new Date(i.done_at).getTime()) / (1000 * 60 * 60 * 24))
-            if (daysSince >= interval) {
+            if (daysSince >= daysThreshold) {
               const reactivated = {
                 ...i,
                 category: cat,
@@ -299,10 +303,12 @@ export default function SuperPage() {
               let isDone = rem.done || false
               let doneAt = rem.done_at
 
-              // Auto-reactivación si el tiempo venció
+              // Auto-reactivación: vuelve a pendientes 2 o 1 día antes de la fecha recurrente
               if (isRec && isDone && doneAt) {
+                const daysBefore = interval >= 3 ? 2 : (interval === 2 ? 1 : 0)
+                const daysThreshold = interval - daysBefore
                 const daysSince = Math.floor((nowMs - new Date(doneAt).getTime()) / (1000 * 60 * 60 * 24))
-                if (daysSince >= interval) {
+                if (daysSince >= daysThreshold) {
                   isDone = false
                   doneAt = null
                 }
@@ -589,15 +595,6 @@ export default function SuperPage() {
         </div>
 
         <div className="flex items-center gap-2">
-          <button
-            type="button"
-            onClick={openCreate}
-            style={orangeGradient}
-            className="px-3.5 py-1.5 rounded-full text-white text-xs font-bold shadow-md hover:scale-105 active:scale-95 transition-all cursor-pointer flex items-center gap-1.5"
-          >
-            <span className="text-sm font-black">+</span>
-            <span>Producto</span>
-          </button>
           <SyncStatusBadge />
           <NotificationBell />
         </div>
@@ -1063,7 +1060,7 @@ export default function SuperPage() {
                   </div>
 
                   <p className="text-[10px] text-emerald-400/80 m-0 pt-0.5">
-                    💡 Tras comprarlo, te avisaremos automáticamente al transcurrir {recurrenceDays} días para volver a reponerlo.
+                    💡 Tras comprarlo, volverá automáticamente a la lista de pendientes {recurrenceDays >= 3 ? '2 días' : '1 día'} antes de cumplir los {recurrenceDays} días para que nunca falte en casa.
                   </p>
                 </div>
               )}

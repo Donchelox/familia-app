@@ -442,15 +442,6 @@ export default function MedsClientView({
         </div>
 
         <div className="flex items-center gap-2">
-          <button
-            type="button"
-            onClick={openCreateModal}
-            style={orangeGradient}
-            className="px-3.5 py-1.5 rounded-full text-white text-xs font-bold shadow-sm hover:opacity-90 active:scale-95 transition-all cursor-pointer flex items-center gap-1.5"
-          >
-            <span className="text-sm font-black leading-none">+</span>
-            <span>Medicamento</span>
-          </button>
           <SyncStatusBadge />
           <NotificationBell />
         </div>

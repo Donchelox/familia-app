@@ -16,6 +16,10 @@ export type FamilyMember = {
   name: string
   role: string
   type: string
+  email?: string
+  user_id?: string | null
+  is_child?: boolean
+  is_pet?: boolean
 }
 
 export type FamilyInvite = {
@@ -23,6 +27,30 @@ export type FamilyInvite = {
   email: string
   role: string
   created_at?: string
+}
+
+export function normalizeMemberType(
+  type?: string,
+  isChild?: boolean,
+  isPet?: boolean,
+  role?: string
+): 'adult' | 'child' | 'pet' {
+  const t = (type || '').toLowerCase().trim()
+  const r = (role || '').toLowerCase().trim()
+  if (t === 'pet' || isPet || r.includes('mascota')) return 'pet'
+  if (
+    t === 'child' ||
+    t === 'person' ||
+    isChild ||
+    r.includes('hijo') ||
+    r.includes('hija') ||
+    r.includes('niñ') ||
+    r.includes('bebé') ||
+    r.includes('bebe')
+  ) {
+    return 'child'
+  }
+  return 'adult'
 }
 
 interface IntegrantesViewProps {
@@ -68,8 +96,8 @@ export default function IntegrantesView({
   const openEditMember = (m: FamilyMember) => {
     setMemberName(m.name)
     setMemberRole(m.role)
-    setMemberType(m.type)
-    setMemberEmail('')
+    setMemberType(normalizeMemberType(m.type, m.is_child, m.is_pet, m.role))
+    setMemberEmail(m.email || '')
     setMemberError('')
     setSheet({ type: 'edit_member', member: m })
   }
@@ -144,7 +172,7 @@ export default function IntegrantesView({
               >
                 <div className="flex items-center gap-3.5">
                   <div className="w-11 h-11 rounded-full bg-gradient-to-tr from-[#F76911] to-[#F2A957] flex items-center justify-center font-bold text-white text-sm shadow shrink-0">
-                    {member.type === 'pet' ? '🐾' : member.name.slice(0, 2).toUpperCase()}
+                    {normalizeMemberType(member.type, member.is_child, member.is_pet, member.role) === 'pet' ? '🐾' : member.name.slice(0, 2).toUpperCase()}
                   </div>
                   <div className="flex flex-col">
                     <span className="text-base font-bold text-white leading-snug">{member.name}</span>
@@ -152,7 +180,7 @@ export default function IntegrantesView({
                       <span className="text-[11px] text-neutral-400 font-medium capitalize">
                         {member.role || 'Integrante'}
                       </span>
-                      {member.type === 'pet' && (
+                      {normalizeMemberType(member.type, member.is_child, member.is_pet, member.role) === 'pet' && (
                         <span className="text-[10px] font-bold px-1.5 py-0.2 rounded bg-amber-950/40 text-amber-400 border border-amber-900/40">
                           Mascota
                         </span>
