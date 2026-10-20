@@ -19,6 +19,7 @@ const ENTITY_TABLE_MAP: Record<SyncEntity, string> = {
   exams: 'school_tests',
   shopping_lists: 'shopping_items',
   todos: 'todos',
+  todo_categories: 'todo_categories',
 }
 
 type SyncListener = (status: {
@@ -308,7 +309,20 @@ class SyncManager {
               .from(tableName)
               .delete()
               .eq('id', item.entityId)
-            error = deleteErr
+
+            // Si la tabla no existe en la base de datos o el ID no es UUID, se considera completada la eliminación remota
+            if (
+              deleteErr &&
+              (deleteErr.message?.includes('schema cache') ||
+                deleteErr.message?.includes('does not exist') ||
+                deleteErr.code === 'PGRST204' ||
+                deleteErr.code === '42P01' ||
+                deleteErr.code === '22P02')
+            ) {
+              error = null
+            } else {
+              error = deleteErr
+            }
           }
 
           if (error) {
@@ -373,13 +387,14 @@ class SyncManager {
       const supabase = createClient()
 
       // Descargar datos en paralelo desde Supabase
-      const [medsRes, tasksRes, examsRes, shoppingRes, todosRes, membersRes] = await Promise.all([
+      const [medsRes, tasksRes, examsRes, shoppingRes, todosRes, membersRes, categoriesRes] = await Promise.all([
         supabase.from('medications').select('*').eq('family_id', familyId),
         supabase.from('school_homework').select('*').eq('family_id', familyId),
         supabase.from('school_tests').select('*').eq('family_id', familyId),
         supabase.from('shopping_items').select('*').eq('family_id', familyId),
         supabase.from('todos').select('*').eq('family_id', familyId),
         supabase.from('family_members').select('id, name, user_id').eq('family_id', familyId),
+        Promise.resolve(supabase.from('todo_categories').select('*').eq('family_id', familyId)).catch(() => ({ data: null })),
       ])
 
       // Guardar lista de integrantes en cache local
@@ -414,6 +429,10 @@ class SyncManager {
             times: m.times || [],
             frequency: m.frequency,
             end_date: m.end_date,
+            stock: m.stock !== undefined ? m.stock : null,
+            stock_alert_threshold: m.stock_alert_threshold ?? 5,
+            icon_type: m.icon_type || 'pill',
+            instructions: m.instructions || null,
             created_at: m.created_at,
             _synced: true,
           }))
@@ -549,6 +568,14 @@ class SyncManager {
               id: t.id,
               family_id: t.family_id,
               title: t.title,
+              details: t.details !== undefined ? t.details : (localIt?.details || null),
+              category: t.category !== undefined ? t.category : (localIt?.category || null),
+              subtasks: Array.isArray(t.subtasks) ? t.subtasks : (localIt?.subtasks || []),
+              priority: t.priority ?? localIt?.priority ?? 'normal',
+              position: t.position ?? localIt?.position ?? 0,
+              archived: t.archived !== undefined ? Boolean(t.archived) : Boolean(localIt?.archived),
+              link: t.link !== undefined ? t.link : (localIt?.link || null),
+              reminder_sent: t.reminder_sent !== undefined ? Boolean(t.reminder_sent) : Boolean(localIt?.reminder_sent),
               assigned_to: t.assigned_to,
               due_date: t.due_date,
               done: t.done || false,
@@ -565,6 +592,25 @@ class SyncManager {
           })
         if (localTodos.length > 0) {
           await offlineDB.todos.bulkPut(localTodos)
+        }
+      }
+
+      // 6. Guardar Categorías de Tareas en Dexie
+      if (categoriesRes && categoriesRes.data) {
+        const currentCats = await offlineDB.todo_categories.where('family_id').equals(familyId).toArray()
+        const unsyncedCatIds = new Set(currentCats.filter((c) => !c._synced).map((c) => c.id))
+        const localCats = categoriesRes.data
+          .filter((c: any) => !unsyncedCatIds.has(c.id))
+          .map((c: any) => ({
+            id: c.id,
+            family_id: c.family_id,
+            name: c.name,
+            color: c.color || '#F76911',
+            created_at: c.created_at,
+            _synced: true,
+          }))
+        if (localCats.length > 0) {
+          await offlineDB.todo_categories.bulkPut(localCats)
         }
       }
 

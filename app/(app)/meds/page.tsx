@@ -46,7 +46,7 @@ export default async function MedsPage() {
     // 2. Medicamentos de Supabase
     const { data: rawMeds } = await supabase
       .from('medications')
-      .select('id, name, dose, times, person, frequency, end_date')
+      .select('id, name, dose, times, person, frequency, end_date, stock, stock_alert_threshold, icon_type, instructions')
       .eq('family_id', ctx.familyId)
       .order('created_at', { ascending: true })
 

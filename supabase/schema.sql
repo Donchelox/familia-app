@@ -101,9 +101,30 @@ create table todos (
   id uuid primary key default gen_random_uuid(),
   family_id uuid not null references families on delete cascade,
   title text not null,
+  details text,
+  category text,
+  subtasks jsonb not null default '[]'::jsonb,
+  is_recurring boolean not null default false,
+  recurrence_interval_days integer default null,
+  priority text default 'normal',
+  position integer default 0,
+  archived boolean not null default false,
+  link text,
+  reminder_sent boolean not null default false,
+  assigned_to text,
+  due_date timestamptz,
   done boolean not null default false,
   done_at timestamptz,
   created_at timestamptz not null default now()
+);
+
+create table todo_categories (
+  id uuid primary key default gen_random_uuid(),
+  family_id uuid not null references families on delete cascade,
+  name text not null,
+  color text default '#F76911',
+  created_at timestamptz not null default now(),
+  constraint todo_categories_family_name_unique unique (family_id, name)
 );
 
 -- Horario por bloques (1 = primer bloque de la jornada; length 2 = clase doble)
@@ -146,6 +167,12 @@ create table medications (
   name text not null,
   dose text not null,
   times text[] not null,            -- ['08:00','20:00']
+  frequency text default 'daily',
+  end_date text,
+  stock integer default null,
+  stock_alert_threshold integer default 5,
+  icon_type text default 'pill',
+  instructions text default null,
   created_at timestamptz not null default now()
 );
 create table dose_logs (
@@ -173,7 +200,7 @@ create index on activity_log (family_id, created_at);
 do $$
 declare t text;
 begin
-  foreach t in array array['shopping_items','todos','school_tests','school_homework','medications','dose_logs'] loop
+  foreach t in array array['shopping_items','todos','todo_categories','school_tests','school_homework','medications','dose_logs'] loop
     execute format('alter table %I enable row level security', t);
     execute format('create policy "ver" on %I for select using (is_member(family_id))', t);
     execute format('create policy "editar" on %I for all using (can_edit(family_id)) with check (can_edit(family_id))', t);

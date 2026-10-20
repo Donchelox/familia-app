@@ -3,7 +3,7 @@
  * Compatible con Dexie.js e IndexedDB
  */
 
-export type SyncEntity = 'medicines' | 'school_tasks' | 'exams' | 'shopping_lists' | 'todos'
+export type SyncEntity = 'medicines' | 'school_tasks' | 'exams' | 'shopping_lists' | 'todos' | 'todo_categories'
 export type SyncAction = 'INSERT' | 'UPDATE' | 'DELETE'
 export type SyncStatus = 'pending' | 'syncing' | 'failed'
 
@@ -36,6 +36,10 @@ export interface LocalMedicine {
   times: string[]
   frequency?: string
   end_date?: string
+  stock?: number | null
+  stock_alert_threshold?: number | null
+  icon_type?: string
+  instructions?: string | null
   created_at?: string
   _synced?: boolean
   _updated_at?: number
@@ -94,12 +98,32 @@ export interface LocalShoppingItem {
 }
 
 /**
+ * Subtarea o ítem de lista de comprobación de una tarea
+ */
+export interface TodoSubtask {
+  id: string
+  title: string
+  details?: string | null
+  due_date?: string | null
+  done: boolean
+  done_at?: string | null
+}
+
+/**
  * Entidad local: Tarea del hogar / Quehacer
  */
 export interface LocalTodo {
   id: string
   family_id: string
   title: string
+  details?: string | null
+  category?: string | null
+  subtasks?: TodoSubtask[]
+  priority?: 'alta' | 'media' | 'normal' | string | null
+  position?: number | null
+  archived?: boolean | null
+  link?: string | null
+  reminder_sent?: boolean | null
   assigned_to?: string | null
   due_date?: string | null
   done: boolean
@@ -110,3 +134,17 @@ export interface LocalTodo {
   _synced?: boolean
   _updated_at?: number
 }
+
+/**
+ * Entidad local: Categoría de Tareas
+ */
+export interface LocalTodoCategory {
+  id: string
+  family_id: string
+  name: string
+  color?: string | null
+  created_at?: string
+  _synced?: boolean
+  _updated_at?: number
+}
+

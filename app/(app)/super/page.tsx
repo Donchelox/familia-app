@@ -726,8 +726,26 @@ export default function SuperPage() {
               displayedPending.map((item) => (
                 <article
                   key={item.id}
-                  className="p-4 rounded-[24px] bg-[#1a1a1a] border border-neutral-800/80 hover:border-neutral-700 flex items-center justify-between gap-3 shadow-md transition-all"
+                  className="p-4 rounded-[24px] bg-[#1a1a1a] border border-neutral-800/80 hover:border-neutral-700 flex items-center justify-between gap-3.5 shadow-md transition-all"
                 >
+                  {/* CHECK A LA IZQUIERDA DEL TODO */}
+                  <button
+                    type="button"
+                    onClick={(e) => {
+                      e.stopPropagation()
+                      toggleDone(item)
+                    }}
+                    title="Marcar como comprado"
+                    className="w-10 h-10 rounded-2xl border-2 border-neutral-700 hover:border-[#F76911] flex items-center justify-center shrink-0 cursor-pointer transition-all hover:scale-105 active:scale-95 bg-neutral-900/60 group/btn"
+                  >
+                    <svg
+                      className="w-5 h-5 stroke-[#F76911] stroke-[2.5] fill-none opacity-0 group-hover/btn:opacity-60 transition-opacity"
+                      viewBox="0 0 24 24"
+                    >
+                      <path strokeLinecap="round" strokeLinejoin="round" d="M5 13l4 4L19 7" />
+                    </svg>
+                  </button>
+
                   <div
                     onClick={() => openEdit(item)}
                     className="flex-1 min-w-0 cursor-pointer"
@@ -753,27 +771,16 @@ export default function SuperPage() {
                     </p>
                   </div>
 
-                  <div className="flex items-center gap-2 shrink-0">
-                    <button
-                      type="button"
-                      onClick={(e) => {
-                        e.stopPropagation()
-                        openEdit(item)
-                      }}
-                      className="px-2.5 py-1.5 rounded-xl bg-neutral-800/60 hover:bg-neutral-800 border border-neutral-700/50 text-[#F76911] text-xs font-bold transition-all active:scale-95 cursor-pointer"
-                    >
-                      Editar
-                    </button>
-                    <button
-                      type="button"
-                      onClick={(e) => {
-                        e.stopPropagation()
-                        toggleDone(item)
-                      }}
-                      title="Marcar como comprado"
-                      className="w-10 h-10 rounded-2xl border border-neutral-700 hover:border-[#F76911] flex items-center justify-center cursor-pointer transition-all active:scale-95"
-                    />
-                  </div>
+                  <button
+                    type="button"
+                    onClick={(e) => {
+                      e.stopPropagation()
+                      openEdit(item)
+                    }}
+                    className="text-xs font-bold text-[#F76911] hover:text-[#ff8133] hover:underline px-2.5 py-1.5 cursor-pointer shrink-0 transition-colors"
+                  >
+                    Editar
+                  </button>
                 </article>
               ))
             )}
@@ -804,8 +811,24 @@ export default function SuperPage() {
                 return (
                   <article
                     key={item.id}
-                    className="p-4 rounded-[24px] bg-[#151515] border border-neutral-800/40 opacity-70 hover:opacity-100 flex items-center justify-between gap-3 transition-opacity"
+                    className="p-4 rounded-[24px] bg-[#151515] border border-neutral-800/40 opacity-70 hover:opacity-100 flex items-center justify-between gap-3.5 transition-opacity"
                   >
+                    {/* CHECK A LA IZQUIERDA DEL TODO (COMPRADO) */}
+                    <button
+                      type="button"
+                      onClick={(e) => {
+                        e.stopPropagation()
+                        toggleDone(item)
+                      }}
+                      style={orangeGradient}
+                      title="Desmarcar y volver a pendientes"
+                      className="w-10 h-10 rounded-2xl flex items-center justify-center shrink-0 text-white shadow-md cursor-pointer transition-all active:scale-95 hover:scale-105"
+                    >
+                      <svg className="w-5 h-5 stroke-current stroke-2 fill-none" viewBox="0 0 24 24">
+                        <path strokeLinecap="round" strokeLinejoin="round" d="M5 13l4 4L19 7" />
+                      </svg>
+                    </button>
+
                     <div
                       onClick={() => openEdit(item)}
                       className="flex-1 min-w-0 cursor-pointer"
@@ -837,32 +860,16 @@ export default function SuperPage() {
                       </p>
                     </div>
 
-                    <div className="flex items-center gap-2 shrink-0">
-                      <button
-                        type="button"
-                        onClick={(e) => {
-                          e.stopPropagation()
-                          openEdit(item)
-                        }}
-                        className="px-2.5 py-1.5 rounded-xl bg-neutral-800/40 hover:bg-neutral-800 border border-neutral-700/30 text-neutral-400 text-xs font-bold transition-all active:scale-95 cursor-pointer"
-                      >
-                        Editar
-                      </button>
-                      <button
-                        type="button"
-                        onClick={(e) => {
-                          e.stopPropagation()
-                          toggleDone(item)
-                        }}
-                        style={orangeGradient}
-                        title="Desmarcar y volver a pendientes"
-                        className="w-10 h-10 rounded-2xl flex items-center justify-center text-white shadow-md cursor-pointer transition-all active:scale-95"
-                      >
-                        <svg className="w-5 h-5 stroke-current stroke-2 fill-none" viewBox="0 0 24 24">
-                          <path strokeLinecap="round" strokeLinejoin="round" d="M5 13l4 4L19 7" />
-                        </svg>
-                      </button>
-                    </div>
+                    <button
+                      type="button"
+                      onClick={(e) => {
+                        e.stopPropagation()
+                        openEdit(item)
+                      }}
+                      className="text-xs font-bold text-neutral-400 hover:text-white px-2.5 py-1.5 cursor-pointer shrink-0 transition-colors"
+                    >
+                      Editar
+                    </button>
                   </article>
                 )
               })
