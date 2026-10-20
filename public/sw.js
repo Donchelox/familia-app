@@ -118,6 +118,18 @@ self.addEventListener('message', (event) => {
   if (event.data?.type === 'PRECACHE_CORE_ROUTES') {
     event.waitUntil(precacheRoutes(event.data.routes || APP_SHELL_URLS))
   }
+  if (event.data?.type === 'PURGE_ALL_CACHES') {
+    event.waitUntil(
+      caches.keys().then((keys) => {
+        return Promise.all(
+          keys.map((key) => {
+            console.log(`[SW] Purgando caché completa de la app: ${key}`)
+            return caches.delete(key)
+          })
+        )
+      })
+    )
+  }
   if (event.data?.type === 'CLEAR_USER_CACHE' || event.data?.type === 'LOGOUT' || event.data?.type === 'PURGE_CACHE') {
     event.waitUntil(
       caches.keys().then((keys) => {

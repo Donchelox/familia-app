@@ -707,6 +707,204 @@ export async function dispatchRecurringShoppingReminders(
 }
 
 /**
+ * Despacha recordatorios de tareas del hogar (todos) y subtareas al llegar su fecha y hora límite
+ */
+export async function dispatchTodoReminders(
+  supabase: SupabaseClient,
+  webpushInstance: any
+): Promise<number> {
+  const now = new Date()
+  const nowIso = now.toISOString()
+  // Limitar a tareas que vencieron en las últimas 48 horas para evitar notificar tareas muy antiguas
+  const minDueIso = new Date(now.getTime() - 48 * 3600 * 1000).toISOString()
+
+  // 1. Tareas principales pendientes con fecha límite vencida
+  const { data: dueTodos, error: todosErr } = await supabase
+    .from('todos')
+    .select('id, family_id, title, details, assigned_to, due_date, subtasks, reminder_sent, archived, done')
+    .or('done.eq.false,done.is.null')
+    .neq('archived', true)
+    .not('due_date', 'is', null)
+    .lte('due_date', nowIso)
+    .gte('due_date', minDueIso)
+    .limit(50)
+
+  if (todosErr) {
+    console.error('[Cron modular] Error consultando tareas pendientes:', todosErr.message)
+    return 0
+  }
+
+  // Filtrar las que aún no tienen reminder_sent = true
+  const tasksToNotify = (dueTodos ?? []).filter((t) => !t.reminder_sent)
+
+  // 2. Subtareas pendientes que tengan fecha límite vencida
+  const { data: todosWithSubtasks } = await supabase
+    .from('todos')
+    .select('id, family_id, title, assigned_to, subtasks')
+    .or('done.eq.false,done.is.null')
+    .neq('archived', true)
+    .not('subtasks', 'is', null)
+    .limit(50)
+
+  type SubtaskNotice = {
+    todoId: string
+    familyId: string
+    subtaskId: string
+    subtaskTitle: string
+    parentTitle: string
+    assignedTo?: string | null
+  }
+  const subtasksToNotify: SubtaskNotice[] = []
+  const subtasksUpdateMap = new Map<string, any[]>()
+
+  for (const t of todosWithSubtasks ?? []) {
+    if (!Array.isArray(t.subtasks) || t.subtasks.length === 0) continue
+    let hasChanges = false
+    const updatedList = t.subtasks.map((st: any) => {
+      if (!st.done && st.due_date && !st.reminder_sent) {
+        const stDue = new Date(st.due_date).getTime()
+        if (stDue <= now.getTime() && stDue >= now.getTime() - 48 * 3600 * 1000) {
+          subtasksToNotify.push({
+            todoId: t.id,
+            familyId: t.family_id,
+            subtaskId: st.id,
+            subtaskTitle: st.title,
+            parentTitle: t.title,
+            assignedTo: t.assigned_to,
+          })
+          hasChanges = true
+          return { ...st, reminder_sent: true }
+        }
+      }
+      return st
+    })
+    if (hasChanges) {
+      subtasksUpdateMap.set(t.id, updatedList)
+    }
+  }
+
+  if (tasksToNotify.length === 0 && subtasksToNotify.length === 0) {
+    return 0
+  }
+
+  // Obtener suscripciones para las familias involucradas
+  const famIds = Array.from(
+    new Set([
+      ...tasksToNotify.map((t) => t.family_id),
+      ...subtasksToNotify.map((s) => s.familyId),
+    ].filter(Boolean))
+  )
+
+  const { data: subs } = await supabase
+    .from('push_subscriptions')
+    .select('id, family_id, user_id, endpoint, p256dh, auth')
+    .in('family_id', famIds)
+
+  let sent = 0
+  const jobs: Promise<void>[] = []
+  const sendOptions = { TTL: 3600, urgency: 'high' as const }
+
+  // A) Despachar avisos de tareas principales
+  for (const todo of tasksToNotify) {
+    const famSubs = (subs ?? []).filter((s) => s.family_id === todo.family_id)
+    if (famSubs.length > 0) {
+      const title = `🔔 Tarea pendiente: ${todo.title}`
+      const body = todo.assigned_to
+        ? `Asignada a ${todo.assigned_to}. ${todo.details || 'Llegó el momento de realizarla.'}`
+        : todo.details || 'Llegó el momento de realizar esta tarea del hogar.'
+
+      const payload = JSON.stringify({
+        title,
+        body,
+        url: '/tareas',
+        tag: `todo-${todo.id}`,
+      })
+
+      for (const sub of famSubs) {
+        jobs.push(
+          webpushInstance
+            .sendNotification(
+              { endpoint: sub.endpoint, keys: { p256dh: sub.p256dh, auth: sub.auth } },
+              payload,
+              sendOptions
+            )
+            .then(() => {
+              sent++
+            })
+            .catch(async (err: any) => {
+              if (err?.statusCode === 404 || err?.statusCode === 410) {
+                await supabase.from('push_subscriptions').delete().eq('id', sub.id)
+              }
+            })
+        )
+      }
+    }
+
+    jobs.push(
+      (async () => {
+        await Promise.allSettled([
+          supabase.from('activity_log').insert({
+            family_id: todo.family_id,
+            user_name: 'Sistema',
+            module: 'Tareas',
+            action: 'notificado',
+            item: `todo_${todo.id}`,
+          }),
+          supabase.from('todos').update({ reminder_sent: true }).eq('id', todo.id),
+        ])
+      })()
+    )
+  }
+
+  // B) Despachar avisos de subtareas
+  for (const st of subtasksToNotify) {
+    const famSubs = (subs ?? []).filter((s) => s.family_id === st.familyId)
+    if (famSubs.length > 0) {
+      const title = `📋 Subtarea pendiente: ${st.subtaskTitle}`
+      const body = `De la tarea "${st.parentTitle}"${st.assignedTo ? ` · Asignada a ${st.assignedTo}` : ''}.`
+
+      const payload = JSON.stringify({
+        title,
+        body,
+        url: '/tareas',
+        tag: `subtask-${st.subtaskId}`,
+      })
+
+      for (const sub of famSubs) {
+        jobs.push(
+          webpushInstance
+            .sendNotification(
+              { endpoint: sub.endpoint, keys: { p256dh: sub.p256dh, auth: sub.auth } },
+              payload,
+              sendOptions
+            )
+            .then(() => {
+              sent++
+            })
+            .catch(async (err: any) => {
+              if (err?.statusCode === 404 || err?.statusCode === 410) {
+                await supabase.from('push_subscriptions').delete().eq('id', sub.id)
+              }
+            })
+        )
+      }
+    }
+  }
+
+  // Guardar subtareas actualizadas con reminder_sent = true
+  for (const [todoId, updatedSubtasks] of subtasksUpdateMap.entries()) {
+    jobs.push(
+      (async () => {
+        await supabase.from('todos').update({ subtasks: updatedSubtasks }).eq('id', todoId)
+      })()
+    )
+  }
+
+  await Promise.allSettled(jobs)
+  return sent
+}
+
+/**
  * Función central que ejecuta la limpieza de pruebas a las 8:00 PM y despacha los avisos modulares
  */
 export async function runModularNotificationsCron(
@@ -741,13 +939,14 @@ export async function runModularNotificationsCron(
     )
   }
 
-  // 4. Despachar avisos concurrentes
-  const [schoolSent, punctualHwSent, feriaSent, superSent, recurringSent] = await Promise.all([
+  // 4. Despachar avisos concurrentes (colegio, feria, súper, compras recurrentes y tareas TODO)
+  const [schoolSent, punctualHwSent, feriaSent, superSent, recurringSent, todosSent] = await Promise.all([
     dispatchSchoolReminders(supabase, prefsMap, hm, day, webpush.default),
     dispatchPunctualHomeworkReminders(supabase, hm, day, webpush.default),
     dispatchFeriaReminders(supabase, prefsMap, hm, day, currentWeekdayName, webpush.default),
     dispatchSuperReminders(supabase, prefsMap, hm, day, webpush.default),
     dispatchRecurringShoppingReminders(supabase, hm, day, webpush.default),
+    dispatchTodoReminders(supabase, webpush.default),
   ])
 
   return {
@@ -759,5 +958,7 @@ export async function runModularNotificationsCron(
     feriaSent,
     superSent,
     recurringSent,
+    todosSent,
   }
 }
+

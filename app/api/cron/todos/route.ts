@@ -2,6 +2,7 @@ import { NextResponse } from 'next/server'
 import { timingSafeEqual } from 'crypto'
 import { createClient } from '@supabase/supabase-js'
 import webpush from 'web-push'
+import { dispatchTodoReminders } from '@/lib/modularNotifications'
 
 export const dynamic = 'force-dynamic'
 export const runtime = 'nodejs'
@@ -44,104 +45,10 @@ export async function GET(req: Request) {
     webpush.setVapidDetails(VAPID_SUBJECT!, NEXT_PUBLIC_VAPID_PUBLIC_KEY!, VAPID_PRIVATE_KEY!)
   }
 
-  const nowIso = new Date().toISOString()
-
   try {
-    // Buscar tareas no completadas cuya fecha límite ya llegó o está por vencer y aún no tienen alerta enviada
-    const { data: dueTodos, error: todosErr } = await supabase
-      .from('todos')
-      .select('id, family_id, title, details, assigned_to, due_date, subtasks, reminder_sent')
-      .eq('done', false)
-      .eq('reminder_sent', false)
-      .not('due_date', 'is', null)
-      .lte('due_date', nowIso)
-      .limit(50)
-
-    if (todosErr) {
-      console.error('[Cron Todos] Error consultando tareas:', todosErr)
-      return NextResponse.json({ error: todosErr.message }, { status: 500 })
-    }
-
-    if (!dueTodos || dueTodos.length === 0) {
-      return NextResponse.json({ ok: true, message: 'No hay recordatorios pendientes para enviar ahora.', sent: 0 })
-    }
-
-    let sentCount = 0
-
-    // Agrupar por familia para buscar sus suscripciones push
-    const familyIds = Array.from(new Set(dueTodos.map((t) => t.family_id).filter(Boolean)))
-
-    const { data: subs } = await supabase
-      .from('push_subscriptions')
-      .select('id, family_id, user_id, endpoint, p256dh, auth')
-      .in('family_id', familyIds)
-
-    const subsByFamily = new Map<string, any[]>()
-    if (subs) {
-      for (const s of subs) {
-        const list = subsByFamily.get(s.family_id) || []
-        list.push(s)
-        subsByFamily.set(s.family_id, list)
-      }
-    }
-
-    const completedIds: string[] = []
-
-    for (const todo of dueTodos) {
-      const familySubs = subsByFamily.get(todo.family_id) || []
-
-      if (hasVapid && familySubs.length > 0) {
-        const payload = JSON.stringify({
-          title: `🔔 Tarea del hogar: ${todo.title}`,
-          body: todo.assigned_to
-            ? `Asignada a ${todo.assigned_to}. ${todo.details ? `Detalles: ${todo.details}` : 'Llegó el momento de realizarla.'}`
-            : todo.details || 'Llegó la hora de realizar esta tarea del hogar.',
-          url: '/tareas',
-          tag: `todo-${todo.id}`,
-        })
-
-        const sendOptions = { TTL: 3600, urgency: 'high' as const }
-
-        await Promise.all(
-          familySubs.map(async (sub) => {
-            try {
-              await webpush.sendNotification(
-                { endpoint: sub.endpoint, keys: { p256dh: sub.p256dh, auth: sub.auth } },
-                payload,
-                sendOptions
-              )
-              sentCount++
-            } catch (err: any) {
-              if (err?.statusCode === 404 || err?.statusCode === 410) {
-                try {
-                  await supabase.from('push_subscriptions').delete().eq('id', sub.id)
-                } catch {
-                  // Silently ignore cleanup error
-                }
-              }
-            }
-          })
-        )
-      }
-
-      completedIds.push(todo.id)
-    }
-
-    // Marcar recordatorio como enviado para evitar duplicados
-    if (completedIds.length > 0) {
-      try {
-        await supabase
-          .from('todos')
-          .update({ reminder_sent: true })
-          .in('id', completedIds)
-      } catch (e) {
-        console.warn('[Cron Todos] Error al marcar reminder_sent:', e)
-      }
-    }
-
+    const sentCount = await dispatchTodoReminders(supabase, webpush)
     return NextResponse.json({
       ok: true,
-      tasksAlerted: completedIds.length,
       pushSent: sentCount,
     })
   } catch (err: any) {

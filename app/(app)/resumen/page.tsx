@@ -2,6 +2,7 @@ import Link from 'next/link'
 import { getContext } from '@/lib/family'
 import NotificationBell from '@/components/NotificationBell'
 import SyncStatusBadge from '@/components/SyncStatusBadge'
+import MarkSummaryVisited from '@/components/MarkSummaryVisited'
 import { fetchMorningSummary } from '@/lib/morningSummary'
 import { todayStr } from '@/lib/dates'
 
@@ -32,6 +33,8 @@ export default async function ResumenPage() {
 
   return (
     <div className="w-full flex flex-col gap-6 select-none pb-16">
+      <MarkSummaryVisited today={today} userId={currentUser?.id} />
+
       {/* 1. HEADER */}
       <header className="flex items-center justify-between py-1">
         <div className="flex items-center gap-3">

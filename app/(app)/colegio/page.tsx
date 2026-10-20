@@ -798,6 +798,25 @@ export default function ColegioPage() {
                       key={hw.id}
                       className="p-4 rounded-[24px] bg-[#1a1a1a] border border-neutral-800/80 shadow-md hover:border-neutral-700 transition-all flex items-center justify-between gap-3"
                     >
+                      {/* CHECK A LA IZQUIERDA DEL TODO */}
+                      <button
+                        type="button"
+                        onClick={(e) => {
+                          e.stopPropagation()
+                          toggleHw(hw)
+                        }}
+                        className="w-10 h-10 rounded-2xl border-2 border-neutral-700 hover:border-[#F76911] flex items-center justify-center shrink-0 cursor-pointer transition-all hover:scale-105 active:scale-95 bg-neutral-900/60 group/btn"
+                        title="Marcar como completada"
+                      >
+                        <svg
+                          className="w-5 h-5 stroke-[#F76911] stroke-[2.5] fill-none opacity-0 group-hover/btn:opacity-60 transition-opacity"
+                          viewBox="0 0 24 24"
+                        >
+                          <path strokeLinecap="round" strokeLinejoin="round" d="M5 13l4 4L19 7" />
+                        </svg>
+                      </button>
+
+                      {/* DETALLE DE LA TAREA ESCOLAR */}
                       <div onClick={() => openEditHw(hw)} className="min-w-0 flex-1 cursor-pointer">
                         <span className="text-[10px] font-bold text-[#F76911]">{hw.subject}</span>
                         <h3 className="text-sm font-bold text-white m-0 truncate">{hw.task}</h3>
@@ -816,27 +835,17 @@ export default function ColegioPage() {
                         )}
                       </div>
 
-                      <div className="flex items-center gap-2 shrink-0">
-                        <button
-                          type="button"
-                          onClick={(e) => {
-                            e.stopPropagation()
-                            openEditHw(hw)
-                          }}
-                          className="px-2.5 py-1.5 rounded-xl bg-neutral-800/60 hover:bg-neutral-800 border border-neutral-700/50 text-[#F76911] text-xs font-bold transition-all active:scale-95 cursor-pointer"
-                        >
-                          Editar
-                        </button>
-                        <button
-                          type="button"
-                          onClick={(e) => {
-                            e.stopPropagation()
-                            toggleHw(hw)
-                          }}
-                          className="w-10 h-10 rounded-2xl border border-neutral-700 hover:border-[#F76911] flex items-center justify-center cursor-pointer transition-all active:scale-95"
-                          title="Marcar como completada"
-                        />
-                      </div>
+                      {/* BOTÓN EDITAR A LA DERECHA */}
+                      <button
+                        type="button"
+                        onClick={(e) => {
+                          e.stopPropagation()
+                          openEditHw(hw)
+                        }}
+                        className="px-2.5 py-1.5 rounded-xl bg-neutral-800/60 hover:bg-neutral-800 border border-neutral-700/50 text-[#F76911] text-xs font-bold transition-all active:scale-95 cursor-pointer shrink-0"
+                      >
+                        Editar
+                      </button>
                     </article>
                   )
                 })
@@ -863,6 +872,23 @@ export default function ColegioPage() {
                       key={hw.id}
                       className="p-4 rounded-[24px] bg-[#151515] border border-neutral-800/40 opacity-60 flex items-center justify-between gap-3"
                     >
+                      {/* CHECK A LA IZQUIERDA DEL TODO */}
+                      <button
+                        type="button"
+                        onClick={(e) => {
+                          e.stopPropagation()
+                          toggleHw(hw)
+                        }}
+                        style={orangeGradient}
+                        className="w-10 h-10 rounded-2xl flex items-center justify-center text-white shadow-md cursor-pointer transition-all hover:scale-105 active:scale-95 shrink-0"
+                        title="Marcar como pendiente"
+                      >
+                        <svg className="w-5 h-5 stroke-current stroke-2 fill-none" viewBox="0 0 24 24">
+                          <path strokeLinecap="round" strokeLinejoin="round" d="M5 13l4 4L19 7" />
+                        </svg>
+                      </button>
+
+                      {/* DETALLE DE LA TAREA ESCOLAR */}
                       <div onClick={() => openEditHw(hw)} className="min-w-0 flex-1 cursor-pointer">
                         <span className="text-[10px] font-bold text-neutral-500">{hw.subject}</span>
                         <h3 className="text-sm font-bold text-neutral-400 line-through m-0 truncate">{hw.task}</h3>
@@ -878,32 +904,17 @@ export default function ColegioPage() {
                         )}
                       </div>
 
-                      <div className="flex items-center gap-2 shrink-0">
-                        <button
-                          type="button"
-                          onClick={(e) => {
-                            e.stopPropagation()
-                            openEditHw(hw)
-                          }}
-                          className="px-2.5 py-1.5 rounded-xl bg-neutral-800/40 hover:bg-neutral-800 border border-neutral-700/30 text-neutral-400 text-xs font-bold transition-all active:scale-95 cursor-pointer"
-                        >
-                          Editar
-                        </button>
-                        <button
-                          type="button"
-                          onClick={(e) => {
-                            e.stopPropagation()
-                            toggleHw(hw)
-                          }}
-                          style={orangeGradient}
-                          className="w-10 h-10 rounded-2xl flex items-center justify-center text-white shadow-md cursor-pointer transition-all active:scale-95"
-                          title="Marcar como pendiente"
-                        >
-                          <svg className="w-5 h-5 stroke-current stroke-2 fill-none" viewBox="0 0 24 24">
-                            <path strokeLinecap="round" strokeLinejoin="round" d="M5 13l4 4L19 7" />
-                          </svg>
-                        </button>
-                      </div>
+                      {/* BOTÓN EDITAR A LA DERECHA */}
+                      <button
+                        type="button"
+                        onClick={(e) => {
+                          e.stopPropagation()
+                          openEditHw(hw)
+                        }}
+                        className="px-2.5 py-1.5 rounded-xl bg-neutral-800/40 hover:bg-neutral-800 border border-neutral-700/30 text-neutral-400 text-xs font-bold transition-all active:scale-95 cursor-pointer shrink-0"
+                      >
+                        Editar
+                      </button>
                     </article>
                   )
                 })

@@ -149,6 +149,69 @@ export async function purgeAllUserDataAndCache(): Promise<void> {
 }
 
 /**
+ * Limpia de verdad toda la caché de la aplicación web (CacheStorage, Service Worker, Dexie y storage temporal)
+ * manteniendo la sesión activa del usuario, y fuerza la recarga limpia.
+ */
+export async function clearWebappCache(): Promise<void> {
+  // 1. Borrar todas las entradas en CacheStorage (Service Worker caches)
+  try {
+    if (typeof window !== 'undefined' && 'caches' in window) {
+      const keys = await caches.keys()
+      await Promise.all(keys.map((k) => caches.delete(k)))
+    }
+  } catch (err) {
+    console.warn('[ClearCache] Error borrando window.caches:', err)
+  }
+
+  // 2. Notificar al Service Worker para borrar cachés internas y buscar actualización
+  try {
+    if (typeof navigator !== 'undefined' && 'serviceWorker' in navigator) {
+      if (navigator.serviceWorker.controller) {
+        navigator.serviceWorker.controller.postMessage({ type: 'PURGE_ALL_CACHES' })
+      }
+      const regs = await navigator.serviceWorker.getRegistrations()
+      for (const reg of regs) {
+        try {
+          await reg.update()
+        } catch {}
+      }
+    }
+  } catch (err) {
+    console.warn('[ClearCache] Error actualizando Service Worker:', err)
+  }
+
+  // 3. Limpiar base de datos local Dexie para forzar re-hidratación limpia desde Supabase
+  try {
+    await offlineDB.clearAllTables()
+  } catch (err) {
+    console.warn('[ClearCache] Error vaciando Dexie:', err)
+  }
+
+  // 4. Limpiar SessionStorage y cachés volátiles de localStorage (preservando credenciales de auth)
+  try {
+    if (typeof window !== 'undefined') {
+      sessionStorage.clear()
+      const keysToRemove: string[] = []
+      for (let i = 0; i < localStorage.length; i++) {
+        const key = localStorage.key(i)
+        if (key && !key.startsWith('sb-') && !key.includes('auth')) {
+          keysToRemove.push(key)
+        }
+      }
+      keysToRemove.forEach((k) => localStorage.removeItem(k))
+    }
+  } catch (err) {
+    console.warn('[ClearCache] Error limpiando storages locales:', err)
+  }
+
+  // 5. Recarga forzada de la página con cache-busting
+  if (typeof window !== 'undefined') {
+    const cleanUrl = window.location.pathname
+    window.location.replace(`${cleanUrl}?cache_clean=${Date.now()}`)
+  }
+}
+
+/**
  * Hidrata todos los datos remotos de la familia en Dexie y guarda el familyId
  */
 export async function hydrateFamilyData(familyId: string): Promise<void> {

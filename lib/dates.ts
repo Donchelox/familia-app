@@ -7,16 +7,27 @@ export const weekday = (d?: string) => {
   const dateStr = d || todayStr()
   return new Date(dateStr + 'T12:00:00Z').getUTCDay() || 7
 }
-export const diffDays = (d: string) =>
-  Math.round((Date.parse(d + 'T00:00:00Z') - Date.parse(todayStr() + 'T00:00:00Z')) / 864e5)
+export const diffDays = (d: string) => {
+  const clean = d.includes('T') ? d.split('T')[0] : d
+  return Math.round((Date.parse(clean + 'T00:00:00Z') - Date.parse(todayStr() + 'T00:00:00Z')) / 864e5)
+}
 export const rel = (d: string) => {
   const n = diffDays(d)
   return n < 0 ? `Hace ${-n} d` : n === 0 ? 'Hoy' : n === 1 ? 'Mañana' : `En ${n} días`
 }
-export const fmtDate = (d: string) =>
-  new Date(d + 'T12:00:00Z').toLocaleDateString('es-CL', { weekday: 'short', day: 'numeric', month: 'short', timeZone: 'UTC' })
+export const fmtDate = (d: string) => {
+  const clean = d.includes('T') ? d.split('T')[0] : d
+  return new Date(clean + 'T12:00:00Z').toLocaleDateString('es-CL', { weekday: 'short', day: 'numeric', month: 'short', timeZone: 'UTC' })
+}
 export const fmtDateTime = (iso: string) =>
-  new Date(iso).toLocaleString('es-CL', { day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit', timeZone: TZ })
+  new Date(iso).toLocaleString('es-CL', { weekday: 'short', day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit', timeZone: TZ })
+
+export const addDaysStr = (baseDay: string, daysToAdd: number) => {
+  const clean = baseDay.includes('T') ? baseDay.split('T')[0] : baseDay
+  const d = new Date(clean + 'T12:00:00Z')
+  d.setUTCDate(d.getUTCDate() + daysToAdd)
+  return d.toISOString().split('T')[0]
+}
 
 /**
  * Determina si una prueba escolar debe mostrarse en el listado según la regla:

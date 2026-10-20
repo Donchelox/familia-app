@@ -7,7 +7,7 @@ import SyncStatusBadge from '@/components/SyncStatusBadge'
 import { updateAccount, signOut } from '@/app/actions/members'
 import { createClient } from '@/lib/supabase/client'
 import { unsubscribeCurrentPush } from '@/components/PushSubscriptionManager'
-import { purgeAllUserDataAndCache } from '@/lib/offline/clientSync'
+import { purgeAllUserDataAndCache, clearWebappCache } from '@/lib/offline/clientSync'
 import { RELEASES, getSemVerBreakdown } from '@/lib/version'
 
 interface AjustesHubViewProps {
@@ -35,12 +35,24 @@ export default function AjustesHubView({
   const [isEditingAccount, setIsEditingAccount] = useState(false)
   const [showReleaseModal, setShowReleaseModal] = useState(false)
   const [isLoggingOut, setIsLoggingOut] = useState(false)
+  const [isClearingCache, setIsClearingCache] = useState(false)
   const [accountName, setAccountName] = useState(userName)
   const [accountEmail, setAccountEmail] = useState(userEmail)
   const [currentFamilyName, setCurrentFamilyName] = useState(familyName)
 
   const cardGradientStyle = {
     background: 'linear-gradient(134.95deg, #F76911 47.75%, #F2A957 100%)',
+  }
+
+  async function handleClearCache() {
+    if (isClearingCache) return
+    setIsClearingCache(true)
+    try {
+      await clearWebappCache()
+    } catch (err) {
+      console.error('[Ajustes] Error al borrar caché:', err)
+      setIsClearingCache(false)
+    }
   }
 
   async function handleLogout() {
@@ -261,7 +273,49 @@ export default function AjustesHubView({
         </div>
       </section>
 
-      {/* 5. CERRAR SESIÓN */}
+      {/* 5. SECCIÓN: ALMACENAMIENTO Y CACHÉ */}
+      <section className="flex flex-col gap-2">
+        <span className="text-xs font-bold uppercase tracking-wider text-neutral-400 px-1">
+          Almacenamiento y Caché
+        </span>
+
+        <div className="rounded-[24px] bg-[#1a1a1a] border border-neutral-800/80 p-4 flex flex-col gap-3 shadow-sm">
+          <div className="flex items-center gap-3.5">
+            <div className="w-10 h-10 rounded-2xl bg-amber-950/40 border border-amber-900/40 text-amber-400 flex items-center justify-center text-lg shrink-0">
+              🧹
+            </div>
+            <div className="flex flex-col">
+              <span className="text-sm font-bold text-white leading-snug">
+                Caché de la Aplicación
+              </span>
+              <span className="text-xs text-neutral-400 font-normal">
+                Elimina archivos temporales y fuerza la recarga limpia de la webapp
+              </span>
+            </div>
+          </div>
+
+          <button
+            type="button"
+            disabled={isClearingCache || isLoggingOut}
+            onClick={handleClearCache}
+            className="w-full py-3 rounded-2xl bg-neutral-900 border border-neutral-800 hover:border-amber-500/50 hover:bg-neutral-800/90 text-neutral-200 hover:text-white font-bold text-xs transition-all duration-150 cursor-pointer shadow-sm flex items-center justify-center gap-2 disabled:opacity-60 active:scale-[0.98]"
+          >
+            {isClearingCache ? (
+              <>
+                <span className="w-4 h-4 border-2 border-[#F76911] border-t-transparent rounded-full animate-spin" />
+                <span>Borrando caché y recargando...</span>
+              </>
+            ) : (
+              <>
+                <span className="text-amber-400 font-bold">⚡</span>
+                <span>Borrar caché de la app</span>
+              </>
+            )}
+          </button>
+        </div>
+      </section>
+
+      {/* 6. CERRAR SESIÓN */}
       <section className="pt-2">
         <button
           type="button"

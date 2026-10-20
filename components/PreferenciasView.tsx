@@ -5,6 +5,7 @@ import Link from 'next/link'
 import NotificationBell from '@/components/NotificationBell'
 import PushSubscriptionManager from '@/components/PushSubscriptionManager'
 import { updatePreferences } from '@/app/actions/members'
+import { clearWebappCache } from '@/lib/offline/clientSync'
 
 interface PreferenciasViewProps {
   familyId: string
@@ -70,8 +71,20 @@ export default function PreferenciasView({
   const [superReminders, setSuperReminders] = useState<boolean>(initialSuperReminders)
   const [superTime, setSuperTime] = useState<string>(initialSuperTime)
 
+  const [isClearingCache, setIsClearingCache] = useState(false)
   const [isPending, startTransition] = useTransition()
   const [statusMessage, setStatusMessage] = useState<string>('')
+
+  async function handleClearCache() {
+    if (isClearingCache) return
+    setIsClearingCache(true)
+    try {
+      await clearWebappCache()
+    } catch (err) {
+      console.error('[Preferencias] Error al borrar caché:', err)
+      setIsClearingCache(false)
+    }
+  }
 
   // Función unificada para guardar
   const saveState = (
@@ -691,6 +704,48 @@ export default function PreferenciasView({
         </span>
 
         <PushSubscriptionManager />
+      </section>
+
+      {/* 5. SECCIÓN: ALMACENAMIENTO Y CACHÉ */}
+      <section className="flex flex-col gap-2 pt-2">
+        <span className="text-xs font-bold uppercase tracking-wider text-neutral-400 px-1">
+          Almacenamiento y Caché
+        </span>
+
+        <div className="rounded-[24px] bg-[#1a1a1a] border border-neutral-800/80 p-4 flex flex-col gap-3 shadow-sm">
+          <div className="flex items-center gap-3.5">
+            <div className="w-10 h-10 rounded-2xl bg-amber-950/40 border border-amber-900/40 text-amber-400 flex items-center justify-center text-lg shrink-0">
+              🧹
+            </div>
+            <div className="flex flex-col">
+              <span className="text-sm font-bold text-white leading-snug">
+                Caché de la Webapp
+              </span>
+              <span className="text-xs text-neutral-400 font-normal">
+                Vacía la caché PWA, borra datos locales temporales y recarga la versión más reciente
+              </span>
+            </div>
+          </div>
+
+          <button
+            type="button"
+            disabled={isClearingCache}
+            onClick={handleClearCache}
+            className="w-full py-3 rounded-2xl bg-neutral-900 border border-neutral-800 hover:border-amber-500/50 hover:bg-neutral-800/90 text-neutral-200 hover:text-white font-bold text-xs transition-all duration-150 cursor-pointer shadow-sm flex items-center justify-center gap-2 disabled:opacity-60 active:scale-[0.98]"
+          >
+            {isClearingCache ? (
+              <>
+                <span className="w-4 h-4 border-2 border-[#F76911] border-t-transparent rounded-full animate-spin" />
+                <span>Borrando caché y recargando...</span>
+              </>
+            ) : (
+              <>
+                <span className="text-amber-400 font-bold">⚡</span>
+                <span>Borrar caché de la app</span>
+              </>
+            )}
+          </button>
+        </div>
       </section>
     </div>
   )

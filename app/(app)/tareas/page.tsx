@@ -982,6 +982,10 @@ export default function TareasPage() {
         done_at: st.done ? new Date().toISOString() : null,
       }))
 
+    const calculatedDueDate = dueDateTime ? new Date(dueDateTime).toISOString() : null
+    const dueDateChanged = Boolean(editingTodo && editingTodo.due_date !== calculatedDueDate)
+    const reminderSent = dueDateChanged ? false : (editingTodo?.reminder_sent ?? false)
+
     const payload: TodoItem = {
       id: tempId,
       family_id: targetFamilyId,
@@ -993,9 +997,9 @@ export default function TareasPage() {
       position: editingTodo?.position ?? todos.length,
       archived: editingTodo?.archived ?? false,
       link: link.trim() || null,
-      reminder_sent: editingTodo?.reminder_sent ?? false,
+      reminder_sent: reminderSent,
       assigned_to: assignedToString,
-      due_date: dueDateTime ? new Date(dueDateTime).toISOString() : null,
+      due_date: calculatedDueDate,
       done: editingTodo ? editingTodo.done : false,
       done_at: editingTodo ? editingTodo.done_at : null,
       is_recurring: isRecurring,

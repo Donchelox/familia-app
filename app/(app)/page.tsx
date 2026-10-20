@@ -1,8 +1,21 @@
 import Link from 'next/link'
+import { cookies } from 'next/headers'
 import { getContext } from '@/lib/family'
-import { todayStr, nowHHMM, rel, isSchoolTestActive, isMedicationScheduledForDay, weekday } from '@/lib/dates'
+import {
+  todayStr,
+  nowHHMM,
+  rel,
+  fmtDate,
+  fmtDateTime,
+  addDaysStr,
+  diffDays,
+  isSchoolTestActive,
+  isMedicationScheduledForDay,
+  weekday,
+} from '@/lib/dates'
 import NotificationBell from '@/components/NotificationBell'
 import SyncStatusBadge from '@/components/SyncStatusBadge'
+import MorningSummaryBanner from '@/components/MorningSummaryBanner'
 import { getCategoryTheme } from '@/lib/categoryColors'
 
 export default async function Inicio() {
@@ -27,7 +40,7 @@ export default async function Inicio() {
       .or('done.eq.false,done.is.null'),
     supabase
       .from('todos')
-      .select('id, title', { count: 'exact' })
+      .select('id, title, due_date, assigned_to, archived', { count: 'exact' })
       .eq('family_id', familyId)
       .or('done.eq.false,done.is.null'),
     supabase
@@ -37,7 +50,8 @@ export default async function Inicio() {
     supabase
       .from('school_homework')
       .select('*')
-      .eq('family_id', familyId),
+      .eq('family_id', familyId)
+      .or('done.eq.false,done.is.null'),
     supabase
       .from('medications')
       .select('id, name, person, times, frequency, end_date')
@@ -120,11 +134,10 @@ export default async function Inicio() {
   const schoolTotalCount = allTests.length + hwItems.length
 
   // 5. TAREAS GENERALES
-  const generalTodosCount = todosRes.count ?? (todosRes.data?.length ?? 0)
+  const activeTodos = (todosRes.data ?? []).filter((t: any) => !t.archived)
+  const generalTodosCount = activeTodos.length
 
   // 6. RECORDATORIOS / NOTIFICACIONES
-  const notificationCount = pendingMeds.length
-
   // 7. PRÓXIMOS EVENTOS (Ordenados por fecha y hora más cercana)
   type EventItem = {
     id: string
@@ -136,89 +149,164 @@ export default async function Inicio() {
   }
 
   const rawEvents: EventItem[] = []
+  const nowMs = Date.now()
 
-  // A) Medicinas pendientes de hoy: ordenadas por su hora
-  pendingMeds.forEach((dose, idx) => {
-    const medTimeStr = `${today}T${dose.time}:00`
-    const medDate = new Date(medTimeStr)
-    rawEvents.push({
-      id: `med-${dose.id}-${idx}`,
-      category: 'Medicinas',
-      title: `${dose.name} (${dose.time})`,
-      description: `Para ${dose.person}`,
-      href: '/meds',
-      sortTimestamp: isNaN(medDate.getTime()) ? Date.now() : medDate.getTime(),
+  // A) Medicinas: Si hay pendientes hoy, se muestran con su hora.
+  // Si ya se tomaron todas las de hoy, se anticipan las primeras tomas de mañana temprano.
+  if (pendingMeds.length > 0) {
+    pendingMeds.forEach((dose, idx) => {
+      const medTimeStr = `${today}T${dose.time}:00`
+      const medDate = new Date(medTimeStr)
+      rawEvents.push({
+        id: `med-${dose.id}-${idx}`,
+        category: 'Medicinas',
+        title: `${dose.name} (${dose.time} hrs)`,
+        description: `Para ${dose.person} · Hoy a las ${dose.time} hrs`,
+        href: '/meds',
+        sortTimestamp: isNaN(medDate.getTime()) ? nowMs : medDate.getTime(),
+      })
     })
-  })
+  } else {
+    const tomorrow = addDaysStr(today, 1)
+    const tomorrowIsoDay = weekday(tomorrow)
+    const tomorrowMeds = (medsRes.data ?? [])
+      .filter((med: any) => isMedicationScheduledForDay(med, tomorrow, tomorrowIsoDay))
+      .flatMap((m: any) =>
+        (m.times || []).map((t: string) => ({
+          id: m.id,
+          name: m.name,
+          person: m.person,
+          time: t,
+        }))
+      )
+      .sort((a: any, b: any) => a.time.localeCompare(b.time))
+
+    tomorrowMeds.slice(0, 2).forEach((dose: any, idx: number) => {
+      const medTimeStr = `${tomorrow}T${dose.time}:00`
+      const medDate = new Date(medTimeStr)
+      rawEvents.push({
+        id: `med-tomorrow-${dose.id}-${idx}`,
+        category: 'Medicinas',
+        title: `${dose.name} (${dose.time} hrs)`,
+        description: `Para ${dose.person} · Mañana a las ${dose.time} hrs`,
+        href: '/meds',
+        sortTimestamp: isNaN(medDate.getTime()) ? nowMs + 86400000 : medDate.getTime(),
+      })
+    })
+  }
 
   // B) Pruebas de colegio: ordenadas por fecha agendada
   allTests.forEach((test: any) => {
     const testDateStr = test.test_date ? `${test.test_date}T08:00:00` : `${today}T23:59:59`
     const testDate = new Date(testDateStr)
+    const relStr = test.test_date ? rel(test.test_date) : 'Próximamente'
+    const testTopic = test.topic || test.topics || 'Prueba'
+
     rawEvents.push({
       id: `test-${test.id}`,
       category: 'Colegio',
-      title: test.subject || 'Prueba',
-      description: test.topics || (test.test_date ? `Fecha: ${rel(test.test_date).toLowerCase()}` : 'Prueba pendiente'),
+      title: test.subject ? `${test.subject}: ${testTopic}` : testTopic,
+      description: `Prueba · ${relStr} (${fmtDate(test.test_date || today)})`,
       href: '/colegio',
-      sortTimestamp: isNaN(testDate.getTime()) ? Date.now() + 86400000 : testDate.getTime(),
+      sortTimestamp: isNaN(testDate.getTime()) ? nowMs + 86400000 * 2 : testDate.getTime(),
     })
   })
 
-  // C) Tareas del hogar
-  ;(todosRes.data ?? []).forEach((todo: any) => {
-    let isOverdue = false
-    if (todo.due_date) {
-      const d = new Date(todo.due_date)
-      if (!isNaN(d.getTime())) {
-        isOverdue = d.getTime() < Date.now()
-      }
+  // C) Tareas escolares pendientes (school_homework)
+  hwItems.forEach((hw: any) => {
+    const dueDate = hw.due_date || hw.due
+    const dueTime = hw.due_time || '08:00'
+    const hwDateStr = dueDate ? `${dueDate}T${dueTime}:00` : `${today}T20:00:00`
+    const hwDate = new Date(hwDateStr)
+
+    // Si la fecha ya venció hace más de 1 día, no se muestra como próximo evento
+    if (dueDate && diffDays(dueDate) < 0) {
+      return
     }
-    const todoDateStr = todo.due_date ? (todo.due_date.includes('T') ? todo.due_date : `${todo.due_date}T20:00:00`) : `${today}T21:00:00`
-    const todoDate = new Date(todoDateStr)
+
+    const relStr = dueDate ? rel(dueDate) : 'Próximamente'
+    const subjectPrefix = hw.subject ? `${hw.subject}: ` : ''
+    const taskName = hw.task || hw.title || 'Tarea escolar'
+
+    rawEvents.push({
+      id: `hw-${hw.id}`,
+      category: 'Colegio',
+      title: `${subjectPrefix}${taskName}`,
+      description: `Tarea escolar · ${relStr}${hw.due_time ? ` (${hw.due_time} hrs)` : ''}`,
+      href: '/colegio',
+      sortTimestamp: isNaN(hwDate.getTime()) ? nowMs + 86400000 : hwDate.getTime(),
+    })
+  })
+
+  // D) Tareas del hogar (priorizando las que tienen fecha límite)
+  activeTodos.forEach((todo: any) => {
+    if (!todo.due_date) {
+      // Las tareas sin fecha límite van con menor prioridad temporal para no desplazar eventos fechados
+      rawEvents.push({
+        id: `todo-${todo.id}`,
+        category: 'Tareas',
+        title: todo.title,
+        description: todo.assigned_to ? `Para: ${todo.assigned_to}` : 'Pendiente en casa',
+        href: '/tareas',
+        sortTimestamp: nowMs + 86400000 * 5,
+      })
+      return
+    }
+
+    const d = new Date(todo.due_date)
+    if (isNaN(d.getTime())) return
+
+    const isOverdue = d.getTime() < nowMs
+    // Si venció hace más de 24 horas, no la mostramos en "próximos eventos"
+    if (isOverdue && (nowMs - d.getTime()) > 86400000) {
+      return
+    }
+
+    const relStr = rel(todo.due_date)
     rawEvents.push({
       id: `todo-${todo.id}`,
       category: 'Tareas',
       title: todo.title,
       description: isOverdue
-        ? '⚠️ Tarea vencida'
-        : (todo.assigned_to ? `Para: ${todo.assigned_to}` : 'Pendiente en casa'),
+        ? `⚠️ Vence hoy / Vencida (${fmtDateTime(todo.due_date)}) · ${todo.assigned_to || 'En casa'}`
+        : `${relStr} (${fmtDateTime(todo.due_date)}) · ${todo.assigned_to || 'En casa'}`,
       href: '/tareas',
-      sortTimestamp: isOverdue ? 0 : (isNaN(todoDate.getTime()) ? Date.now() + 43200000 : todoDate.getTime()),
+      sortTimestamp: isOverdue ? nowMs - 60000 : d.getTime(),
     })
   })
 
-  // D) Compras pendientes (agrupadas para Súper y Feria en una sola fila cada una)
+  // E) Compras pendientes (agrupadas para Súper y Feria)
   if (superItems.length > 0) {
     const superNames = superItems.map((i: any) => (i.name || '').trim()).filter(Boolean)
-    const displayed = superNames.slice(0, 4).join(', ')
-    const hasMore = superNames.length > 4
+    const displayed = superNames.slice(0, 3).join(', ')
+    const hasMore = superNames.length > 3
     rawEvents.push({
       id: 'grouped-super',
       category: 'Super',
-      title: `Próxima compra de súper: ${displayed}${hasMore ? ', etc.' : ''}`,
+      title: `Supermercado: ${displayed}${hasMore ? '...' : ''}`,
       description: `${superItems.length} producto${superItems.length === 1 ? '' : 's'} en la lista del súper`,
       href: '/super',
-      sortTimestamp: Date.now() + 86400000 * 2,
+      sortTimestamp: nowMs + 86400000 * 3,
     })
   }
 
   if (feriaItems.length > 0) {
     const feriaNames = feriaItems.map((i: any) => (i.name || '').trim()).filter(Boolean)
-    const displayedFeria = feriaNames.slice(0, 4).join(', ')
-    const hasMoreFeria = feriaNames.length > 4
+    const displayedFeria = feriaNames.slice(0, 3).join(', ')
+    const hasMoreFeria = feriaNames.length > 3
     rawEvents.push({
       id: 'grouped-feria',
       category: 'Feria',
-      title: `Próxima compra de feria: ${displayedFeria}${hasMoreFeria ? ', etc.' : ''}`,
+      title: `Feria: ${displayedFeria}${hasMoreFeria ? '...' : ''}`,
       description: `${feriaItems.length} producto${feriaItems.length === 1 ? '' : 's'} en la lista de la feria`,
       href: '/feria',
-      sortTimestamp: Date.now() + 86400000 * 2.1,
+      sortTimestamp: nowMs + 86400000 * 3.1,
     })
   }
 
-  // Orden cronológico: el evento más cercano aparece primero
+  // Orden cronológico: el evento más cercano en el tiempo aparece primero
   const upcomingEvents = rawEvents
+    .filter((e) => e.sortTimestamp >= nowMs - 86400000)
     .sort((a, b) => a.sortTimestamp - b.sortTimestamp)
     .slice(0, 5)
 
@@ -251,36 +339,18 @@ export default async function Inicio() {
         </div>
       </header>
 
-      {/* BANNER ACCESO RÁPIDO: RESUMEN MATUTINO DEL DÍA */}
-      <Link
-        href="/resumen"
-        className="flex items-center justify-between p-3.5 px-4 rounded-2xl bg-gradient-to-r from-[#24150b] via-[#1a1410] to-[#161616] border border-[#F76911]/30 hover:border-[#F76911]/60 shadow-sm text-white no-underline transition-all duration-200 hover:scale-[1.01] active:scale-[0.98] group cursor-pointer"
-      >
-        <div className="flex items-center gap-3">
-          <div className="w-9 h-9 rounded-xl bg-[#F76911]/20 border border-[#F76911]/40 flex items-center justify-center text-lg shrink-0 transition-transform duration-200 group-hover:scale-110">
-            🌅
-          </div>
-          <div className="flex flex-col">
-            <div className="flex items-center gap-1.5">
-              <span className="text-xs font-black tracking-tight text-white group-hover:text-[#F2A957] transition-colors">
-                Este día tienes...
-              </span>
-              <span className="text-[10px] px-1.5 py-0.2 rounded bg-[#F76911]/20 text-[#F2A957] font-bold">
-                Hoy
-              </span>
-            </div>
-            <span className="text-[11px] text-neutral-400 font-medium">
-              Toca para ver el resumen completo de tu día
-            </span>
-          </div>
-        </div>
-
-        <div className="text-[#F76911] transition-transform duration-200 group-hover:translate-x-1">
-          <svg className="w-5 h-5 stroke-current stroke-[2.5] fill-none" viewBox="0 0 24 24">
-            <path strokeLinecap="round" strokeLinejoin="round" d="M9 5l7 7-7 7" />
-          </svg>
-        </div>
-      </Link>
+      {/* BANNER ACCESO RÁPIDO: RESUMEN MATUTINO DEL DÍA (se oculta si el usuario ya lo revisó hoy) */}
+      <MorningSummaryBanner
+        today={today}
+        userId={currentUser?.id}
+        initialDismissed={
+          (await cookies()).get(
+            currentUser?.id
+              ? `resumen_visto_${currentUser.id}_${today}`
+              : `resumen_visto_anon_${today}`
+          )?.value === '1'
+        }
+      />
 
       {/* GRID DE ACCESOS DIRECTOS */}
       <section className="flex flex-col gap-3">
@@ -290,38 +360,61 @@ export default async function Inicio() {
           <Link
             href="/super"
             style={{ background: getCategoryTheme('super').cardGradient }}
-            className="relative h-[120px] rounded-[22px] p-3.5 flex flex-col justify-between overflow-hidden shadow-md text-white transition-all duration-200 ease-out hover:scale-[1.02] active:scale-[0.97] hover:shadow-[0_8px_24px_rgba(14,165,233,0.35)] group no-underline"
+            className="relative h-[124px] rounded-[26px] p-3.5 flex flex-col justify-between overflow-hidden shadow-md text-white transition-all duration-200 ease-out hover:scale-[1.02] active:scale-[0.97] hover:shadow-[0_8px_24px_rgba(14,165,233,0.35)] group no-underline"
           >
-            <div className="flex justify-between items-start">
-              <svg className="w-6 h-6 stroke-white stroke-[2.2] fill-none transition-transform duration-200 group-hover:scale-110" viewBox="0 0 24 24">
-                <path strokeLinecap="round" strokeLinejoin="round" d="M16 11V7a4 4 0 00-8 0v4M5 9h14l1 12H4L5 9z" />
+            {/* Watermark grande de fondo: visible ÚNICAMENTE en hover */}
+            <svg
+              className="absolute -bottom-3 -right-2 w-24 h-24 text-white/20 stroke-current stroke-[1.5] fill-none pointer-events-none opacity-0 group-hover:opacity-100 group-hover:scale-105 group-hover:translate-x-1 transition-all duration-300 ease-out"
+              viewBox="0 0 24 24"
+            >
+              <path strokeLinecap="round" strokeLinejoin="round" d="M3 3h2l.4 2M7 13h10l4-8H5.4M7 13L5.4 5M7 13l-2.293 2.293c-.63.63-.184 1.707.707 1.707H17m0 0a2 2 0 100 4 2 2 0 000-4zm-8 2a2 2 0 11-4 0 2 2 0 014 0z" />
+            </svg>
+
+            <div className="flex justify-between items-start relative z-10">
+              {/* Icono principal: outline en default, relleno en hover */}
+              <svg className="w-6 h-6 stroke-white stroke-[2.2] fill-transparent group-hover:fill-white transition-all duration-200 group-hover:scale-110" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" d="M3 3h2l.4 2M7 13h10l4-8H5.4M7 13L5.4 5M7 13l-2.293 2.293c-.63.63-.184 1.707.707 1.707H17" />
+                <polygon points="5.4,5 21,5 17,13 7,13" className="fill-transparent group-hover:fill-white transition-colors duration-200 stroke-none" />
+                <circle cx="9" cy="20" r="1.5" className="fill-white stroke-none" />
+                <circle cx="17" cy="20" r="1.5" className="fill-white stroke-none" />
               </svg>
+
               {superCount > 0 && (
                 <span className={`w-6 h-6 rounded-full text-xs font-black flex items-center justify-center shadow transition-transform duration-200 group-hover:scale-110 ${getCategoryTheme('super').countBadge}`}>
                   {superCount}
                 </span>
               )}
             </div>
-            <span className="text-base font-black tracking-wide text-white">Súper</span>
+            <span className="text-base font-black tracking-wide text-white relative z-10">Súper</span>
           </Link>
 
           {/* Feria -> /feria */}
           <Link
             href="/feria"
             style={{ background: getCategoryTheme('feria').cardGradient }}
-            className="relative h-[120px] rounded-[22px] p-3.5 flex flex-col justify-between overflow-hidden shadow-md text-white transition-all duration-200 ease-out hover:scale-[1.02] active:scale-[0.97] hover:shadow-[0_8px_24px_rgba(236,72,153,0.35)] group no-underline"
+            className="relative h-[124px] rounded-[26px] p-3.5 flex flex-col justify-between overflow-hidden shadow-md text-white transition-all duration-200 ease-out hover:scale-[1.02] active:scale-[0.97] hover:shadow-[0_8px_24px_rgba(236,72,153,0.35)] group no-underline"
           >
-            <div className="flex justify-between items-start">
-              <svg className="w-6 h-6 stroke-white stroke-[2.2] fill-none transition-transform duration-200 group-hover:scale-110" viewBox="0 0 24 24">
-                <path strokeLinecap="round" strokeLinejoin="round" d="M3 3h2l.4 2M7 13h10l4-8H5.4M7 13L5.4 5M7 13l-2.293 2.293c-.63.63-.184 1.707.707 1.707H17m0 0a2 2 0 100 4 2 2 0 000-4zm-8 2a2 2 0 11-4 0 2 2 0 014 0z" />
+            {/* Watermark grande de fondo: visible ÚNICAMENTE en hover */}
+            <svg
+              className="absolute -bottom-3 -right-2 w-24 h-24 text-white/20 stroke-current stroke-[1.5] fill-none pointer-events-none opacity-0 group-hover:opacity-100 group-hover:scale-105 group-hover:translate-x-1 transition-all duration-300 ease-out"
+              viewBox="0 0 24 24"
+            >
+              <path strokeLinecap="round" strokeLinejoin="round" d="M16 11V7a4 4 0 00-8 0v4M5 9h14l1 12H4L5 9z" />
+            </svg>
+
+            <div className="flex justify-between items-start relative z-10">
+              {/* Icono principal: outline en default, relleno en hover */}
+              <svg className="w-6 h-6 stroke-white stroke-[2.2] fill-transparent group-hover:fill-white transition-all duration-200 group-hover:scale-110" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" d="M16 11V7a4 4 0 00-8 0v4M5 9h14l1 12H4L5 9z" />
               </svg>
+
               {feriaCount > 0 && (
                 <span className={`w-6 h-6 rounded-full text-xs font-black flex items-center justify-center shadow transition-transform duration-200 group-hover:scale-110 ${getCategoryTheme('feria').countBadge}`}>
                   {feriaCount}
                 </span>
               )}
             </div>
-            <span className="text-base font-black tracking-wide text-white">Feria</span>
+            <span className="text-base font-black tracking-wide text-white relative z-10">Feria</span>
           </Link>
         </div>
 
@@ -331,15 +424,21 @@ export default async function Inicio() {
           <Link
             href="/meds"
             style={{ background: getCategoryTheme('medicinas').cardGradient }}
-            className="relative h-[115px] rounded-[22px] p-3 flex flex-col justify-between overflow-hidden shadow-md text-white transition-all duration-200 ease-out hover:scale-[1.02] active:scale-[0.97] hover:shadow-[0_8px_24px_rgba(16,185,129,0.35)] group no-underline"
+            className="relative h-[118px] rounded-[24px] p-3 flex flex-col justify-between overflow-hidden shadow-md text-white transition-all duration-200 ease-out hover:scale-[1.02] active:scale-[0.97] hover:shadow-[0_8px_24px_rgba(16,185,129,0.35)] group no-underline"
           >
-            <svg className="absolute -bottom-3 -right-3 w-20 h-20 text-white/15 stroke-current stroke-[1.5] fill-none pointer-events-none transition-transform duration-300 group-hover:scale-110" viewBox="0 0 24 24">
+            {/* Watermark grande de fondo: visible ÚNICAMENTE en hover */}
+            <svg
+              className="absolute -bottom-3 -right-3 w-22 h-22 text-white/20 stroke-current stroke-[1.5] fill-none pointer-events-none opacity-0 group-hover:opacity-100 group-hover:scale-105 group-hover:translate-x-1 transition-all duration-300 ease-out"
+              viewBox="0 0 24 24"
+            >
               <path strokeLinecap="round" strokeLinejoin="round" d="M4.318 6.318a4.5 4.5 0 000 6.364L12 20.364l7.682-7.682a4.5 4.5 0 00-6.364-6.364L12 7.636l-1.318-1.318a4.5 4.5 0 00-6.364 0z" />
             </svg>
+
             <div className="flex justify-between items-start relative z-10">
-              <svg className="w-6 h-6 stroke-white stroke-[2.2] fill-none transition-transform duration-200 group-hover:scale-110" viewBox="0 0 24 24">
+              <svg className="w-6 h-6 stroke-white stroke-[2.2] fill-transparent group-hover:fill-white transition-all duration-200 group-hover:scale-110" viewBox="0 0 24 24">
                 <path strokeLinecap="round" strokeLinejoin="round" d="M4.318 6.318a4.5 4.5 0 000 6.364L12 20.364l7.682-7.682a4.5 4.5 0 00-6.364-6.364L12 7.636l-1.318-1.318a4.5 4.5 0 00-6.364 0z" />
               </svg>
+
               {pendingMeds.length > 0 && (
                 <span className={`w-5 h-5 rounded-full text-[11px] font-black flex items-center justify-center shadow transition-transform duration-200 group-hover:scale-110 ${getCategoryTheme('medicinas').countBadge}`}>
                   {pendingMeds.length}
@@ -353,17 +452,23 @@ export default async function Inicio() {
           <Link
             href="/colegio"
             style={{ background: getCategoryTheme('colegio').cardGradient }}
-            className="relative h-[115px] rounded-[22px] p-3 flex flex-col justify-between overflow-hidden shadow-md text-white transition-all duration-200 ease-out hover:scale-[1.02] active:scale-[0.97] hover:shadow-[0_8px_24px_rgba(139,92,246,0.35)] group no-underline"
+            className="relative h-[118px] rounded-[24px] p-3 flex flex-col justify-between overflow-hidden shadow-md text-white transition-all duration-200 ease-out hover:scale-[1.02] active:scale-[0.97] hover:shadow-[0_8px_24px_rgba(139,92,246,0.35)] group no-underline"
           >
-            <svg className="absolute -bottom-2 -right-2 w-20 h-20 text-white/15 stroke-current stroke-[1.5] fill-none pointer-events-none transition-transform duration-300 group-hover:scale-110" viewBox="0 0 24 24">
+            {/* Watermark grande de fondo: visible ÚNICAMENTE en hover */}
+            <svg
+              className="absolute -bottom-2 -right-2 w-22 h-22 text-white/20 stroke-current stroke-[1.5] fill-none pointer-events-none opacity-0 group-hover:opacity-100 group-hover:scale-105 group-hover:translate-x-1 transition-all duration-300 ease-out"
+              viewBox="0 0 24 24"
+            >
               <path strokeLinecap="round" strokeLinejoin="round" d="M12 14l9-5-9-5-9 5 9 5z" />
               <path strokeLinecap="round" strokeLinejoin="round" d="M12 14l6.16-3.422a12.083 12.083 0 01.665 6.479A11.952 11.952 0 0012 20.055a11.952 11.952 0 00-6.824-2.998 12.078 12.078 0 01.665-6.479L12 14z" />
             </svg>
+
             <div className="flex justify-between items-start relative z-10">
-              <svg className="w-6 h-6 stroke-white stroke-[2.2] fill-none transition-transform duration-200 group-hover:scale-110" viewBox="0 0 24 24">
+              <svg className="w-6 h-6 stroke-white stroke-[2.2] fill-transparent group-hover:fill-white transition-all duration-200 group-hover:scale-110" viewBox="0 0 24 24">
                 <path strokeLinecap="round" strokeLinejoin="round" d="M12 14l9-5-9-5-9 5 9 5z" />
                 <path strokeLinecap="round" strokeLinejoin="round" d="M12 14l6.16-3.422a12.083 12.083 0 01.665 6.479A11.952 11.952 0 0012 20.055a11.952 11.952 0 00-6.824-2.998 12.078 12.078 0 01.665-6.479L12 14z" />
               </svg>
+
               {schoolTotalCount > 0 && (
                 <span className={`w-5 h-5 rounded-full text-[11px] font-black flex items-center justify-center shadow transition-transform duration-200 group-hover:scale-110 ${getCategoryTheme('colegio').countBadge}`}>
                   {schoolTotalCount}
@@ -377,15 +482,21 @@ export default async function Inicio() {
           <Link
             href="/tareas"
             style={{ background: getCategoryTheme('tareas').cardGradient }}
-            className="relative h-[115px] rounded-[22px] p-3 flex flex-col justify-between overflow-hidden shadow-md text-white transition-all duration-200 ease-out hover:scale-[1.02] active:scale-[0.97] hover:shadow-[0_8px_24px_rgba(249,115,22,0.35)] group no-underline"
+            className="relative h-[118px] rounded-[24px] p-3 flex flex-col justify-between overflow-hidden shadow-md text-white transition-all duration-200 ease-out hover:scale-[1.02] active:scale-[0.97] hover:shadow-[0_8px_24px_rgba(249,115,22,0.35)] group no-underline"
           >
-            <svg className="absolute -bottom-2 -right-2 w-20 h-20 text-white/15 stroke-current stroke-[1.5] fill-none pointer-events-none transition-transform duration-300 group-hover:scale-110" viewBox="0 0 24 24">
+            {/* Watermark grande de fondo: visible ÚNICAMENTE en hover */}
+            <svg
+              className="absolute -bottom-2 -right-2 w-22 h-22 text-white/20 stroke-current stroke-[1.5] fill-none pointer-events-none opacity-0 group-hover:opacity-100 group-hover:scale-105 group-hover:translate-x-1 transition-all duration-300 ease-out"
+              viewBox="0 0 24 24"
+            >
               <path strokeLinecap="round" strokeLinejoin="round" d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2m-6 9l2 2 4-4" />
             </svg>
+
             <div className="flex justify-between items-start relative z-10">
-              <svg className="w-6 h-6 stroke-white stroke-[2.2] fill-none transition-transform duration-200 group-hover:scale-110" viewBox="0 0 24 24">
+              <svg className="w-6 h-6 stroke-white stroke-[2.2] fill-transparent group-hover:fill-white/30 transition-all duration-200 group-hover:scale-110" viewBox="0 0 24 24">
                 <path strokeLinecap="round" strokeLinejoin="round" d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2m-6 9l2 2 4-4" />
               </svg>
+
               {generalTodosCount > 0 && (
                 <span className={`w-5 h-5 rounded-full text-[11px] font-black flex items-center justify-center shadow transition-transform duration-200 group-hover:scale-110 ${getCategoryTheme('tareas').countBadge}`}>
                   {generalTodosCount}
@@ -411,7 +522,7 @@ export default async function Inicio() {
         {/* Lista de Eventos */}
         <div className="space-y-3">
           {upcomingEvents.length === 0 ? (
-            <p className="text-neutral-500 text-sm py-4">No hay eventos pendientes hoy.</p>
+            <p className="text-neutral-500 text-sm py-4">No hay próximos eventos agendados.</p>
           ) : (
             upcomingEvents.map((evt) => {
               const theme = getCategoryTheme(evt.category)
