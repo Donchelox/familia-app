@@ -357,7 +357,7 @@ export default function AjustesHubView({
         <div className="fixed inset-0 z-50 flex items-end justify-center">
           <div className="fixed inset-0 bg-black/75 backdrop-blur-sm transition-opacity" onClick={() => setShowReleaseModal(false)} />
 
-          <div className="relative w-full max-w-[402px] bg-[#1a1a1a] rounded-t-[28px] border-t border-neutral-800 p-6 flex flex-col gap-4 shadow-2xl z-10 animate-in slide-in-from-bottom duration-200 max-h-[85vh] overflow-y-auto">
+          <div className="relative w-full max-w-[402px] bg-[#1a1a1a] rounded-t-[28px] border-t border-neutral-800 p-6 pb-10 flex flex-col gap-4 shadow-2xl z-10 animate-in slide-in-from-bottom duration-200 max-h-[85vh] overflow-y-auto">
             <div className="w-12 h-1.5 bg-neutral-700 rounded-full mx-auto shrink-0" />
 
             <div className="flex items-center justify-between">
@@ -448,7 +448,7 @@ export default function AjustesHubView({
         <div className="fixed inset-0 z-50 flex items-end justify-center">
           <div className="fixed inset-0 bg-black/75 backdrop-blur-sm transition-opacity" onClick={closeAccountEdit} />
 
-          <div className="relative w-full max-w-[402px] bg-[#1a1a1a] rounded-t-[28px] border-t border-neutral-800 p-6 flex flex-col gap-4 shadow-2xl z-10 animate-in slide-in-from-bottom duration-200 max-h-[90vh] overflow-y-auto">
+          <div className="relative w-full max-w-[402px] bg-[#1a1a1a] rounded-t-[28px] border-t border-neutral-800 p-6 pb-10 flex flex-col gap-4 shadow-2xl z-10 animate-in slide-in-from-bottom duration-200 max-h-[90vh] overflow-y-auto">
             <div className="w-12 h-1.5 bg-neutral-700 rounded-full mx-auto shrink-0" />
 
             <div className="flex items-center justify-between">

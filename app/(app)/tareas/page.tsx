@@ -4,6 +4,7 @@ import { useState, useEffect, useMemo } from 'react'
 import Link from 'next/link'
 import NotificationBell from '@/components/NotificationBell'
 import SyncStatusBadge from '@/components/SyncStatusBadge'
+import { TaskListSkeleton } from '@/components/Skeleton'
 import { useRouter } from 'next/navigation'
 import { createClient } from '@/lib/supabase/client'
 import { useActionParam } from '@/lib/useActionParam'
@@ -1248,25 +1249,33 @@ export default function TareasPage() {
   const sporadicCount = todos.filter((t) => !t.is_recurring).length
   const urgentCount = todos.filter((t) => !t.done && t.priority === 'alta').length
 
-  // Función de ordenamiento
+  // Función de ordenamiento 100% determinista sin saltos
   function sortTodos(a: TodoItem, b: TodoItem) {
     if (sortBy === 'priority') {
       const weights: Record<string, number> = { alta: 3, media: 2, normal: 1 }
       const diff = (weights[b.priority || 'normal'] || 1) - (weights[a.priority || 'normal'] || 1)
       if (diff !== 0) return diff
-      return (a.position ?? 0) - (b.position ?? 0)
+    } else if (sortBy === 'due_date') {
+      if (a.due_date && b.due_date) {
+        const diff = new Date(a.due_date).getTime() - new Date(b.due_date).getTime()
+        if (diff !== 0) return diff
+      } else if (a.due_date) return -1
+      else if (b.due_date) return 1
+    } else if (sortBy === 'created') {
+      const diff = new Date(b.created_at || 0).getTime() - new Date(a.created_at || 0).getTime()
+      if (diff !== 0) return diff
     }
-    if (sortBy === 'due_date') {
-      if (a.due_date && b.due_date) return new Date(a.due_date).getTime() - new Date(b.due_date).getTime()
-      if (a.due_date) return -1
-      if (b.due_date) return 1
-      return (a.position ?? 0) - (b.position ?? 0)
-    }
-    if (sortBy === 'created') {
-      return new Date(b.created_at || 0).getTime() - new Date(a.created_at || 0).getTime()
-    }
-    // Orden manual por defecto
-    return (a.position ?? 0) - (b.position ?? 0)
+    // Orden por posición
+    const posDiff = (a.position ?? 0) - (b.position ?? 0)
+    if (posDiff !== 0) return posDiff
+    // Tie-breaker 1: Fecha de creación
+    const createDiff = new Date(b.created_at || 0).getTime() - new Date(a.created_at || 0).getTime()
+    if (createDiff !== 0) return createDiff
+    // Tie-breaker 2: Alfabético por título
+    const titleDiff = (a.title || '').localeCompare(b.title || '', 'es', { sensitivity: 'base' })
+    if (titleDiff !== 0) return titleDiff
+    // Tie-breaker 3: ID inmutable
+    return (a.id || '').localeCompare(b.id || '')
   }
 
   const displayedPending = useMemo(() => {
@@ -1702,9 +1711,7 @@ export default function TareasPage() {
 
           <div className="flex flex-col gap-3">
             {loading ? (
-              <div className="p-8 text-center text-xs text-neutral-500 bg-[#1a1a1a] rounded-[28px] border border-neutral-800/80">
-                Cargando tareas...
-              </div>
+              <TaskListSkeleton count={4} />
             ) : displayedPending.length === 0 ? (
               <div className="p-8 text-center bg-[#1a1a1a] rounded-[28px] border border-neutral-800/80 flex flex-col items-center">
                 <p className="text-sm font-bold text-neutral-300 m-0">No hay tareas pendientes</p>
@@ -2192,7 +2199,7 @@ export default function TareasPage() {
         >
           <div
             onClick={(e) => e.stopPropagation()}
-            className="relative w-full max-w-xl bg-[#1a1a1a] border border-neutral-800 rounded-t-[32px] sm:rounded-[32px] p-6 shadow-2xl flex flex-col gap-4 max-h-[92vh] overflow-y-auto mb-20 sm:mb-0"
+            className="relative w-full max-w-xl bg-[#1a1a1a] border border-neutral-800 rounded-t-[32px] sm:rounded-[32px] p-6 pb-10 sm:p-6 shadow-2xl flex flex-col gap-4 max-h-[92vh] overflow-y-auto mb-0"
           >
             {/* ENCABEZADO Y TABS */}
             <div className="flex items-center justify-between border-b border-neutral-800 pb-3">

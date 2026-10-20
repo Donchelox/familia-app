@@ -81,7 +81,7 @@ export default function AddShoppingSheet({ list }: AddShoppingSheetProps) {
           />
 
           {/* Contenedor del Sheet */}
-          <div className="relative w-full max-w-lg bg-[#161616] border border-neutral-800 rounded-t-[32px] sm:rounded-[32px] p-6 shadow-2xl z-10 animate-in slide-in-from-bottom duration-200">
+          <div className="relative w-full max-w-lg bg-[#161616] border border-neutral-800 rounded-t-[32px] sm:rounded-[32px] p-6 pb-10 sm:p-6 shadow-2xl z-10 animate-in slide-in-from-bottom duration-200">
             <div className="flex items-center justify-between pb-4 border-b border-neutral-800/80">
               <div className="flex items-center gap-2.5">
                 <span className="text-xl">{isFeria ? '🥬' : '🛒'}</span>

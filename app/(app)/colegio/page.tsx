@@ -4,6 +4,7 @@ import { useState, useEffect } from 'react'
 import Link from 'next/link'
 import NotificationBell from '@/components/NotificationBell'
 import SyncStatusBadge from '@/components/SyncStatusBadge'
+import { ColegioListSkeleton } from '@/components/Skeleton'
 import { useRouter } from 'next/navigation'
 import { createClient } from '@/lib/supabase/client'
 import { useActionParam } from '@/lib/useActionParam'
@@ -699,9 +700,7 @@ export default function ColegioPage() {
 
           <div className="flex flex-col gap-2.5">
             {loading ? (
-              <div className="p-8 text-center text-xs text-neutral-500 bg-[#1a1a1a] rounded-[28px] border border-neutral-800/80">
-                Cargando pruebas...
-              </div>
+              <ColegioListSkeleton count={2} />
             ) : tests.length === 0 ? (
               <div className="p-8 text-center bg-[#1a1a1a] rounded-[28px] border border-neutral-800/80 flex flex-col items-center">
                 <p className="text-sm font-bold text-neutral-300 m-0">No hay pruebas agendadas</p>
@@ -775,9 +774,7 @@ export default function ColegioPage() {
 
             <div className="flex flex-col gap-2.5">
               {loading ? (
-                <div className="p-8 text-center text-xs text-neutral-500 bg-[#1a1a1a] rounded-[28px] border border-neutral-800/80">
-                  Cargando tareas escolares...
-                </div>
+                <ColegioListSkeleton count={3} />
               ) : pendingHomework.length === 0 ? (
                 <div className="p-8 text-center bg-[#1a1a1a] rounded-[28px] border border-neutral-800/80 flex flex-col items-center">
                   <p className="text-sm font-bold text-neutral-300 m-0">No hay tareas pendientes</p>
@@ -990,7 +987,7 @@ export default function ColegioPage() {
         >
           <div
             onClick={(e) => e.stopPropagation()}
-            className="w-full max-w-xl bg-[#181818] border border-neutral-800 rounded-t-[32px] sm:rounded-[32px] p-5 sm:p-6 shadow-2xl flex flex-col gap-4 max-h-[88vh] overflow-y-auto mb-16 sm:mb-0"
+            className="w-full max-w-xl bg-[#181818] border border-neutral-800 rounded-t-[32px] sm:rounded-[32px] p-5 pb-10 sm:p-6 shadow-2xl flex flex-col gap-4 max-h-[88vh] overflow-y-auto mb-0"
           >
             {/* ENCABEZADO DEL MODAL */}
             <div className="flex items-center justify-between border-b border-neutral-800 pb-3">
@@ -1113,7 +1110,7 @@ export default function ColegioPage() {
         >
           <div
             onClick={(e) => e.stopPropagation()}
-            className="w-full max-w-lg bg-[#1a1a1a] border border-neutral-800 rounded-t-[32px] sm:rounded-[32px] p-6 shadow-2xl flex flex-col gap-4 max-h-[90vh] overflow-y-auto mb-20 sm:mb-0"
+            className="w-full max-w-lg bg-[#1a1a1a] border border-neutral-800 rounded-t-[32px] sm:rounded-[32px] p-6 pb-10 sm:p-6 shadow-2xl flex flex-col gap-4 max-h-[90vh] overflow-y-auto mb-0"
           >
             <div className="flex items-center justify-between border-b border-neutral-800 pb-3">
               <h2 className="text-base font-black text-white m-0">

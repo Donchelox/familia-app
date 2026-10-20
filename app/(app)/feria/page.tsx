@@ -1,9 +1,10 @@
 'use client'
 
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useMemo } from 'react'
 import Link from 'next/link'
 import NotificationBell from '@/components/NotificationBell'
 import SyncStatusBadge from '@/components/SyncStatusBadge'
+import { ShoppingListSkeleton } from '@/components/Skeleton'
 import { useRouter } from 'next/navigation'
 import { createClient } from '@/lib/supabase/client'
 import { useActionParam } from '@/lib/useActionParam'
@@ -467,8 +468,27 @@ export default function FeriaPage() {
     setIsSheetOpen(false)
   }
 
-  const pendingItems = items.filter((i) => !i.done)
-  const completedItems = items.filter((i) => i.done)
+  const pendingItems = useMemo(() => {
+    return items
+      .filter((i) => !i.done)
+      .sort((a, b) => {
+        const timeA = a.created_at ? new Date(a.created_at).getTime() : 0
+        const timeB = b.created_at ? new Date(b.created_at).getTime() : 0
+        if (timeB !== timeA) return timeB - timeA
+        return (a.name || '').localeCompare(b.name || '', 'es', { sensitivity: 'base' })
+      })
+  }, [items])
+
+  const completedItems = useMemo(() => {
+    return items
+      .filter((i) => i.done)
+      .sort((a, b) => {
+        const timeA = a.done_at ? new Date(a.done_at).getTime() : 0
+        const timeB = b.done_at ? new Date(b.done_at).getTime() : 0
+        if (timeB !== timeA) return timeB - timeA
+        return (a.name || '').localeCompare(b.name || '', 'es', { sensitivity: 'base' })
+      })
+  }, [items])
 
   const recurringCount = items.filter((i) => i.is_recurring).length
   const sporadicCount = items.filter((i) => !i.is_recurring).length
@@ -590,9 +610,7 @@ export default function FeriaPage() {
 
           <div className="flex flex-col gap-2.5">
             {loading ? (
-              <div className="p-8 text-center text-xs text-neutral-500 bg-[#1a1a1a] rounded-[28px] border border-neutral-800/80">
-                Cargando lista de feria...
-              </div>
+              <ShoppingListSkeleton count={4} />
             ) : displayedPending.length === 0 ? (
               <div className="p-8 text-center bg-[#1a1a1a] rounded-[28px] border border-neutral-800/80 flex flex-col items-center justify-center gap-3">
                 <span className="text-3xl">🥬</span>
@@ -786,7 +804,7 @@ export default function FeriaPage() {
         >
           <div
             onClick={(e) => e.stopPropagation()}
-            className="relative w-full max-w-lg bg-[#1a1a1a] border border-neutral-800 rounded-t-[32px] sm:rounded-[32px] p-6 shadow-2xl flex flex-col gap-4 max-h-[90vh] overflow-y-auto mb-20 sm:mb-0"
+            className="relative w-full max-w-lg bg-[#1a1a1a] border border-neutral-800 rounded-t-[32px] sm:rounded-[32px] p-6 pb-10 sm:p-6 shadow-2xl flex flex-col gap-4 max-h-[90vh] overflow-y-auto mb-0"
           >
             
             <div className="flex items-center justify-between border-b border-neutral-800 pb-3">

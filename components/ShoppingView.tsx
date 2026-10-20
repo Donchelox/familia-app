@@ -245,7 +245,7 @@ export default function ShoppingView({
             onClick={closeSheet}
           />
 
-          <div className="relative w-full max-w-[402px] bg-[#1a1a1a] rounded-t-[28px] border-t border-neutral-800 p-6 flex flex-col gap-4 shadow-2xl z-10 animate-in slide-in-from-bottom duration-200">
+          <div className="relative w-full max-w-[402px] bg-[#1a1a1a] rounded-t-[28px] border-t border-neutral-800 p-6 pb-10 flex flex-col gap-4 shadow-2xl z-10 animate-in slide-in-from-bottom duration-200">
             <div className="w-12 h-1.5 bg-neutral-700 rounded-full mx-auto" />
 
             <div className="flex items-center justify-between">

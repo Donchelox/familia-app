@@ -1,6 +1,6 @@
 'use client'
 
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useMemo } from 'react'
 import { useRouter } from 'next/navigation'
 import Link from 'next/link'
 import { createClient } from '@/lib/supabase/client'
@@ -168,7 +168,7 @@ export default function MedsClientView({
     setTimeout(() => setToastMsg(null), 3500)
   }
 
-  // Sincronizar inmediatamente con Dexie para disponibilidad offline
+  // Sincronizar con Dexie para disponibilidad offline sin alterar el estado inicial autoritativo
   useEffect(() => {
     async function loadLocalMeds() {
       try {
@@ -177,55 +177,88 @@ export default function MedsClientView({
           saveOfflineFamilyId(familyId)
         }
 
-        if (!activeFamilyId) {
-          if (!initialMeds || initialMeds.length === 0) {
-            setMeds([])
+        if (!activeFamilyId) return
+
+        // 1. Si ya recibimos datos autoritativos del servidor (initialMeds), NO los sobreescribimos
+        // para evitar saltos o reordenamientos en pantalla. Guardamos en Dexie para caché offline.
+        if (initialMeds && initialMeds.length > 0) {
+          if (typeof navigator !== 'undefined' && navigator.onLine) {
+            await offlineDB.medicines.bulkPut(
+              initialMeds.map((m) => ({
+                id: m.id,
+                family_id: activeFamilyId,
+                name: m.name,
+                person: m.person,
+                dose: m.dose,
+                times: m.times,
+                frequency: m.frequency,
+                end_date: m.end_date || undefined,
+                stock: m.stock !== undefined ? m.stock : null,
+                stock_alert_threshold: m.stock_alert_threshold ?? 5,
+                icon_type: m.icon_type || 'pill',
+                instructions: m.instructions || undefined,
+                _synced: true,
+              }))
+            )
+          }
+
+          // Incorporar únicamente elementos creados offline aún pendientes de sincronizar
+          const unsynced = await offlineDB.medicines
+            .where('family_id')
+            .equals(activeFamilyId)
+            .filter((m) => m._synced === false)
+            .toArray()
+
+          if (unsynced.length > 0) {
+            setMeds((prev) => {
+              const map = new Map<string, Medication>()
+              prev.forEach((m) => map.set(m.id, m))
+              let hasNew = false
+              unsynced.forEach((m) => {
+                if (!map.has(m.id)) {
+                  hasNew = true
+                  map.set(m.id, {
+                    id: m.id,
+                    name: m.name,
+                    dose: m.dose,
+                    times: m.times,
+                    person: m.person,
+                    frequency: m.frequency,
+                    end_date: m.end_date,
+                    stock: m.stock !== undefined ? m.stock : null,
+                    stock_alert_threshold: m.stock_alert_threshold ?? 5,
+                    icon_type: m.icon_type || 'pill',
+                    instructions: m.instructions || null,
+                  })
+                }
+              })
+              return hasNew ? Array.from(map.values()) : prev
+            })
           }
           return
         }
 
+        // 2. Si initialMeds vino vacío (ej. sin conexión al servidor / PWA offline):
         const local = await offlineDB.medicines.where('family_id').equals(activeFamilyId).toArray()
-
         if (local && local.length > 0) {
-          setMeds(() => {
-            const map = new Map<string, Medication>()
-            local.forEach((m) =>
-              map.set(m.id, {
-                id: m.id,
-                name: m.name,
-                dose: m.dose,
-                times: m.times,
-                person: m.person,
-                frequency: m.frequency,
-                end_date: m.end_date,
-                stock: m.stock !== undefined ? m.stock : null,
-                stock_alert_threshold: m.stock_alert_threshold ?? 5,
-                icon_type: m.icon_type || 'pill',
-                instructions: m.instructions || null,
-              })
-            )
-            return Array.from(map.values())
+          const activeLocal = local.filter((m) => {
+            if (!m.end_date) return true
+            return m.end_date >= todayStr
           })
-        } else if (!initialMeds || initialMeds.length === 0) {
-          setMeds([])
-        }
 
-        if (initialMeds && initialMeds.length > 0 && typeof navigator !== 'undefined' && navigator.onLine) {
-          await offlineDB.medicines.bulkPut(
-            initialMeds.map((m) => ({
+          setMeds(
+            activeLocal.map((m) => ({
               id: m.id,
-              family_id: activeFamilyId,
               name: m.name,
-              person: m.person,
               dose: m.dose,
               times: m.times,
+              person: m.person,
               frequency: m.frequency,
-              end_date: m.end_date || undefined,
+              end_date: m.end_date,
               stock: m.stock !== undefined ? m.stock : null,
               stock_alert_threshold: m.stock_alert_threshold ?? 5,
               icon_type: m.icon_type || 'pill',
-              instructions: m.instructions || undefined,
-              _synced: true,
+              instructions: m.instructions || null,
             }))
           )
         }
@@ -243,7 +276,7 @@ export default function MedsClientView({
     return () => {
       window.removeEventListener('casa-sync-complete', handleSyncComplete)
     }
-  }, [familyId, initialMeds])
+  }, [familyId, initialMeds, todayStr])
 
   // Formulario Crear / Editar
   const [membersList, setMembersList] = useState<Member[]>(members || [])
@@ -267,7 +300,7 @@ export default function MedsClientView({
           })
         }
       }
-    } catch {}
+    } catch { }
   }, [])
 
   const defaultMemberName = membersList[0]?.name || members[0]?.name || ''
@@ -469,7 +502,19 @@ export default function MedsClientView({
         }
       })
     )
-    .sort((a, b) => a.time.localeCompare(b.time))
+    .sort((a, b) => {
+      // 1. Horario cronológico (08:00, 12:00, 20:00)
+      const timeDiff = a.time.localeCompare(b.time)
+      if (timeDiff !== 0) return timeDiff
+      // 2. Nombre del medicamento
+      const nameDiff = (a.name || '').localeCompare(b.name || '', 'es', { sensitivity: 'base' })
+      if (nameDiff !== 0) return nameDiff
+      // 3. Integrante asignado
+      const personDiff = (a.person || '').localeCompare(b.person || '', 'es', { sensitivity: 'base' })
+      if (personDiff !== 0) return personDiff
+      // 4. Tie-breaker inmutable por id de medicamento
+      return a.medId.localeCompare(b.medId)
+    })
 
   const countLowStock = meds.filter(
     (m) => m.stock !== null && m.stock !== undefined && m.stock <= (m.stock_alert_threshold ?? 5)
@@ -498,12 +543,15 @@ export default function MedsClientView({
   const totalDoses = filteredDoses.length
   const completedDoses = filteredDoses.filter((d) => d.isTaken).length
 
-  const availableFilterPersons = Array.from(
-    new Set([
-      ...membersList.map((m) => m.name),
-      ...meds.map((m) => m.person).filter(Boolean),
-    ])
-  )
+  const availableFilterPersons = useMemo(() => {
+    const list = Array.from(
+      new Set([
+        ...membersList.map((m) => m.name),
+        ...meds.map((m) => m.person).filter(Boolean),
+      ])
+    )
+    return list.sort((a, b) => a.localeCompare(b, 'es', { sensitivity: 'base' }))
+  }, [membersList, meds])
 
   const allSelectableMembers = Array.from(
     new Set([
@@ -563,7 +611,7 @@ export default function MedsClientView({
       navigator.serviceWorker.ready
         .then((reg) => reg.getNotifications({ tag: `med-${medId}-${todayStr}-${doseTime}` }))
         .then((list) => list.forEach((n) => n.close()))
-        .catch(() => {})
+        .catch(() => { })
     }
 
     // 4. Sincronizar en remoto si estamos online
@@ -753,11 +801,10 @@ export default function MedsClientView({
               <button
                 type="button"
                 onClick={() => setFilterLowStockOnly((prev) => !prev)}
-                className={`px-3 py-1 rounded-full text-[11px] font-bold transition-all cursor-pointer flex items-center gap-1.5 ${
-                  filterLowStockOnly
-                    ? 'bg-amber-500 text-neutral-950 font-black shadow-md'
-                    : 'bg-amber-950/60 border border-amber-800/80 text-amber-300 hover:bg-amber-900/60'
-                }`}
+                className={`px-3 py-1 rounded-full text-[11px] font-bold transition-all cursor-pointer flex items-center gap-1.5 ${filterLowStockOnly
+                  ? 'bg-amber-500 text-neutral-950 font-black shadow-md'
+                  : 'bg-amber-950/60 border border-amber-800/80 text-amber-300 hover:bg-amber-900/60'
+                  }`}
               >
                 <span>⚠️</span>
                 <span>{countLowStock} con stock bajo</span>
@@ -772,11 +819,10 @@ export default function MedsClientView({
         <button
           type="button"
           onClick={() => setSelectedPerson('todos')}
-          className={`px-4 py-2 rounded-2xl text-xs font-bold whitespace-nowrap transition-all cursor-pointer ${
-            selectedPerson === 'todos'
-              ? 'bg-[#F76911] text-white shadow-[0_4px_12px_rgba(247,105,17,0.3)]'
-              : 'bg-[#1a1a1a] text-neutral-400 border border-neutral-800/80 hover:text-white'
-          }`}
+          className={`px-4 py-2 rounded-2xl text-xs font-bold whitespace-nowrap transition-all cursor-pointer ${selectedPerson === 'todos'
+            ? 'bg-[#F76911] text-white shadow-[0_4px_12px_rgba(247,105,17,0.3)]'
+            : 'bg-[#1a1a1a] text-neutral-400 border border-neutral-800/80 hover:text-white'
+            }`}
         >
           Todos
         </button>
@@ -786,11 +832,10 @@ export default function MedsClientView({
             key={p}
             type="button"
             onClick={() => setSelectedPerson(p)}
-            className={`px-4 py-2 rounded-2xl text-xs font-bold whitespace-nowrap transition-all duration-150 hover:scale-105 active:scale-95 cursor-pointer ${
-              selectedPerson.toLowerCase() === p.toLowerCase()
-                ? 'bg-[#F76911] text-white shadow-[0_4px_12px_rgba(247,105,17,0.3)]'
-                : 'bg-[#1a1a1a] text-neutral-400 border border-neutral-800/80 hover:text-white'
-            }`}
+            className={`px-4 py-2 rounded-2xl text-xs font-bold whitespace-nowrap transition-all duration-150 hover:scale-105 active:scale-95 cursor-pointer ${selectedPerson.toLowerCase() === p.toLowerCase()
+              ? 'bg-[#F76911] text-white shadow-[0_4px_12px_rgba(247,105,17,0.3)]'
+              : 'bg-[#1a1a1a] text-neutral-400 border border-neutral-800/80 hover:text-white'
+              }`}
           >
             {p}
           </button>
@@ -811,8 +856,8 @@ export default function MedsClientView({
                 {filterLowStockOnly
                   ? 'No hay medicamentos con stock bajo'
                   : searchQuery
-                  ? 'No se encontraron medicamentos para esta búsqueda'
-                  : 'No hay dosis registradas o pendientes para hoy'}
+                    ? 'No se encontraron medicamentos para esta búsqueda'
+                    : 'No hay dosis registradas o pendientes para hoy'}
               </p>
               <p className="text-xs text-neutral-500 mt-1 m-0">
                 {filterLowStockOnly
@@ -840,11 +885,10 @@ export default function MedsClientView({
             return (
               <article
                 key={dose.key}
-                className={`p-4 rounded-[26px] border transition-all flex flex-col gap-2.5 ${
-                  dose.isTaken
-                    ? 'bg-[#151515] border-neutral-800/50 opacity-60'
-                    : 'bg-[#1a1a1a] border-neutral-800/80 shadow-md'
-                }`}
+                className={`p-4 rounded-[26px] border transition-all flex flex-col gap-2.5 ${dose.isTaken
+                  ? 'bg-[#151515] border-neutral-800/50 opacity-60'
+                  : 'bg-[#1a1a1a] border-neutral-800/80 shadow-md'
+                  }`}
               >
                 <div className="flex items-center justify-between gap-3">
                   {/* CHECK A LA IZQUIERDA DEL TODO (SQUIRCLE NARANJA CON CÍRCULO BLANCO / CHECK) */}
@@ -856,11 +900,10 @@ export default function MedsClientView({
                       toggleDose(dose.medId, dose.time, dose.isTaken)
                     }}
                     style={dose.isTaken ? undefined : orangeGradient}
-                    className={`w-12 h-12 rounded-[18px] flex items-center justify-center shrink-0 cursor-pointer hover:scale-105 active:scale-95 transition-all shadow-md ${
-                      dose.isTaken
-                        ? 'bg-neutral-800 text-neutral-400 border border-neutral-700/60'
-                        : 'text-white shadow-[0_4px_14px_rgba(247,105,17,0.35)]'
-                    }`}
+                    className={`w-12 h-12 rounded-[18px] flex items-center justify-center shrink-0 cursor-pointer hover:scale-105 active:scale-95 transition-all shadow-md ${dose.isTaken
+                      ? 'bg-neutral-800 text-neutral-400 border border-neutral-700/60'
+                      : 'text-white shadow-[0_4px_14px_rgba(247,105,17,0.35)]'
+                      }`}
                     title={dose.isTaken ? 'Marcar como pendiente' : 'Marcar como tomada'}
                   >
                     {loadingAction === dose.key ? (
@@ -885,9 +928,8 @@ export default function MedsClientView({
                       </span>
                       <span className="text-neutral-500 font-bold text-xs">-</span>
                       <h2
-                        className={`text-sm font-bold truncate m-0 ${
-                          dose.isTaken ? 'line-through text-neutral-400' : 'text-white'
-                        }`}
+                        className={`text-sm font-bold truncate m-0 ${dose.isTaken ? 'line-through text-neutral-400' : 'text-white'
+                          }`}
                       >
                         {dose.name}
                       </h2>
@@ -942,13 +984,12 @@ export default function MedsClientView({
                           setRefillMed(dose.med)
                           setRefillAmount(30)
                         }}
-                        className={`px-2.5 py-1 rounded-xl font-bold flex items-center gap-1.5 transition-transform hover:scale-105 active:scale-95 cursor-pointer ${
-                          isOutOfStock
-                            ? 'bg-red-950/80 border border-red-800 text-red-300'
-                            : isLowStock
+                        className={`px-2.5 py-1 rounded-xl font-bold flex items-center gap-1.5 transition-transform hover:scale-105 active:scale-95 cursor-pointer ${isOutOfStock
+                          ? 'bg-red-950/80 border border-red-800 text-red-300'
+                          : isLowStock
                             ? 'bg-amber-950/80 border border-amber-700 text-amber-300'
                             : 'bg-neutral-900 border border-neutral-800 text-neutral-300'
-                        }`}
+                          }`}
                         title="Toca para recargar o ajustar stock"
                       >
                         <span className="text-[11px]">
@@ -1038,11 +1079,10 @@ export default function MedsClientView({
                       key={num}
                       type="button"
                       onClick={() => setRefillAmount(num)}
-                      className={`flex-1 py-1.5 rounded-xl text-xs font-bold transition-all cursor-pointer ${
-                        refillAmount === num
-                          ? 'bg-[#F76911] text-white'
-                          : 'bg-neutral-800 text-neutral-300 hover:bg-neutral-700'
-                      }`}
+                      className={`flex-1 py-1.5 rounded-xl text-xs font-bold transition-all cursor-pointer ${refillAmount === num
+                        ? 'bg-[#F76911] text-white'
+                        : 'bg-neutral-800 text-neutral-300 hover:bg-neutral-700'
+                        }`}
                     >
                       +{num}
                     </button>
@@ -1090,7 +1130,7 @@ export default function MedsClientView({
         >
           <div
             onClick={(e) => e.stopPropagation()}
-            className="relative w-full max-w-lg bg-[#1a1a1a] border border-neutral-800 rounded-t-[32px] sm:rounded-[32px] p-6 shadow-2xl flex flex-col gap-4 max-h-[90vh] overflow-y-auto mb-20 sm:mb-0"
+            className="relative w-full max-w-lg bg-[#1a1a1a] border border-neutral-800 rounded-t-[32px] sm:rounded-[32px] p-6 pb-10 sm:p-6 shadow-2xl flex flex-col gap-4 max-h-[90vh] overflow-y-auto mb-0"
           >
             <div className="flex items-center justify-between border-b border-neutral-800 pb-3">
               <h2 className="text-base font-black text-white m-0">
@@ -1165,11 +1205,10 @@ export default function MedsClientView({
                         key={pt.id}
                         type="button"
                         onClick={() => setIconType(pt.id)}
-                        className={`p-2 rounded-2xl border text-xs font-semibold flex flex-col items-center gap-1 transition-all cursor-pointer ${
-                          isSelected
-                            ? 'bg-[#F76911]/20 border-[#F76911] text-white shadow-sm'
-                            : 'bg-[#141414] border-neutral-800/80 text-neutral-400 hover:text-white hover:bg-neutral-800/40'
-                        }`}
+                        className={`p-2 rounded-2xl border text-xs font-semibold flex flex-col items-center gap-1 transition-all cursor-pointer ${isSelected
+                          ? 'bg-[#F76911]/20 border-[#F76911] text-white shadow-sm'
+                          : 'bg-[#141414] border-neutral-800/80 text-neutral-400 hover:text-white hover:bg-neutral-800/40'
+                          }`}
                       >
                         <span className="text-base">{pt.icon}</span>
                         <span className="text-[10px] truncate max-w-full">{pt.shortLabel}</span>
@@ -1318,11 +1357,10 @@ export default function MedsClientView({
                       key={p.label}
                       type="button"
                       onClick={() => setInstructions(p.label)}
-                      className={`px-2.5 py-1 rounded-xl text-[10px] font-bold whitespace-nowrap cursor-pointer transition-colors ${
-                        instructions === p.label
-                          ? 'bg-[#F76911] text-white'
-                          : 'bg-neutral-800 text-neutral-300 hover:bg-neutral-700'
-                      }`}
+                      className={`px-2.5 py-1 rounded-xl text-[10px] font-bold whitespace-nowrap cursor-pointer transition-colors ${instructions === p.label
+                        ? 'bg-[#F76911] text-white'
+                        : 'bg-neutral-800 text-neutral-300 hover:bg-neutral-700'
+                        }`}
                     >
                       {p.icon} {p.label}
                     </button>
@@ -1373,11 +1411,10 @@ export default function MedsClientView({
                             type="button"
                             onClick={() => toggleDay(day.id)}
                             style={isSelected ? orangeGradient : undefined}
-                            className={`w-9 h-9 rounded-xl text-xs font-bold transition-all cursor-pointer flex items-center justify-center ${
-                              isSelected
-                                ? 'text-white shadow-md'
-                                : 'bg-neutral-800/60 text-neutral-400 hover:text-white border border-neutral-700/40'
-                            }`}
+                            className={`w-9 h-9 rounded-xl text-xs font-bold transition-all cursor-pointer flex items-center justify-center ${isSelected
+                              ? 'text-white shadow-md'
+                              : 'bg-neutral-800/60 text-neutral-400 hover:text-white border border-neutral-700/40'
+                              }`}
                           >
                             {day.label}
                           </button>
