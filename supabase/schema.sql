@@ -184,6 +184,25 @@ create table dose_logs (
   primary key (medication_id, day, time)
 );
 
+create table lunch_menus (
+  id uuid primary key default gen_random_uuid(),
+  family_id uuid not null references families on delete cascade,
+  day_of_week smallint not null check (day_of_week between 1 and 7),
+  week_start date not null,
+  main_dish text not null,
+  starter text,
+  dessert text,
+  drink text,
+  cook_name text,
+  notes text,
+  ingredients text[] default '{}',
+  done boolean not null default false,
+  created_at timestamptz not null default now(),
+  constraint lunch_menus_family_day_week_unique unique (family_id, day_of_week, week_start)
+);
+create index on lunch_menus (family_id, week_start);
+create index on lunch_menus (family_id, day_of_week);
+
 -- Registro de actividad (no incluye medicamentos)
 create table activity_log (
   id bigint generated always as identity primary key,
@@ -200,7 +219,7 @@ create index on activity_log (family_id, created_at);
 do $$
 declare t text;
 begin
-  foreach t in array array['shopping_items','todos','todo_categories','school_tests','school_homework','medications','dose_logs'] loop
+  foreach t in array array['shopping_items','todos','todo_categories','school_tests','school_homework','medications','dose_logs','lunch_menus'] loop
     execute format('alter table %I enable row level security', t);
     execute format('create policy "ver" on %I for select using (is_member(family_id))', t);
     execute format('create policy "editar" on %I for all using (can_edit(family_id)) with check (can_edit(family_id))', t);

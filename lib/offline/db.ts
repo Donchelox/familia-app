@@ -6,13 +6,14 @@ import type {
   LocalShoppingItem,
   LocalTodo,
   LocalTodoCategory,
+  LocalLunchMenu,
   SyncQueueItem,
 } from './types'
 
 /**
  * Base de datos local IndexedDB para Casa App utilizando Dexie.js
  * Capa de persistencia Offline-First para medicamentos, tareas escolares,
- * exámenes, listas de compras, quehaceres del hogar, categorías y la cola transaccional de sincronización.
+ * exámenes, listas de compras, quehaceres del hogar, categorías, minutas de almuerzo y la cola transaccional de sincronización.
  */
 export class CasaOfflineDatabase extends Dexie {
   medicines!: Table<LocalMedicine, string>

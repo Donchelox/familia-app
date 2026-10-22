@@ -246,6 +246,15 @@ class SyncManager {
 
                 if (upsertErr) {
                   if (
+                    upsertErr.code === 'PGRST205' ||
+                    upsertErr.code === '42P01' ||
+                    upsertErr.message?.includes('Could not find the table')
+                  ) {
+                    // La tabla no existe aún en Supabase; mantenemos persistencia local en Dexie
+                    error = null
+                    break
+                  }
+                  if (
                     upsertErr.code === 'PGRST204' ||
                     upsertErr.code === '42703' ||
                     upsertErr.message?.includes('schema cache') ||
@@ -280,6 +289,15 @@ class SyncManager {
                 .upsert(currentPayload, { onConflict: 'id' })
 
               if (upsertErr) {
+                if (
+                  upsertErr.code === 'PGRST205' ||
+                  upsertErr.code === '42P01' ||
+                  upsertErr.message?.includes('Could not find the table')
+                ) {
+                  // La tabla no existe aún en Supabase; mantenemos persistencia local en Dexie
+                  error = null
+                  break
+                }
                 if (
                   upsertErr.code === 'PGRST204' ||
                   upsertErr.code === '42703' ||

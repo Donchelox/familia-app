@@ -29,6 +29,25 @@ export const addDaysStr = (baseDay: string, daysToAdd: number) => {
   return d.toISOString().split('T')[0]
 }
 
+/** Obtiene el lunes (YYYY-MM-DD) de la semana para una fecha dada */
+export const getWeekMonday = (d?: string) => {
+  const base = d || todayStr()
+  const dayNum = weekday(base) // 1: lunes ... 7: domingo
+  return addDaysStr(base, -(dayNum - 1))
+}
+
+/** Formatea rango de semana: ej. "19 al 25 de oct." */
+export const formatWeekRange = (mondayStr: string) => {
+  const clean = mondayStr.includes('T') ? mondayStr.split('T')[0] : mondayStr
+  const sundayStr = addDaysStr(clean, 6)
+  const dMon = new Date(clean + 'T12:00:00Z')
+  const dSun = new Date(sundayStr + 'T12:00:00Z')
+  const dayMon = dMon.getUTCDate()
+  const daySun = dSun.getUTCDate()
+  const monthSun = dSun.toLocaleDateString('es-CL', { month: 'short', timeZone: 'UTC' })
+  return `${dayMon} al ${daySun} de ${monthSun}`
+}
+
 /**
  * Determina si una prueba escolar debe mostrarse en el listado según la regla:
  * - Si su fecha es anterior a hoy: no debe mostrarse (ya pasó).

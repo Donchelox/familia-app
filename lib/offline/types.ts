@@ -148,3 +148,25 @@ export interface LocalTodoCategory {
   _updated_at?: number
 }
 
+/**
+ * Entidad local: Minuta de Almuerzo semanal
+ */
+export interface LocalLunchMenu {
+  id: string
+  family_id: string
+  day_of_week: number // 1: Lunes ... 7: Domingo
+  week_start: string // YYYY-MM-DD del lunes de la semana correspondiente
+  main_dish: string // Plato de fondo principal
+  starter?: string | null // Entrada / Ensalada / Sopa
+  dessert?: string | null // Postre
+  drink?: string | null // Bebida o jugo
+  cook_name?: string | null // Quién cocina / asignado
+  notes?: string | null // Notas adicionales
+  ingredients?: string[] | null // Ingredientes necesarios
+  done?: boolean // Almuerzo preparado / servido
+  created_at?: string
+  _synced?: boolean
+  _updated_at?: number
+}
+
+
