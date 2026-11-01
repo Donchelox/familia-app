@@ -86,9 +86,9 @@ export async function fetchMorningSummary(
       // 4. Tareas escolares que vencen hoy o pendientes
       supabase
         .from('school_homework')
-        .select('id, subject, title, due_date, done')
+        .select('id, subject, task, due_date, due, done')
         .eq('family_id', familyId)
-        .eq('due_date', day),
+        .or(`due_date.eq.${day},due.eq.${day}`),
 
       // 5. Quehaceres / Tareas del hogar pendientes
       supabase
@@ -155,11 +155,11 @@ export async function fetchMorningSummary(
 
   // Tareas escolares del día
   const homeworkToday: SummaryHomeworkItem[] = (homeworkRes.data ?? []).map(
-    (h) => ({
+    (h: any) => ({
       id: h.id,
       subject: h.subject,
-      title: h.title,
-      dueDate: h.due_date,
+      title: h.task || h.title || 'Tarea escolar',
+      dueDate: h.due_date || h.due || day,
       done: Boolean(h.done),
     })
   )

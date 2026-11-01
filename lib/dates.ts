@@ -36,7 +36,24 @@ export const getWeekMonday = (d?: string) => {
   return addDaysStr(base, -(dayNum - 1))
 }
 
-/** Formatea rango de semana: ej. "19 al 25 de oct." */
+/**
+ * Obtiene el lunes base de planificación para minutas (YYYY-MM-DD).
+ * Regla: Las minutas se planifican para las semanas siguientes, no para las pasadas.
+ * - Si hoy es domingo (día 7), la semana actual culmina hoy; la semana a planificar
+ *   arranca el lunes siguiente (ej: 1 de nov -> semana del 2 al 8 de nov).
+ * - En los demás días (lunes a sábado), la semana base es la semana en curso (getWeekMonday).
+ */
+export const getMinutasPlanningMonday = (d?: string) => {
+  const base = d || todayStr()
+  const dayNum = weekday(base) // 1: lunes ... 7: domingo
+  const currentMon = getWeekMonday(base)
+  if (dayNum === 7) {
+    return addDaysStr(currentMon, 7)
+  }
+  return currentMon
+}
+
+/** Formatea rango de semana: ej. "2 al 8 de nov." o "26 de oct. al 1 de nov." */
 export const formatWeekRange = (mondayStr: string) => {
   const clean = mondayStr.includes('T') ? mondayStr.split('T')[0] : mondayStr
   const sundayStr = addDaysStr(clean, 6)
@@ -44,7 +61,11 @@ export const formatWeekRange = (mondayStr: string) => {
   const dSun = new Date(sundayStr + 'T12:00:00Z')
   const dayMon = dMon.getUTCDate()
   const daySun = dSun.getUTCDate()
+  const monthMon = dMon.toLocaleDateString('es-CL', { month: 'short', timeZone: 'UTC' })
   const monthSun = dSun.toLocaleDateString('es-CL', { month: 'short', timeZone: 'UTC' })
+  if (monthMon !== monthSun) {
+    return `${dayMon} de ${monthMon} al ${daySun} de ${monthSun}`
+  }
   return `${dayMon} al ${daySun} de ${monthSun}`
 }
 

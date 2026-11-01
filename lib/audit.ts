@@ -4,7 +4,7 @@ import { SupabaseClient } from '@supabase/supabase-js'
 export interface AuditPayload {
   familyId: string
   actorName?: string
-  entity: 'medication' | 'dose' | 'todo' | 'shopping' | 'school_test' | 'school_homework' | 'school_schedule' | 'member'
+  entity: 'medication' | 'dose' | 'todo' | 'shopping' | 'school_test' | 'school_homework' | 'school_schedule' | 'member' | 'lunch_menu'
   entityId?: string
   action: 'create' | 'update' | 'delete' | 'toggle'
   title: string
@@ -30,6 +30,8 @@ export async function recordActivity(supabase: SupabaseClient, payload: AuditPay
       moduleName = 'Tareas'
     } else if (payload.entity === 'member') {
       moduleName = 'Familia'
+    } else if (payload.entity === 'lunch_menu') {
+      moduleName = 'Minutas'
     }
 
     let actionName = payload.action as string

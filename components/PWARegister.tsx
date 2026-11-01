@@ -75,6 +75,18 @@ export default function PWARegister() {
       }
     }
 
+    if (process.env.NODE_ENV === 'development') {
+      // En desarrollo local desregistramos cualquier SW previo para evitar conflictos con HMR y Webpack
+      navigator.serviceWorker.getRegistrations().then((regs) => {
+        for (const reg of regs) {
+          reg.unregister()
+        }
+      })
+      return () => {
+        window.removeEventListener('online', handleOnline)
+      }
+    }
+
     const registerSW = async () => {
       try {
         const registration = await navigator.serviceWorker.register('/sw.js', {

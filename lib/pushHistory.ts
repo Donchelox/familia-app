@@ -115,12 +115,20 @@ export function onHistoryChange(cb: () => void): () => void {
   const onVisible = () => {
     if (document.visibilityState === 'visible') cb()
   }
-  navigator.serviceWorker?.addEventListener('message', onMessage)
-  window.addEventListener('focus', cb)
-  document.addEventListener('visibilitychange', onVisible)
+  if (typeof window !== 'undefined' && 'serviceWorker' in navigator) {
+    navigator.serviceWorker.addEventListener('message', onMessage)
+  }
+  if (typeof window !== 'undefined') {
+    window.addEventListener('focus', cb)
+    document.addEventListener('visibilitychange', onVisible)
+  }
   return () => {
-    navigator.serviceWorker?.removeEventListener('message', onMessage)
-    window.removeEventListener('focus', cb)
-    document.removeEventListener('visibilitychange', onVisible)
+    if (typeof window !== 'undefined' && 'serviceWorker' in navigator) {
+      navigator.serviceWorker.removeEventListener('message', onMessage)
+    }
+    if (typeof window !== 'undefined') {
+      window.removeEventListener('focus', cb)
+      document.removeEventListener('visibilitychange', onVisible)
+    }
   }
 }

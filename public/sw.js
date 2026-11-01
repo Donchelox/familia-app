@@ -3,7 +3,7 @@
  * Soporte Offline-First (PWA), Caching de App Shell, RSC Flight Streams, Background Sync y Push
  */
 
-const CACHE_VERSION = 'casa-pwa-v5.1'
+const CACHE_VERSION = 'casa-pwa-v5.2'
 const STATIC_CACHE = `${CACHE_VERSION}-static`
 const DYNAMIC_CACHE = `${CACHE_VERSION}-dynamic`
 const APP_SHELL_CACHE = `${CACHE_VERSION}-shell`
@@ -157,13 +157,18 @@ self.addEventListener('fetch', (event) => {
     return
   }
 
-  // Ignorar endpoints de API, métodos no GET y herramientas de dev HMR (Bypass total para /api)
+  // Ignorar peticiones de desarrollo local para evitar conflictos con HMR y Webpack chunks
+  const isDevHost = url.hostname === 'localhost' || url.hostname === '127.0.0.1'
+
+  // Ignorar endpoints de API, métodos no GET y herramientas de dev HMR (Bypass total)
   if (
     request.method !== 'GET' ||
     url.pathname === '/api' ||
     url.pathname.startsWith('/api/') ||
     url.pathname.startsWith('/_next/webpack-hmr') ||
-    url.pathname.startsWith('/__nextjs')
+    url.pathname.startsWith('/__nextjs') ||
+    url.searchParams.has('v') ||
+    (isDevHost && url.pathname.startsWith('/_next/'))
   ) {
     return
   }
@@ -341,7 +346,7 @@ self.addEventListener('fetch', (event) => {
             if (anyCss) return anyCss
           }
 
-          return response
+          return response || new Response('/* Offline fallback */', { headers: { 'Content-Type': 'text/css' } })
         })
         .catch(async () => {
           // En modo offline: recuperar CSS de la caché
@@ -368,18 +373,41 @@ self.addEventListener('fetch', (event) => {
   // ESTRATEGIA C: JAVASCRIPT CHUNKS (_next/static/chunks/)
   if (url.pathname.startsWith('/_next/static/chunks/') || request.destination === 'script') {
     event.respondWith(
-      caches.match(request).then((cachedResponse) => {
-        const fetchPromise = fetch(request)
-          .then((networkResponse) => {
-            if (networkResponse && networkResponse.status === 200) {
-              const clone = networkResponse.clone()
-              caches.open(STATIC_CACHE).then((cache) => cache.put(request, clone))
-            }
-            return networkResponse
-          })
-          .catch(() => cachedResponse)
+      caches.match(request).then(async (cachedResponse) => {
+        if (cachedResponse) {
+          // Si está en caché, responder de inmediato y revalidar en segundo plano
+          fetch(request)
+            .then((networkResponse) => {
+              if (networkResponse && networkResponse.status === 200) {
+                const clone = networkResponse.clone()
+                caches.open(STATIC_CACHE).then((cache) => cache.put(request, clone))
+              }
+            })
+            .catch(() => {})
+          return cachedResponse
+        }
 
-        return cachedResponse || fetchPromise
+        // Si no está en caché, intentar obtenerlo de la red
+        try {
+          const networkResponse = await fetch(request)
+          if (networkResponse && networkResponse.status === 200) {
+            const clone = networkResponse.clone()
+            const cache = await caches.open(STATIC_CACHE)
+            await cache.put(request, clone)
+          }
+          return networkResponse
+        } catch (err) {
+          // Si falla la red (offline), intentar coincidencia ignorando query params
+          const matchNoSearch = await caches.match(url.pathname, { ignoreSearch: true })
+          if (matchNoSearch) return matchNoSearch
+
+          // Garantizar que NUNCA se devuelva undefined porque event.respondWith lanza TypeError
+          return new Response('/* Chunk offline no disponible */', {
+            status: 503,
+            statusText: 'Service Unavailable',
+            headers: { 'Content-Type': 'application/javascript; charset=utf-8' },
+          })
+        }
       })
     )
     return

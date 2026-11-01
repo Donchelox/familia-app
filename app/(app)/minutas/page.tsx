@@ -13,6 +13,7 @@ import {
   todayStr,
   weekday,
   getWeekMonday,
+  getMinutasPlanningMonday,
   addDaysStr,
   formatWeekRange,
   fmtDate,
@@ -153,14 +154,22 @@ export default function MinutasPage() {
   const supabase = createClient()
   const { mutate } = useOfflineMutation()
 
-  // Semana seleccionada (lunes YYYY-MM-DD)
-  const currentMonday = useMemo(() => getWeekMonday(), [])
-  const [selectedMonday, setSelectedMonday] = useState<string>(currentMonday)
+  // Semana seleccionada (lunes YYYY-MM-DD): arranca en la semana de planificación (sin semanas pasadas)
+  const minPlanningMonday = useMemo(() => getMinutasPlanningMonday(), [])
+  const [selectedMonday, setSelectedMonday] = useState<string>(minPlanningMonday)
 
   // Día activo (1: Lunes ... 7: Domingo)
   const todayDateStr = todayStr()
   const todayDayNum = weekday(todayDateStr) // 1 a 7
-  const [selectedDayNum, setSelectedDayNum] = useState<number>(todayDayNum)
+  const initialDayNum = useMemo(() => {
+    const minMon = getMinutasPlanningMonday()
+    const today = todayStr()
+    if (today >= minMon && today <= addDaysStr(minMon, 6)) {
+      return weekday(today)
+    }
+    return 1
+  }, [])
+  const [selectedDayNum, setSelectedDayNum] = useState<number>(initialDayNum)
 
   // Modo de vista: 'day' (Día a Día) | 'week' (Semana Completa)
   const [viewMode, setViewMode] = useState<'day' | 'week'>('day')
@@ -314,8 +323,11 @@ export default function MinutasPage() {
   // Total de días planificados en la semana
   const plannedCount = menus.length
 
-  // Navegación de semanas
+  // Navegación de semanas (bloquea el retroceso a semanas pasadas)
+  const isAtMinWeek = selectedMonday <= minPlanningMonday
+
   function goToPreviousWeek() {
+    if (isAtMinWeek) return
     setSelectedMonday((prev) => addDaysStr(prev, -7))
   }
 
@@ -324,11 +336,11 @@ export default function MinutasPage() {
   }
 
   function goToCurrentWeek() {
-    setSelectedMonday(currentMonday)
-    setSelectedDayNum(todayDayNum)
+    setSelectedMonday(minPlanningMonday)
+    setSelectedDayNum(initialDayNum)
   }
 
-  const isCurrentWeek = selectedMonday === currentMonday
+  const isCurrentWeek = selectedMonday === minPlanningMonday
 
   // Abrir modal de edición/creación
   const openEditModal = useCallback((dayNum: number) => {
@@ -660,8 +672,13 @@ export default function MinutasPage() {
           <button
             type="button"
             onClick={goToPreviousWeek}
-            title="Semana anterior"
-            className="w-9 h-9 rounded-xl bg-neutral-900 border border-neutral-800 flex items-center justify-center text-neutral-300 hover:text-white hover:border-neutral-700 active:scale-95 transition-all cursor-pointer"
+            disabled={isAtMinWeek}
+            title={isAtMinWeek ? 'No se puede navegar a semanas pasadas' : 'Semana anterior'}
+            className={`w-9 h-9 rounded-xl border flex items-center justify-center transition-all ${
+              isAtMinWeek
+                ? 'border-neutral-800/50 bg-neutral-900/40 text-neutral-600 opacity-40 cursor-not-allowed'
+                : 'border-neutral-800 bg-neutral-900 text-neutral-300 hover:text-white hover:border-neutral-700 active:scale-95 cursor-pointer'
+            }`}
           >
             <svg className="w-5 h-5 stroke-current stroke-2 fill-none" viewBox="0 0 24 24">
               <path strokeLinecap="round" strokeLinejoin="round" d="M15 19l-7-7 7-7" />

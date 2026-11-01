@@ -4,7 +4,7 @@ import { syncManager } from './syncManager'
 import { saveOfflineFamilyId } from './familyContext'
 import { offlineDB } from './db'
 
-export const CACHE_VERSION = 'casa-pwa-v5.0'
+export const CACHE_VERSION = 'casa-pwa-v5.2'
 export const APP_SHELL_CACHE = `${CACHE_VERSION}-shell`
 export const STATIC_CACHE = `${CACHE_VERSION}-static`
 
@@ -121,11 +121,18 @@ export async function purgeAllUserDataAndCache(): Promise<void> {
     console.debug('[PurgeCache] Error limpiando Dexie:', err)
   }
 
-  // 2. Limpiar LocalStorage y SessionStorage
+  // 2. Limpiar LocalStorage y SessionStorage (preservando credenciales de auth para no interrumpir flujos OTP)
   try {
     if (typeof window !== 'undefined') {
-      localStorage.clear()
       sessionStorage.clear()
+      const keysToRemove: string[] = []
+      for (let i = 0; i < localStorage.length; i++) {
+        const key = localStorage.key(i)
+        if (key && !key.startsWith('sb-') && !key.includes('auth')) {
+          keysToRemove.push(key)
+        }
+      }
+      keysToRemove.forEach((k) => localStorage.removeItem(k))
     }
   } catch (err) {
     console.debug('[PurgeCache] Error limpiando Storage:', err)

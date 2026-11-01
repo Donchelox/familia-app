@@ -13,6 +13,7 @@ import {
   isMedicationScheduledForDay,
   weekday,
   getWeekMonday,
+  getMinutasPlanningMonday,
 } from '@/lib/dates'
 import NotificationBell from '@/components/NotificationBell'
 import SyncStatusBadge from '@/components/SyncStatusBadge'
@@ -72,7 +73,7 @@ export default async function Inicio() {
       .from('lunch_menus')
       .select('id, day_of_week, week_start, main_dish, cook_name, done')
       .eq('family_id', familyId)
-      .eq('week_start', getWeekMonday(today)),
+      .in('week_start', [getWeekMonday(today), getMinutasPlanningMonday(today)]),
   ])
 
   // 1. OBTENCIÓN DEL NOMBRE Y AVATAR PERSONAL
@@ -312,12 +313,18 @@ export default async function Inicio() {
   }
 
   // F) Minutas de almuerzo de hoy (si está planificado)
-  const currentWeekMenus = (lunchMenusRes.data ?? []).filter(
-    (m: any) => m.main_dish && m.main_dish.trim().length > 0
+  const planningMonday = getMinutasPlanningMonday(today)
+  const planningWeekMenus = (lunchMenusRes.data ?? []).filter(
+    (m: any) => m.week_start === planningMonday && m.main_dish && m.main_dish.trim().length > 0
   )
-  const minutasCount = currentWeekMenus.length
+  const minutasCount = planningWeekMenus.length
 
-  const todayLunch = currentWeekMenus.find((m: any) => m.day_of_week === currentIsoDay)
+  const todayLunch = (lunchMenusRes.data ?? []).find(
+    (m: any) =>
+      m.day_of_week === currentIsoDay &&
+      m.main_dish &&
+      (m.week_start === getWeekMonday(today) || m.week_start === planningMonday)
+  )
   if (todayLunch && todayLunch.main_dish) {
     rawEvents.push({
       id: `lunch-${todayLunch.id || today}`,
