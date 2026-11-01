@@ -11,7 +11,7 @@ import { useActionParam } from '@/lib/useActionParam'
 import { offlineDB } from '@/lib/offline/db'
 import { useOfflineMutation } from '@/lib/offline/useOfflineMutation'
 
-import { getOfflineFamilyId, saveOfflineFamilyId } from '@/lib/offline/familyContext'
+import { getOfflineFamilyId, saveOfflineFamilyId, getStoredFamilyIdSync } from '@/lib/offline/familyContext'
 import { safeUUID } from '@/lib/uuid'
 
 interface ShoppingItem {
@@ -124,7 +124,7 @@ export default function SuperPage() {
 
   const [items, setItems] = useState<ShoppingItem[]>([])
   const [loading, setLoading] = useState(true)
-  const [familyId, setFamilyId] = useState<string>('')
+  const [familyId, setFamilyId] = useState<string>(() => getStoredFamilyIdSync())
   const [selectedCategory, setSelectedCategory] = useState<string>('Todos')
   const [filterType, setFilterType] = useState<'all' | 'recurring' | 'sporadic'>('all')
 
@@ -246,15 +246,20 @@ export default function SuperPage() {
       })
   }
 
-  async function loadItems() {
-    setLoading(true)
+  async function loadItems(isSilent = false) {
+    if (!isSilent && items.length === 0) {
+      setLoading(true)
+    }
 
     // 1. Cargar de inmediato desde Dexie (persistencia offline sin latencia de red)
+    let currentFamId = familyId || getStoredFamilyIdSync()
     try {
-      let currentFamId = familyId
       if (!currentFamId) {
-        currentFamId = await getOfflineFamilyId()
-        if (currentFamId) setFamilyId(currentFamId)
+        currentFamId = (await getOfflineFamilyId()) || ''
+        if (currentFamId) {
+          setFamilyId(currentFamId)
+          saveOfflineFamilyId(currentFamId)
+        }
       }
 
       const localData = currentFamId
@@ -271,7 +276,6 @@ export default function SuperPage() {
           const isRec = Boolean(i.is_recurring)
           const interval = i.recurrence_interval_days || 7
 
-          // Si es recurrente, estaba comprado pero ya está dentro de 2 o 1 día antes del ciclo, reactivarlo a pendientes
           if (isRec && i.done && i.done_at) {
             const daysBefore = interval >= 3 ? 2 : (interval === 2 ? 1 : 0)
             const daysThreshold = interval - daysBefore
@@ -307,7 +311,6 @@ export default function SuperPage() {
         }
         setLoading(false)
 
-        // Sincronizar reactivaciones locales a Dexie
         if (reactivatedItems.length > 0) {
           reactivatedItems.forEach((it) => {
             mutate({
@@ -337,23 +340,30 @@ export default function SuperPage() {
     // 2. Si hay conexión, descargar de Supabase y sincronizar caché local Dexie
     if (typeof navigator !== 'undefined' && navigator.onLine) {
       try {
-        let currentFamId = familyId
-        if (!currentFamId) {
-          try {
-            const { data: memberData } = await supabase
-              .from('members')
-              .select('family_id')
-              .limit(1)
-              .maybeSingle()
-            if (memberData?.family_id) {
-              currentFamId = memberData.family_id
-              setFamilyId(memberData.family_id)
-              saveOfflineFamilyId(memberData.family_id)
+        // Asegurar que la sesión de usuario esté lista antes de consultar
+        let userAuthed = false
+        try {
+          const { data: { session } } = await supabase.auth.getSession()
+          if (session?.user) {
+            userAuthed = true
+            if (!currentFamId) {
+              const { data: memberData } = await supabase
+                .from('members')
+                .select('family_id')
+                .eq('user_id', session.user.id)
+                .limit(1)
+                .maybeSingle()
+              if (memberData?.family_id) {
+                currentFamId = memberData.family_id
+                setFamilyId(memberData.family_id)
+                saveOfflineFamilyId(memberData.family_id)
+              }
             }
-          } catch {}
-        }
+          }
+        } catch {}
+
         if (!currentFamId) {
-          currentFamId = await getOfflineFamilyId()
+          currentFamId = (await getOfflineFamilyId()) || ''
           if (currentFamId) {
             setFamilyId(currentFamId)
             saveOfflineFamilyId(currentFamId)
@@ -369,21 +379,19 @@ export default function SuperPage() {
           query = query.eq('family_id', currentFamId)
         }
 
-        const timeoutPromise = new Promise<{ data: any[]; error: any }>((_, reject) =>
-          setTimeout(() => reject(new Error('Timeout de consulta remota')), 6000)
+        // Timeout seguro que nunca rechaza ni interrumpe la carga
+        const timeoutPromise = new Promise<{ data: null; error: any }>((resolve) =>
+          setTimeout(() => resolve({ data: null, error: new Error('Timeout de consulta remota') }), 5000)
         )
 
         const { data, error } = await Promise.race([query, timeoutPromise])
 
-        if (error) throw error
-
-        if (data) {
+        if (data && Array.isArray(data)) {
           const superOnly = data.filter((item: any) => {
             const listVal = (item.list || item.location || '').toLowerCase()
             return listVal !== 'feria'
           })
 
-          // Preservar elementos locales no sincronizados aún
           const currentLocal = currentFamId
             ? await offlineDB.shopping_lists.where('family_id').equals(currentFamId).toArray()
             : await offlineDB.shopping_lists.toArray()
@@ -408,7 +416,6 @@ export default function SuperPage() {
               let isDone = rem.done || false
               let doneAt = rem.done_at
 
-              // Auto-reactivación: vuelve a pendientes 2 o 1 día antes de la fecha recurrente
               if (isRec && isDone && doneAt) {
                 const daysBefore = interval >= 3 ? 2 : (interval === 2 ? 1 : 0)
                 const daysThreshold = interval - daysBefore
@@ -437,13 +444,15 @@ export default function SuperPage() {
             saveOfflineFamilyId(data[0].family_id)
           }
 
-          // Eliminar de Dexie los que ya no están en Supabase
-          const remoteIds = new Set(superOnly.map((r: any) => r.id))
-          const toDelete = currentLocal
-            .filter((l) => l.list !== 'feria' && l._synced && !remoteIds.has(l.id))
-            .map((l) => l.id)
-          if (toDelete.length > 0) {
-            await offlineDB.shopping_lists.bulkDelete(toDelete)
+          // Solo eliminar de Dexie elementos sincronizados obsoletos si tenemos family_id confirmado y autenticado
+          if (currentFamId && (superOnly.length > 0 || userAuthed)) {
+            const remoteIds = new Set(superOnly.map((r: any) => r.id))
+            const toDelete = currentLocal
+              .filter((l) => l.list !== 'feria' && l._synced && !remoteIds.has(l.id))
+              .map((l) => l.id)
+            if (toDelete.length > 0) {
+              await offlineDB.shopping_lists.bulkDelete(toDelete)
+            }
           }
 
           // Actualizar base de datos local Dexie preservando pendientes
@@ -479,10 +488,10 @@ export default function SuperPage() {
   }
 
   useEffect(() => {
-    loadItems()
+    loadItems(false)
 
     function handleSync() {
-      loadItems()
+      loadItems(true)
     }
     window.addEventListener('casa-sync-complete', handleSync)
     window.addEventListener('online', handleSync)

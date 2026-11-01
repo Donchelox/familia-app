@@ -67,13 +67,41 @@ async function claimPendingInvites(supabase: any, user: { id: string; email?: st
         // Eliminar la invitación
         await admin.from('invites').delete().eq('id', invite.id)
 
-        // Vincular user_id en family_members si hay un registro de adulto
-        await admin
+        // Vincular user_id en family_members de forma segura y unívoca
+        // 1. Priorizar coincidencia de nombre
+        const { data: matchedByName } = await admin
           .from('family_members')
-          .update({ user_id: user.id })
+          .select('id')
           .eq('family_id', invite.family_id)
           .is('user_id', null)
-          .eq('type', 'adult')
+          .ilike('name', displayName)
+          .limit(1)
+          .maybeSingle()
+
+        if (matchedByName) {
+          await admin
+            .from('family_members')
+            .update({ user_id: user.id })
+            .eq('id', matchedByName.id)
+        } else {
+          // 2. Si no coincide el nombre, vincular a lo sumo a una sola ficha de adulto sin asignar
+          const { data: singleAdult } = await admin
+            .from('family_members')
+            .select('id')
+            .eq('family_id', invite.family_id)
+            .is('user_id', null)
+            .eq('type', 'adult')
+            .order('created_at', { ascending: true })
+            .limit(1)
+            .maybeSingle()
+
+          if (singleAdult) {
+            await admin
+              .from('family_members')
+              .update({ user_id: user.id })
+              .eq('id', singleAdult.id)
+          }
+        }
       }
     } catch (e) {
       console.error('Error en fallback de reclamo de invitación:', e)

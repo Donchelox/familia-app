@@ -10,7 +10,7 @@ import { createClient } from '@/lib/supabase/client'
 import { useActionParam } from '@/lib/useActionParam'
 import { offlineDB } from '@/lib/offline/db'
 import { useOfflineMutation } from '@/lib/offline/useOfflineMutation'
-import { getOfflineFamilyId, saveOfflineFamilyId } from '@/lib/offline/familyContext'
+import { getOfflineFamilyId, saveOfflineFamilyId, getStoredFamilyIdSync } from '@/lib/offline/familyContext'
 import { safeUUID, isValidUUID } from '@/lib/uuid'
 
 export interface TodoSubtask {
@@ -148,7 +148,7 @@ export default function TareasPage() {
   const [todos, setTodos] = useState<TodoItem[]>([])
   const [categories, setCategories] = useState<TodoCategoryItem[]>(DEFAULT_CATEGORIES)
   const [members, setMembers] = useState<FamilyMember[]>([])
-  const [familyId, setFamilyId] = useState<string | null>(null)
+  const [familyId, setFamilyId] = useState<string | null>(() => getStoredFamilyIdSync() || null)
   const [loading, setLoading] = useState(true)
 
   // Filtros y Búsqueda
@@ -246,8 +246,10 @@ export default function TareasPage() {
 
   const { mutate } = useOfflineMutation()
 
-  async function loadData() {
-    setLoading(true)
+  async function loadData(isSilent = false) {
+    if (!isSilent && todos.length === 0) {
+      setLoading(true)
+    }
 
     try {
       // 0. Cargar integrantes cacheados
@@ -277,10 +279,10 @@ export default function TareasPage() {
       } catch {}
 
       // 1. CARGA INMEDIATA DESDE DEXIE
-      let currentFamId = familyId
+      let currentFamId = familyId || getStoredFamilyIdSync()
       try {
         if (!currentFamId) {
-          currentFamId = await getOfflineFamilyId()
+          currentFamId = (await getOfflineFamilyId()) || ''
           if (currentFamId) setFamilyId(currentFamId)
         }
 
@@ -395,25 +397,40 @@ export default function TareasPage() {
       }
 
       if (typeof navigator !== 'undefined' && !navigator.onLine) {
+        setLoading(false)
         return
       }
 
-      // 2. Obtener family_id remoto
+      // 2. Obtener sesión y family_id remoto
+      let userAuthed = false
       try {
-        if (!currentFamId) {
-          const { data: memberUser } = await supabase
-            .from('members')
-            .select('family_id')
-            .limit(1)
-            .maybeSingle()
+        const { data: { session } } = await supabase.auth.getSession()
+        if (session?.user) {
+          userAuthed = true
+          if (!currentFamId) {
+            const { data: memberUser } = await supabase
+              .from('members')
+              .select('family_id')
+              .eq('user_id', session.user.id)
+              .limit(1)
+              .maybeSingle()
 
-          if (memberUser?.family_id) {
-            currentFamId = memberUser.family_id
-            setFamilyId(memberUser.family_id)
-            saveOfflineFamilyId(memberUser.family_id)
+            if (memberUser?.family_id) {
+              currentFamId = memberUser.family_id
+              setFamilyId(memberUser.family_id)
+              saveOfflineFamilyId(memberUser.family_id)
+            }
           }
         }
       } catch {}
+
+      if (!currentFamId) {
+        currentFamId = (await getOfflineFamilyId()) || ''
+        if (currentFamId) {
+          setFamilyId(currentFamId)
+          saveOfflineFamilyId(currentFamId)
+        }
+      }
 
       // 3. Cargar integrantes reales
       try {
@@ -425,8 +442,8 @@ export default function TareasPage() {
           .order('created_at', { ascending: true })
         if (currentFamId) fmQuery = fmQuery.eq('family_id', currentFamId)
 
-        const timeoutFm = new Promise<{ data: any[]; error: any }>((_, reject) =>
-          setTimeout(() => reject(new Error('Timeout de integrantes')), 5000)
+        const timeoutFm = new Promise<{ data: any[] | null; error: any }>((resolve) =>
+          setTimeout(() => resolve({ data: null, error: null }), 4000)
         )
         const { data: fmList } = await Promise.race([fmQuery, timeoutFm]).catch(() => ({ data: null }))
 
@@ -490,13 +507,13 @@ export default function TareasPage() {
           todosQuery = todosQuery.eq('family_id', currentFamId)
         }
 
-        const timeoutPromise = new Promise<{ data: any[]; error: any }>((_, reject) =>
-          setTimeout(() => reject(new Error('Timeout de consulta de tareas')), 6000)
+        const timeoutPromise = new Promise<{ data: null; error: any }>((resolve) =>
+          setTimeout(() => resolve({ data: null, error: new Error('Timeout de consulta de tareas') }), 5000)
         )
 
         const { data: todosRes } = await Promise.race([todosQuery, timeoutPromise]).catch(() => ({ data: null }))
 
-        if (todosRes) {
+        if (todosRes && Array.isArray(todosRes)) {
           const currentLocal = currentFamId
             ? await offlineDB.todos.where('family_id').equals(currentFamId).toArray()
             : await offlineDB.todos.toArray()
@@ -604,13 +621,16 @@ export default function TareasPage() {
           const mergedList = Array.from(mergedMap.values())
           setTodos(mergedList)
 
-          const remoteIds = new Set(todosRes.map((rem: any) => rem.id))
-          const toDelete = currentLocal
-            .filter((rem) => rem._synced && !remoteIds.has(rem.id))
-            .map((rem) => rem.id)
+          // Eliminar de Dexie tareas obsoletas solo si tenemos family_id confirmado y respuesta válida
+          if (currentFamId && (todosRes.length > 0 || userAuthed)) {
+            const remoteIds = new Set(todosRes.map((rem: any) => rem.id))
+            const toDelete = currentLocal
+              .filter((rem) => rem._synced && !remoteIds.has(rem.id))
+              .map((rem) => rem.id)
 
-          if (toDelete.length > 0) {
-            await offlineDB.todos.bulkDelete(toDelete)
+            if (toDelete.length > 0) {
+              await offlineDB.todos.bulkDelete(toDelete)
+            }
           }
 
           const toPut = mergedList.map((m) => ({
@@ -629,10 +649,10 @@ export default function TareasPage() {
   }
 
   useEffect(() => {
-    loadData()
+    loadData(false)
 
     function handleSyncComplete() {
-      loadData()
+      loadData(true)
     }
     window.addEventListener('casa-sync-complete', handleSyncComplete)
     window.addEventListener('online', handleSyncComplete)

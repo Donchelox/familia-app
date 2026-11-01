@@ -55,12 +55,18 @@ begin
   -- 4. Borrar las invitaciones ya reclamadas
   delete from invites where lower(trim(email)) = u_email;
 
-  -- 5. Si existe una ficha en family_members con ese nombre o en esa familia, vincular el user_id
-  update family_members fm
+  -- 5. Vincular user_id en family_members de forma unívoca (priorizando nombre exacto y a lo sumo 1 registro)
+  update family_members
   set user_id = u_id
-  where fm.user_id is null
-    and fm.family_id in (select family_id from members where user_id = u_id)
-    and (lower(trim(fm.name)) = lower(trim(u_name)) or fm.type = 'adult');
+  where id = (
+    select fm.id
+    from family_members fm
+    where fm.user_id is null
+      and fm.family_id in (select family_id from members where user_id = u_id)
+      and (lower(trim(fm.name)) = lower(trim(u_name)) or fm.type = 'adult')
+    order by (case when lower(trim(fm.name)) = lower(trim(u_name)) then 0 else 1 end), fm.created_at asc
+    limit 1
+  );
 
   return n;
 end $$;

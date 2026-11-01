@@ -9,13 +9,37 @@ function checkOrigin(req: Request): boolean {
   if (!origin) return false
   try {
     const originHost = new URL(origin).host.toLowerCase()
-    const forwardedHost = req.headers.get('x-forwarded-host')?.toLowerCase()
-    const hostHeader = req.headers.get('host')?.toLowerCase()
     const requestHost = new URL(req.url).host.toLowerCase()
 
-    if (forwardedHost && originHost === forwardedHost) return true
-    if (hostHeader && originHost === hostHeader) return true
+    // 1. Validar contra el host canónico configurado en el entorno
+    if (process.env.NEXT_PUBLIC_SITE_URL) {
+      try {
+        const canonicalHost = new URL(process.env.NEXT_PUBLIC_SITE_URL).host.toLowerCase()
+        if (originHost === canonicalHost) return true
+      } catch {}
+    }
+
+    // 2. Validar contra Vercel URL de despliegue si existe
+    if (process.env.VERCEL_URL) {
+      const vercelHost = process.env.VERCEL_URL.toLowerCase().replace(/^https?:\/\//, '')
+      if (originHost === vercelHost) return true
+    }
+
+    // 3. Validar contra el host resuelto por Next.js en la URL del request
     if (originHost === requestHost) return true
+
+    // 4. Permitir localhost en desarrollo
+    if (process.env.NODE_ENV !== 'production') {
+      if (originHost.startsWith('localhost:') || originHost === 'localhost' || originHost.startsWith('127.0.0.1')) {
+        return true
+      }
+    }
+
+    // 5. Si coincide con Host header, asegurar que coincida con requestHost o localhost
+    const hostHeader = req.headers.get('host')?.toLowerCase()
+    if (hostHeader && originHost === hostHeader && (hostHeader === requestHost || hostHeader.includes('localhost'))) {
+      return true
+    }
 
     return false
   } catch {

@@ -100,6 +100,43 @@ create index if not exists idx_school_homework_due_notification
   on school_homework (family_id, due_date, due_time, done);
 
 -- ---------------------------------------------------------------------
+-- 4.2 TABLA: school_schedule (Colegio - Horario de Clases y RLS)
+-- ---------------------------------------------------------------------
+create table if not exists school_schedule (
+  id uuid primary key default gen_random_uuid(),
+  family_id uuid not null references families(id) on delete cascade,
+  day smallint not null check (day between 1 and 7),
+  subject text not null,
+  time_start text not null,
+  time_end text not null,
+  teacher_initials text default null,
+  valid_until date default '2026-12-31',
+  created_at timestamptz not null default now()
+);
+
+create index if not exists idx_school_schedule_family_day
+  on school_schedule (family_id, day);
+
+alter table if exists school_schedule enable row level security;
+
+do $$
+begin
+  if not exists (
+    select 1 from pg_policies where schemaname = 'public' and tablename = 'school_schedule' and policyname = 'ver school_schedule'
+  ) then
+    create policy "ver school_schedule" on school_schedule
+      for select using (is_member(family_id));
+  end if;
+
+  if not exists (
+    select 1 from pg_policies where schemaname = 'public' and tablename = 'school_schedule' and policyname = 'editar school_schedule'
+  ) then
+    create policy "editar school_schedule" on school_schedule
+      for all using (can_edit(family_id)) with check (can_edit(family_id));
+  end if;
+end $$;
+
+-- ---------------------------------------------------------------------
 -- 5. TABLA: invites (Invitaciones a la Familia)
 -- ---------------------------------------------------------------------
 alter table if exists invites
@@ -219,12 +256,18 @@ begin
   where lower(trim(email)) = u_email
     and (expires_at is null or expires_at > now());
 
-  -- 5. Vincular user_id en family_members si existe registro previo
-  update family_members fm
+  -- 5. Vincular user_id en family_members de forma unívoca (priorizando coincidencia de nombre y a lo sumo 1 registro)
+  update family_members
   set user_id = u_id
-  where fm.user_id is null
-    and fm.family_id in (select family_id from members where user_id = u_id)
-    and (lower(trim(fm.name)) = lower(trim(u_name)) or fm.type = 'adult');
+  where id = (
+    select fm.id
+    from family_members fm
+    where fm.user_id is null
+      and fm.family_id in (select family_id from members where user_id = u_id)
+      and (lower(trim(fm.name)) = lower(trim(u_name)) or fm.type = 'adult')
+    order by (case when lower(trim(fm.name)) = lower(trim(u_name)) then 0 else 1 end), fm.created_at asc
+    limit 1
+  );
 
   return n;
 end $$;

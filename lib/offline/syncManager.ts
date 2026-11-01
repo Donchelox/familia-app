@@ -405,7 +405,7 @@ class SyncManager {
       const supabase = createClient()
 
       // Descargar datos en paralelo desde Supabase
-      const [medsRes, tasksRes, examsRes, shoppingRes, todosRes, membersRes, categoriesRes] = await Promise.all([
+      const [medsRes, tasksRes, examsRes, shoppingRes, todosRes, membersRes, categoriesRes, schedRes] = await Promise.all([
         supabase.from('medications').select('*').eq('family_id', familyId),
         supabase.from('school_homework').select('*').eq('family_id', familyId),
         supabase.from('school_tests').select('*').eq('family_id', familyId),
@@ -413,12 +413,18 @@ class SyncManager {
         supabase.from('todos').select('*').eq('family_id', familyId),
         supabase.from('family_members').select('id, name, user_id').eq('family_id', familyId),
         Promise.resolve(supabase.from('todo_categories').select('*').eq('family_id', familyId)).catch(() => ({ data: null })),
+        supabase.from('school_schedule').select('*').eq('family_id', familyId).order('time_start', { ascending: true }),
       ])
 
-      // Guardar lista de integrantes en cache local
-      if (membersRes.data && typeof window !== 'undefined') {
+      // Guardar lista de integrantes y horario en cache local
+      if (typeof window !== 'undefined') {
         try {
-          localStorage.setItem('casa_family_members', JSON.stringify(membersRes.data))
+          if (membersRes.data) {
+            localStorage.setItem('casa_family_members', JSON.stringify(membersRes.data))
+          }
+          if (schedRes?.data) {
+            localStorage.setItem('casa_school_schedule', JSON.stringify(schedRes.data))
+          }
         } catch {}
       }
 

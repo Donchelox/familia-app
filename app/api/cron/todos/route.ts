@@ -9,7 +9,9 @@ export const runtime = 'nodejs'
 
 function authorized(req: Request) {
   const secret = process.env.CRON_SECRET
-  if (!secret) return true // Permitir si no hay secreto configurado localmente
+  if (!secret) {
+    return process.env.NODE_ENV === 'development'
+  }
   const authHeader = req.headers.get('authorization') ?? ''
   const got = Buffer.from(authHeader)
   const want = Buffer.from(`Bearer ${secret}`)

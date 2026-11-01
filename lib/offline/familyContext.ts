@@ -15,6 +15,22 @@ export function saveOfflineFamilyId(familyId: string) {
 }
 
 /**
+ * Obtiene el familyId de forma síncrona desde localStorage para inicializar
+ * el estado de los componentes sin parpadeos ni esperas asíncronas.
+ */
+export function getStoredFamilyIdSync(): string {
+  if (typeof window !== 'undefined') {
+    try {
+      const fromStorage = localStorage.getItem('casa_family_id')
+      if (fromStorage && fromStorage.trim()) {
+        return fromStorage.trim()
+      }
+    } catch {}
+  }
+  return ''
+}
+
+/**
  * Obtiene el familyId de forma resiliente, buscando en localStorage,
  * en cualquiera de las tablas de Dexie, o devolviendo un ID seguro.
  */

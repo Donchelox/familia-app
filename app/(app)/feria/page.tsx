@@ -11,7 +11,7 @@ import { useActionParam } from '@/lib/useActionParam'
 import { offlineDB } from '@/lib/offline/db'
 import { useOfflineMutation } from '@/lib/offline/useOfflineMutation'
 
-import { getOfflineFamilyId, saveOfflineFamilyId } from '@/lib/offline/familyContext'
+import { getOfflineFamilyId, saveOfflineFamilyId, getStoredFamilyIdSync } from '@/lib/offline/familyContext'
 import { safeUUID } from '@/lib/uuid'
 
 interface FeriaItem {
@@ -59,7 +59,7 @@ export default function FeriaPage() {
 
   const [items, setItems] = useState<FeriaItem[]>([])
   const [loading, setLoading] = useState(true)
-  const [familyId, setFamilyId] = useState<string>('')
+  const [familyId, setFamilyId] = useState<string>(() => getStoredFamilyIdSync())
   const [filterType, setFilterType] = useState<'all' | 'recurring' | 'sporadic'>('all')
 
   // Estado del Bottom Sheet
@@ -147,16 +147,24 @@ export default function FeriaPage() {
       })
   }
 
-  async function loadItems() {
-    setLoading(true)
+  async function loadItems(isSilent = false) {
+    if (!isSilent && items.length === 0) {
+      setLoading(true)
+    }
 
     // 1. Cargar de inmediato desde Dexie (persistencia offline sin latencia de red)
+    let currentFamId = familyId || getStoredFamilyIdSync()
     try {
-      const fallbackFamId = await getOfflineFamilyId()
-      if (!familyId && fallbackFamId) setFamilyId(fallbackFamId)
+      if (!currentFamId) {
+        currentFamId = (await getOfflineFamilyId()) || ''
+        if (currentFamId) {
+          setFamilyId(currentFamId)
+          saveOfflineFamilyId(currentFamId)
+        }
+      }
 
-      const localData = fallbackFamId
-        ? await offlineDB.shopping_lists.where('family_id').equals(fallbackFamId).toArray()
+      const localData = currentFamId
+        ? await offlineDB.shopping_lists.where('family_id').equals(currentFamId).toArray()
         : await offlineDB.shopping_lists.toArray()
 
       const nowMs = Date.now()
@@ -169,7 +177,6 @@ export default function FeriaPage() {
           const interval = i.recurrence_interval_days || 7
           const qty = (i as any).quantity || '1 kg'
 
-          // Si es recurrente, estaba comprado pero ya está dentro de 2 o 1 día antes del ciclo, reactivarlo a pendientes
           if (isRec && i.done && i.done_at) {
             const daysBefore = interval >= 3 ? 2 : (interval === 2 ? 1 : 0)
             const daysThreshold = interval - daysBefore
@@ -199,20 +206,22 @@ export default function FeriaPage() {
 
       if (localFeria.length > 0) {
         setItems(localFeria)
-        if (localFeria[0].family_id && !familyId) setFamilyId(localFeria[0].family_id)
+        if (localFeria[0].family_id && !familyId) {
+          setFamilyId(localFeria[0].family_id)
+          saveOfflineFamilyId(localFeria[0].family_id)
+        }
         setLoading(false)
 
-        // Sincronizar reactivaciones locales a Dexie
         if (reactivatedItems.length > 0) {
           reactivatedItems.forEach((it) => {
             mutate({
-              familyId: it.family_id || fallbackFamId || '',
+              familyId: it.family_id || currentFamId || '',
               entity: 'shopping_lists',
               action: 'UPDATE',
               entityId: it.id,
               payload: {
                 id: it.id,
-                family_id: it.family_id || fallbackFamId,
+                family_id: it.family_id || currentFamId,
                 name: it.name,
                 quantity: it.quantity || '1 kg',
                 list: 'feria',
@@ -232,27 +241,33 @@ export default function FeriaPage() {
     // 2. Si hay conexión, descargar de Supabase y sincronizar caché local Dexie
     if (typeof navigator !== 'undefined' && navigator.onLine) {
       try {
-        let currentFamId = familyId
-        if (!currentFamId) {
-          try {
-            const { data: memberData } = await supabase
-              .from('members')
-              .select('family_id')
-              .limit(1)
-              .maybeSingle()
-            if (memberData?.family_id) {
-              currentFamId = memberData.family_id
-              setFamilyId(memberData.family_id)
-              saveOfflineFamilyId(memberData.family_id)
+        let userAuthed = false
+        try {
+          const { data: { session } } = await supabase.auth.getSession()
+          if (session?.user) {
+            userAuthed = true
+            if (!currentFamId) {
+              const { data: memberData } = await supabase
+                .from('members')
+                .select('family_id')
+                .eq('user_id', session.user.id)
+                .limit(1)
+                .maybeSingle()
+              if (memberData?.family_id) {
+                currentFamId = memberData.family_id
+                setFamilyId(memberData.family_id)
+                saveOfflineFamilyId(memberData.family_id)
+              }
             }
-          } catch {}
-        }
+          }
+        } catch {}
+
         if (!currentFamId) {
-          currentFamId = await getOfflineFamilyId()
-          if (currentFamId) setFamilyId(currentFamId)
-        }
-        if (currentFamId) {
-          saveOfflineFamilyId(currentFamId)
+          currentFamId = (await getOfflineFamilyId()) || ''
+          if (currentFamId) {
+            setFamilyId(currentFamId)
+            saveOfflineFamilyId(currentFamId)
+          }
         }
 
         let query = supabase
@@ -264,22 +279,22 @@ export default function FeriaPage() {
           query = query.eq('family_id', currentFamId)
         }
 
-        const timeoutPromise = new Promise<{ data: any[]; error: any }>((_, reject) =>
-          setTimeout(() => reject(new Error('Timeout de consulta remota')), 6000)
+        // Timeout seguro que nunca rechaza ni interrumpe la carga
+        const timeoutPromise = new Promise<{ data: null; error: any }>((resolve) =>
+          setTimeout(() => resolve({ data: null, error: new Error('Timeout de consulta remota') }), 5000)
         )
 
         const { data, error } = await Promise.race([query, timeoutPromise])
 
-        if (error) throw error
-
-        if (data) {
+        if (data && Array.isArray(data)) {
           const feriaOnly = data.filter((item: any) => {
             const listVal = (item.list || item.location || '').toLowerCase()
             return listVal === 'feria'
           })
 
-          // Preservar elementos locales de feria no sincronizados aún
-          const currentLocal = await offlineDB.shopping_lists.toArray()
+          const currentLocal = currentFamId
+            ? await offlineDB.shopping_lists.where('family_id').equals(currentFamId).toArray()
+            : await offlineDB.shopping_lists.toArray()
           const unsyncedFeria = currentLocal.filter((i) => i.list === 'feria' && !i._synced)
           const unsyncedMap = new Map(unsyncedFeria.map((i) => [i.id, i]))
 
@@ -301,7 +316,6 @@ export default function FeriaPage() {
               let isDone = rem.done || false
               let doneAt = rem.done_at
 
-              // Auto-reactivación: vuelve a pendientes 2 o 1 día antes de la fecha recurrente
               if (isRec && isDone && doneAt) {
                 const daysBefore = interval >= 3 ? 2 : (interval === 2 ? 1 : 0)
                 const daysThreshold = interval - daysBefore
@@ -330,13 +344,15 @@ export default function FeriaPage() {
             saveOfflineFamilyId(data[0].family_id)
           }
 
-          // Eliminar de Dexie los que ya no existen en el servidor
-          const remoteIds = new Set(feriaOnly.map((i: any) => i.id))
-          const staleIds = currentLocal
-            .filter((i) => i.list === 'feria' && i._synced && !remoteIds.has(i.id))
-            .map((i) => i.id)
-          if (staleIds.length > 0) {
-            await offlineDB.shopping_lists.bulkDelete(staleIds)
+          // Eliminar de Dexie los que ya no existen en el servidor solo si tenemos family_id y respuesta válida
+          if (currentFamId && (feriaOnly.length > 0 || userAuthed)) {
+            const remoteIds = new Set(feriaOnly.map((i: any) => i.id))
+            const staleIds = currentLocal
+              .filter((i) => i.list === 'feria' && i._synced && !remoteIds.has(i.id))
+              .map((i) => i.id)
+            if (staleIds.length > 0) {
+              await offlineDB.shopping_lists.bulkDelete(staleIds)
+            }
           }
 
           // Actualizar base de datos local Dexie preservando pendientes
@@ -372,10 +388,10 @@ export default function FeriaPage() {
   }
 
   useEffect(() => {
-    loadItems()
+    loadItems(false)
 
     function handleSync() {
-      loadItems()
+      loadItems(true)
     }
     window.addEventListener('casa-sync-complete', handleSync)
     window.addEventListener('online', handleSync)

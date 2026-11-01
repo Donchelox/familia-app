@@ -43,15 +43,29 @@ export async function POST(req: Request) {
   const message = body?.message || '¡Hola! ¿Cómo estás?'
   const url = body?.url || '/'
 
+  // En producción, bloquear difusión global no acotada para evitar broadcasting masivo accidental
+  if (process.env.NODE_ENV === 'production' && !body?.family_id) {
+    return NextResponse.json(
+      { error: 'En producción se requiere especificar un family_id para pruebas dirigidas' },
+      { status: 400 }
+    )
+  }
+
   const supabase = createClient(NEXT_PUBLIC_SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY, {
     auth: { persistSession: false, autoRefreshToken: false },
   })
   webpush.setVapidDetails(VAPID_SUBJECT, NEXT_PUBLIC_VAPID_PUBLIC_KEY, VAPID_PRIVATE_KEY)
 
-  // Obtener todas las suscripciones activas
-  const { data: subs, error: subsErr } = await supabase
+  // Obtener suscripciones activas (filtradas por family_id si se especificó)
+  let subsQuery = supabase
     .from('push_subscriptions')
     .select('id, family_id, endpoint, p256dh, auth')
+
+  if (body?.family_id) {
+    subsQuery = subsQuery.eq('family_id', body.family_id)
+  }
+
+  const { data: subs, error: subsErr } = await subsQuery
 
   if (subsErr) {
     return NextResponse.json({ error: 'Error al consultar suscripciones' }, { status: 500 })

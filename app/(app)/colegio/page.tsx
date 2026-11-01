@@ -12,7 +12,7 @@ import { translateErrorMessage } from '@/lib/formatErrors'
 import { isSchoolTestActive } from '@/lib/dates'
 import { offlineDB } from '@/lib/offline/db'
 import { useOfflineMutation } from '@/lib/offline/useOfflineMutation'
-import { getOfflineFamilyId, saveOfflineFamilyId } from '@/lib/offline/familyContext'
+import { getOfflineFamilyId, saveOfflineFamilyId, getStoredFamilyIdSync } from '@/lib/offline/familyContext'
 import { safeUUID } from '@/lib/uuid'
 
 interface SchoolScheduleBlock {
@@ -75,8 +75,16 @@ export default function ColegioPage() {
 
   const [tests, setTests] = useState<SchoolTest[]>([])
   const [homework, setHomework] = useState<SchoolHomework[]>([])
-  const [schedule, setSchedule] = useState<SchoolScheduleBlock[]>([])
-  const [familyId, setFamilyId] = useState<string | null>(null)
+  const [schedule, setSchedule] = useState<SchoolScheduleBlock[]>(() => {
+    if (typeof window !== 'undefined') {
+      try {
+        const cached = localStorage.getItem('casa_school_schedule')
+        if (cached) return JSON.parse(cached)
+      } catch {}
+    }
+    return []
+  })
+  const [familyId, setFamilyId] = useState<string | null>(() => getStoredFamilyIdSync() || null)
   const [loading, setLoading] = useState(true)
 
   const [selectedDay, setSelectedDay] = useState<string>(() => {
@@ -113,12 +121,31 @@ export default function ColegioPage() {
   }
 
   // Carga de datos
-  async function loadData() {
-    setLoading(true)
+  async function loadData(isSilent = false) {
+    if (!isSilent && schedule.length === 0 && tests.length === 0 && homework.length === 0) {
+      setLoading(true)
+    }
 
     try {
-      // 1. CARGA INMEDIATA DESDE DEXIE (OFFLINE-FIRST)
-      let currentFamId = familyId
+      // 1. CARGA INMEDIATA DESDE DEXIE (OFFLINE-FIRST) Y CACHÉ LOCAL
+      let currentFamId = familyId || getStoredFamilyIdSync()
+      if (currentFamId && !familyId) {
+        setFamilyId(currentFamId)
+      }
+
+      // Horario desde caché si el state está vacío
+      if (typeof window !== 'undefined' && schedule.length === 0) {
+        try {
+          const cached = localStorage.getItem('casa_school_schedule')
+          if (cached) {
+            const parsed = JSON.parse(cached)
+            if (Array.isArray(parsed) && parsed.length > 0) {
+              setSchedule(parsed)
+            }
+          }
+        } catch {}
+      }
+
       try {
         if (!currentFamId) {
           currentFamId = await getOfflineFamilyId()
@@ -165,7 +192,11 @@ export default function ColegioPage() {
           )
         }
 
-        if (localTasks.length > 0 || localExams.length > 0) {
+        if (
+          localTasks.length > 0 ||
+          localExams.length > 0 ||
+          (typeof window !== 'undefined' && localStorage.getItem('casa_school_schedule'))
+        ) {
           setLoading(false)
         }
       } catch (e) {
@@ -173,27 +204,32 @@ export default function ColegioPage() {
       }
 
       if (typeof navigator !== 'undefined' && !navigator.onLine) {
+        setLoading(false)
         return
       }
 
       // 2. Obtener family_id remoto si aún no se tiene
       try {
         if (!currentFamId) {
-          const { data: memberData } = await supabase
-            .from('members')
-            .select('family_id')
-            .limit(1)
-            .maybeSingle()
+          const { data: { session } } = await supabase.auth.getSession()
+          if (session?.user?.id) {
+            const { data: memberData } = await supabase
+              .from('members')
+              .select('family_id')
+              .eq('user_id', session.user.id)
+              .limit(1)
+              .maybeSingle()
 
-          if (memberData?.family_id) {
-            currentFamId = memberData.family_id
-            setFamilyId(memberData.family_id)
-            saveOfflineFamilyId(memberData.family_id)
+            if (memberData?.family_id) {
+              currentFamId = memberData.family_id
+              setFamilyId(memberData.family_id)
+              saveOfflineFamilyId(memberData.family_id)
+            }
           }
         }
       } catch {}
 
-      // 3. Sincronizar horario, pruebas y tareas escolares desde Supabase (con timeout)
+      // 3. Sincronizar horario, pruebas y tareas escolares desde Supabase (con timeout seguro)
       try {
         let schedQuery = supabase
           .from('school_schedule')
@@ -216,125 +252,140 @@ export default function ColegioPage() {
           hwQuery = hwQuery.eq('family_id', currentFamId)
         }
 
-        const timeoutPromise = new Promise<{ data: any[]; error: any }>((_, reject) =>
-          setTimeout(() => reject(new Error('Timeout de consulta escolar')), 6000)
+        const safeTimeout = new Promise<{ data: any[] | null; error: any }>((resolve) =>
+          setTimeout(() => resolve({ data: null, error: new Error('Timeout de consulta escolar') }), 5000)
         )
 
         const [schedRes, testsRes, hwRes] = await Promise.race([
           Promise.all([schedQuery, testsQuery, hwQuery]),
-          timeoutPromise as any,
+          Promise.all([safeTimeout, safeTimeout, safeTimeout]),
         ])
 
-        setSchedule(schedRes?.data ?? [])
-
-        // Manejo de pruebas remotas + pendientes locales
-        const rawTests: SchoolTest[] = testsRes?.data ?? []
-        const currentLocalExams = currentFamId
-          ? await offlineDB.exams.where('family_id').equals(currentFamId).toArray()
-          : await offlineDB.exams.toArray()
-        const unsyncedExams = currentLocalExams.filter((e) => !e._synced)
-        const unsyncedExamsMap = new Map(unsyncedExams.map((e) => [e.id, e]))
-
-        const mergedTestsMap = new Map<string, SchoolTest>()
-        unsyncedExams.forEach((e) => {
-          if (isSchoolTestActive(e.test_date)) {
-            mergedTestsMap.set(e.id, {
-              id: e.id,
-              family_id: e.family_id,
-              subject: e.subject,
-              topic: e.topic,
-              test_date: e.test_date,
-            })
+        if (schedRes?.data) {
+          setSchedule(schedRes.data)
+          if (typeof window !== 'undefined') {
+            try {
+              localStorage.setItem('casa_school_schedule', JSON.stringify(schedRes.data))
+            } catch {}
           }
-        })
-
-        rawTests.forEach((t) => {
-          if (isSchoolTestActive(t.test_date) && !unsyncedExamsMap.has(t.id)) {
-            mergedTestsMap.set(t.id, t)
-          }
-        })
-        setTests(Array.from(mergedTestsMap.values()))
-
-        // Limpiar en Dexie exámenes sincronizados eliminados remotamente
-        const remoteExamIds = new Set(rawTests.map((t) => t.id))
-        const examsToDelete = currentLocalExams
-          .filter((e) => e._synced && !remoteExamIds.has(e.id))
-          .map((e) => e.id)
-        if (examsToDelete.length > 0) {
-          await offlineDB.exams.bulkDelete(examsToDelete)
         }
 
-        // Guardar pruebas limpias en Dexie
-        const validExamsToStore = rawTests
-          .filter((t) => !unsyncedExamsMap.has(t.id))
-          .map((t) => ({
-            id: t.id,
-            family_id: t.family_id || currentFamId || '',
-            subject: t.subject,
-            topic: t.topic,
-            test_date: t.test_date,
-            _synced: true,
-          }))
-        if (validExamsToStore.length > 0) {
-          await offlineDB.exams.bulkPut(validExamsToStore)
+        // Manejo de pruebas remotas + pendientes locales
+        if (testsRes?.data) {
+          const rawTests: SchoolTest[] = testsRes.data
+          const currentLocalExams = currentFamId
+            ? await offlineDB.exams.where('family_id').equals(currentFamId).toArray()
+            : await offlineDB.exams.toArray()
+          const unsyncedExams = currentLocalExams.filter((e) => !e._synced)
+          const unsyncedExamsMap = new Map(unsyncedExams.map((e) => [e.id, e]))
+
+          const mergedTestsMap = new Map<string, SchoolTest>()
+          unsyncedExams.forEach((e) => {
+            if (isSchoolTestActive(e.test_date)) {
+              mergedTestsMap.set(e.id, {
+                id: e.id,
+                family_id: e.family_id,
+                subject: e.subject,
+                topic: e.topic,
+                test_date: e.test_date,
+              })
+            }
+          })
+
+          rawTests.forEach((t) => {
+            if (isSchoolTestActive(t.test_date) && !unsyncedExamsMap.has(t.id)) {
+              mergedTestsMap.set(t.id, t)
+            }
+          })
+          setTests(Array.from(mergedTestsMap.values()))
+
+          // Limpiar en Dexie exámenes sincronizados eliminados remotamente solo con family_id autenticado
+          if (currentFamId) {
+            const remoteExamIds = new Set(rawTests.map((t) => t.id))
+            const examsToDelete = currentLocalExams
+              .filter((e) => e._synced && !remoteExamIds.has(e.id))
+              .map((e) => e.id)
+            if (examsToDelete.length > 0) {
+              await offlineDB.exams.bulkDelete(examsToDelete)
+            }
+          }
+
+          // Guardar pruebas limpias en Dexie
+          const validExamsToStore = rawTests
+            .filter((t) => !unsyncedExamsMap.has(t.id))
+            .map((t) => ({
+              id: t.id,
+              family_id: t.family_id || currentFamId || '',
+              subject: t.subject,
+              topic: t.topic,
+              test_date: t.test_date,
+              _synced: true,
+            }))
+          if (validExamsToStore.length > 0) {
+            await offlineDB.exams.bulkPut(validExamsToStore)
+          }
         }
 
         // Manejo de tareas escolares remotas + pendientes locales
-        const rawHw: SchoolHomework[] = hwRes?.data ?? []
-        const currentLocalTasks = currentFamId
-          ? await offlineDB.school_tasks.where('family_id').equals(currentFamId).toArray()
-          : await offlineDB.school_tasks.toArray()
-        const unsyncedTasks = currentLocalTasks.filter((t) => !t._synced)
-        const unsyncedTasksMap = new Map(unsyncedTasks.map((t) => [t.id, t]))
+        if (hwRes?.data) {
+          const rawHw: SchoolHomework[] = hwRes.data
+          const currentLocalTasks = currentFamId
+            ? await offlineDB.school_tasks.where('family_id').equals(currentFamId).toArray()
+            : await offlineDB.school_tasks.toArray()
+          const unsyncedTasks = currentLocalTasks.filter((t) => !t._synced)
+          const unsyncedTasksMap = new Map(unsyncedTasks.map((t) => [t.id, t]))
 
-        const mergedHwMap = new Map<string, SchoolHomework>()
-        unsyncedTasks.forEach((t) => {
-          mergedHwMap.set(t.id, {
-            id: t.id,
-            family_id: t.family_id,
-            subject: t.subject,
-            task: t.task,
-            due: t.due,
-            due_date: t.due_date || t.due,
-            due_time: t.due_time || null,
-            done: t.done,
-            done_at: t.done_at,
+          const mergedHwMap = new Map<string, SchoolHomework>()
+          unsyncedTasks.forEach((t) => {
+            mergedHwMap.set(t.id, {
+              id: t.id,
+              family_id: t.family_id,
+              subject: t.subject,
+              task: t.task,
+              due: t.due,
+              due_date: t.due_date || t.due,
+              due_time: t.due_time || null,
+              done: t.done,
+              done_at: t.done_at,
+            })
           })
-        })
 
-        rawHw.forEach((h) => {
-          if (!unsyncedTasksMap.has(h.id)) {
-            mergedHwMap.set(h.id, h)
+          rawHw.forEach((h) => {
+            if (!unsyncedTasksMap.has(h.id)) {
+              mergedHwMap.set(h.id, h)
+            }
+          })
+          setHomework(Array.from(mergedHwMap.values()))
+
+          // Limpiar en Dexie tareas sincronizadas eliminadas remotamente solo con family_id autenticado
+          if (currentFamId) {
+            const remoteTaskIds = new Set(rawHw.map((h) => h.id))
+            const tasksToDelete = currentLocalTasks
+              .filter((t) => t._synced && !remoteTaskIds.has(t.id))
+              .map((t) => t.id)
+            if (tasksToDelete.length > 0) {
+              await offlineDB.school_tasks.bulkDelete(tasksToDelete)
+            }
           }
-        })
-        setHomework(Array.from(mergedHwMap.values()))
 
-        // Limpiar en Dexie tareas sincronizadas eliminadas remotamente
-        const remoteTaskIds = new Set(rawHw.map((h) => h.id))
-        const tasksToDelete = currentLocalTasks
-          .filter((t) => t._synced && !remoteTaskIds.has(t.id))
-          .map((t) => t.id)
-        if (tasksToDelete.length > 0) {
-          await offlineDB.school_tasks.bulkDelete(tasksToDelete)
-        }
-
-        // Guardar tareas escolares limpias en Dexie
-        const validTasksToStore = rawHw
-          .filter((h) => !unsyncedTasksMap.has(h.id))
-          .map((h) => ({
-            id: h.id,
-            family_id: h.family_id || currentFamId || '',
-            subject: h.subject,
-            task: h.task,
-            due: h.due || h.due_date || '',
-            due_date: h.due_date || h.due,
-            due_time: h.due_time || null,
-            done: h.done || false,
-            done_at: h.done_at,
-            _synced: true,
-          }))
-        if (validTasksToStore.length > 0) {
-          await offlineDB.school_tasks.bulkPut(validTasksToStore)
+          // Guardar tareas escolares limpias en Dexie
+          const validTasksToStore = rawHw
+            .filter((h) => !unsyncedTasksMap.has(h.id))
+            .map((h) => ({
+              id: h.id,
+              family_id: h.family_id || currentFamId || '',
+              subject: h.subject,
+              task: h.task,
+              due: h.due || h.due_date || '',
+              due_date: h.due_date || h.due,
+              due_time: h.due_time || null,
+              done: h.done || false,
+              done_at: h.done_at,
+              _synced: true,
+            }))
+          if (validTasksToStore.length > 0) {
+            await offlineDB.school_tasks.bulkPut(validTasksToStore)
+          }
         }
       } catch (err) {
         console.warn('[Offline] Error actualizando datos escolares de Supabase:', err)
@@ -345,10 +396,10 @@ export default function ColegioPage() {
   }
 
   useEffect(() => {
-    loadData()
+    loadData(false)
 
     function handleSyncComplete() {
-      loadData()
+      loadData(true)
     }
     window.addEventListener('casa-sync-complete', handleSyncComplete)
     window.addEventListener('online', handleSyncComplete)
@@ -482,18 +533,26 @@ export default function ColegioPage() {
       if (targetFamilyId) payload.family_id = targetFamilyId
 
       if (editingId && !editingId.startsWith('local-')) {
-        const { error } = await supabase
+        let updateQuery = supabase
           .from('school_schedule')
           .update(payload)
           .eq('id', editingId)
+        if (targetFamilyId) {
+          updateQuery = updateQuery.eq('family_id', targetFamilyId)
+        }
+        const { error } = await updateQuery
         if (error) {
           alert(`Error al actualizar horario: ${translateErrorMessage(error)}`)
           setSaving(false)
           return
         }
-        setSchedule((prev) =>
-          prev.map((b) => (b.id === editingId ? { ...b, ...payload } : b))
-        )
+        setSchedule((prev) => {
+          const updated = prev.map((b) => (b.id === editingId ? { ...b, ...payload } : b))
+          try {
+            localStorage.setItem('casa_school_schedule', JSON.stringify(updated))
+          } catch {}
+          return updated
+        })
       } else {
         const { data, error } = await supabase.from('school_schedule').insert(payload).select()
         if (error) {
@@ -501,11 +560,13 @@ export default function ColegioPage() {
           setSaving(false)
           return
         }
-        if (data && data[0]) {
-          setSchedule((prev) => [...prev, data[0]])
-        } else {
-          setSchedule((prev) => [...prev, { id: safeUUID(), ...payload }])
-        }
+        setSchedule((prev) => {
+          const updated = data && data[0] ? [...prev, data[0]] : [...prev, { id: safeUUID(), ...payload }]
+          try {
+            localStorage.setItem('casa_school_schedule', JSON.stringify(updated))
+          } catch {}
+          return updated
+        })
       }
     } 
     // B) PRUEBA ESCOLAR (usa 'topic')
@@ -601,9 +662,19 @@ export default function ColegioPage() {
 
     if (modalType === 'schedule') {
       if (!editingId.startsWith('local-')) {
-        await supabase.from('school_schedule').delete().eq('id', editingId)
+        let deleteQuery = supabase.from('school_schedule').delete().eq('id', editingId)
+        if (targetFamId) {
+          deleteQuery = deleteQuery.eq('family_id', targetFamId)
+        }
+        await deleteQuery
       }
-      setSchedule((prev) => prev.filter((b) => b.id !== editingId))
+      setSchedule((prev) => {
+        const updated = prev.filter((b) => b.id !== editingId)
+        try {
+          localStorage.setItem('casa_school_schedule', JSON.stringify(updated))
+        } catch {}
+        return updated
+      })
     } else if (modalType === 'test') {
       setTests((prev) => prev.filter((t) => t.id !== editingId))
       try {
