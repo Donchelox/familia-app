@@ -56,6 +56,11 @@ export default function HistorialView({
       case 'tareas':
       case 'todo':
         return { label: '✅ Tareas', color: getCategoryTheme('tareas').historyBadge }
+      case 'minutas':
+      case 'lunch_menu':
+      case 'lunch_menus':
+      case 'almuerzo':
+        return { label: '🍽️ Minutas', color: getCategoryTheme('minutas').historyBadge }
       case 'familia':
       case 'member':
         return { label: '👥 Familia', color: 'bg-indigo-950/40 text-indigo-400 border-indigo-900/40' }

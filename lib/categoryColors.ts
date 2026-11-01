@@ -10,7 +10,7 @@
  * - Colegio: Púrpura (#7C3AED / #8B5CF6)
  */
 
-export type CategoryId = 'tareas' | 'compras' | 'medicinas' | 'super' | 'feria' | 'colegio' | 'general'
+export type CategoryId = 'tareas' | 'compras' | 'medicinas' | 'super' | 'feria' | 'colegio' | 'minutas' | 'general'
 
 export interface CategoryTheme {
   id: CategoryId
@@ -97,6 +97,17 @@ export const CATEGORY_THEMES: Record<CategoryId, CategoryTheme> = {
     countBadge: 'bg-white text-[#7C3AED]',
     accentHex: '#8B5CF6',
   },
+  minutas: {
+    id: 'minutas',
+    label: 'Minutas',
+    colorName: 'ambar',
+    badge: 'bg-amber-500/15 text-amber-300 border border-amber-500/30',
+    historyBadge: 'bg-amber-950/40 text-amber-300 border-amber-900/40',
+    cardGradient: 'linear-gradient(134.95deg, #D97706 0%, #F59E0B 50%, #FBBF24 100%)',
+    cardGlow: 'rgba(245, 158, 11, 0.35)',
+    countBadge: 'bg-white text-[#D97706]',
+    accentHex: '#F59E0B',
+  },
   general: {
     id: 'general',
     label: 'General',
@@ -144,6 +155,10 @@ export function getCategoryTheme(categoryOrModule?: string | null): CategoryThem
 
   if (norm.includes('colegio') || norm.includes('school') || norm.includes('prueba') || norm.includes('examen')) {
     return CATEGORY_THEMES.colegio
+  }
+
+  if (norm.includes('minuta') || norm.includes('almuerzo') || norm.includes('comida') || norm.includes('menu') || norm === 'cocina') {
+    return CATEGORY_THEMES.minutas
   }
 
   return CATEGORY_THEMES.general

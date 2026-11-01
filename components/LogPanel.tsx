@@ -49,6 +49,11 @@ export default function LogPanel({ familyId }: LogPanelProps) {
       case 'todo':
       case 'tareas':
         return { label: '✅ Tareas', color: getCategoryTheme('tareas').historyBadge }
+      case 'minutas':
+      case 'lunch_menu':
+      case 'lunch_menus':
+      case 'almuerzo':
+        return { label: '🍽️ Minutas', color: getCategoryTheme('minutas').historyBadge }
       default:
         return { label: '⚙️ General', color: 'bg-neutral-800 text-neutral-300 border-neutral-700' }
     }

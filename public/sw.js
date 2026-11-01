@@ -14,6 +14,7 @@ const APP_SHELL_URLS = [
   '/tareas',
   '/feria',
   '/super',
+  '/minutas',
   '/colegio',
   '/meds',
   '/resumen',

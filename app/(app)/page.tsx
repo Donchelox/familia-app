@@ -12,6 +12,7 @@ import {
   isSchoolTestActive,
   isMedicationScheduledForDay,
   weekday,
+  getWeekMonday,
 } from '@/lib/dates'
 import NotificationBell from '@/components/NotificationBell'
 import SyncStatusBadge from '@/components/SyncStatusBadge'
@@ -32,6 +33,7 @@ export default async function Inicio() {
     logsRes,
     userRes,
     membersRes,
+    lunchMenusRes,
   ] = await Promise.all([
     supabase
       .from('shopping_items')
@@ -66,6 +68,11 @@ export default async function Inicio() {
       .from('family_members')
       .select('id, name, user_id')
       .eq('family_id', familyId),
+    supabase
+      .from('lunch_menus')
+      .select('id, day_of_week, week_start, main_dish, cook_name, done')
+      .eq('family_id', familyId)
+      .eq('week_start', getWeekMonday(today)),
   ])
 
   // 1. OBTENCIÓN DEL NOMBRE Y AVATAR PERSONAL
@@ -141,7 +148,7 @@ export default async function Inicio() {
   // 7. PRÓXIMOS EVENTOS (Ordenados por fecha y hora más cercana)
   type EventItem = {
     id: string
-    category: 'Colegio' | 'Medicinas' | 'Tareas' | 'Compras' | 'Feria' | 'Super'
+    category: 'Colegio' | 'Medicinas' | 'Tareas' | 'Compras' | 'Feria' | 'Super' | 'Minutas'
     title: string
     description: string
     href: string
@@ -304,6 +311,24 @@ export default async function Inicio() {
     })
   }
 
+  // F) Minutas de almuerzo de hoy (si está planificado)
+  const currentWeekMenus = (lunchMenusRes.data ?? []).filter(
+    (m: any) => m.main_dish && m.main_dish.trim().length > 0
+  )
+  const minutasCount = currentWeekMenus.length
+
+  const todayLunch = currentWeekMenus.find((m: any) => m.day_of_week === currentIsoDay)
+  if (todayLunch && todayLunch.main_dish) {
+    rawEvents.push({
+      id: `lunch-${todayLunch.id || today}`,
+      category: 'Minutas',
+      title: `Almuerzo de hoy: ${todayLunch.main_dish}`,
+      description: todayLunch.cook_name ? `Cocina: ${todayLunch.cook_name}` : 'Menú familiar planificado',
+      href: '/minutas',
+      sortTimestamp: nowMs + 1000 * 60 * 60 * 3,
+    })
+  }
+
   // Orden cronológico: el evento más cercano en el tiempo aparece primero
   const upcomingEvents = rawEvents
     .filter((e) => e.sortTimestamp >= nowMs - 86400000)
@@ -353,25 +378,23 @@ export default async function Inicio() {
       />
 
       {/* GRID DE ACCESOS DIRECTOS */}
-      <section className="flex flex-col gap-3">
-        {/* Fila 1: Súper y Feria */}
-        <div className="grid grid-cols-2 gap-3">
+      <section className="flex flex-col gap-2.5">
+        <div className="grid grid-cols-3 md:grid-cols-6 gap-2.5">
           {/* Súper -> /super */}
           <Link
             href="/super"
             style={{ background: getCategoryTheme('super').cardGradient }}
-            className="relative h-[124px] rounded-[26px] p-3.5 flex flex-col justify-between overflow-hidden shadow-md text-white transition-all duration-200 ease-out hover:scale-[1.02] active:scale-[0.97] hover:shadow-[0_8px_24px_rgba(14,165,233,0.35)] group no-underline"
+            className="relative h-[118px] rounded-[24px] p-3 flex flex-col justify-between overflow-hidden shadow-md text-white transition-all duration-200 ease-out hover:scale-[1.02] active:scale-[0.97] hover:shadow-[0_8px_24px_rgba(14,165,233,0.35)] group no-underline"
           >
             {/* Watermark grande de fondo: visible ÚNICAMENTE en hover */}
             <svg
-              className="absolute -bottom-3 -right-2 w-24 h-24 text-white/20 stroke-current stroke-[1.5] fill-none pointer-events-none opacity-0 group-hover:opacity-100 group-hover:scale-105 group-hover:translate-x-1 transition-all duration-300 ease-out"
+              className="absolute -bottom-3 -right-2 w-22 h-22 text-white/20 stroke-current stroke-[1.5] fill-none pointer-events-none opacity-0 group-hover:opacity-100 group-hover:scale-105 group-hover:translate-x-1 transition-all duration-300 ease-out"
               viewBox="0 0 24 24"
             >
               <path strokeLinecap="round" strokeLinejoin="round" d="M3 3h2l.4 2M7 13h10l4-8H5.4M7 13L5.4 5M7 13l-2.293 2.293c-.63.63-.184 1.707.707 1.707H17m0 0a2 2 0 100 4 2 2 0 000-4zm-8 2a2 2 0 11-4 0 2 2 0 014 0z" />
             </svg>
 
             <div className="flex justify-between items-start relative z-10">
-              {/* Icono principal: outline en default, relleno en hover */}
               <svg className="w-6 h-6 stroke-white stroke-[2.2] fill-transparent group-hover:fill-white transition-all duration-200 group-hover:scale-110" viewBox="0 0 24 24">
                 <path strokeLinecap="round" strokeLinejoin="round" d="M3 3h2l.4 2M7 13h10l4-8H5.4M7 13L5.4 5M7 13l-2.293 2.293c-.63.63-.184 1.707.707 1.707H17" />
                 <polygon points="5.4,5 21,5 17,13 7,13" className="fill-transparent group-hover:fill-white transition-colors duration-200 stroke-none" />
@@ -380,46 +403,74 @@ export default async function Inicio() {
               </svg>
 
               {superCount > 0 && (
-                <span className={`w-6 h-6 rounded-full text-xs font-black flex items-center justify-center shadow transition-transform duration-200 group-hover:scale-110 ${getCategoryTheme('super').countBadge}`}>
+                <span className={`w-5 h-5 rounded-full text-[11px] font-black flex items-center justify-center shadow transition-transform duration-200 group-hover:scale-110 ${getCategoryTheme('super').countBadge}`}>
                   {superCount}
                 </span>
               )}
             </div>
-            <span className="text-base font-black tracking-wide text-white relative z-10">Súper</span>
+            <span className="text-xs font-black tracking-wide text-white relative z-10">Súper</span>
           </Link>
 
           {/* Feria -> /feria */}
           <Link
             href="/feria"
             style={{ background: getCategoryTheme('feria').cardGradient }}
-            className="relative h-[124px] rounded-[26px] p-3.5 flex flex-col justify-between overflow-hidden shadow-md text-white transition-all duration-200 ease-out hover:scale-[1.02] active:scale-[0.97] hover:shadow-[0_8px_24px_rgba(236,72,153,0.35)] group no-underline"
+            className="relative h-[118px] rounded-[24px] p-3 flex flex-col justify-between overflow-hidden shadow-md text-white transition-all duration-200 ease-out hover:scale-[1.02] active:scale-[0.97] hover:shadow-[0_8px_24px_rgba(236,72,153,0.35)] group no-underline"
           >
             {/* Watermark grande de fondo: visible ÚNICAMENTE en hover */}
             <svg
-              className="absolute -bottom-3 -right-2 w-24 h-24 text-white/20 stroke-current stroke-[1.5] fill-none pointer-events-none opacity-0 group-hover:opacity-100 group-hover:scale-105 group-hover:translate-x-1 transition-all duration-300 ease-out"
+              className="absolute -bottom-3 -right-2 w-22 h-22 text-white/20 stroke-current stroke-[1.5] fill-none pointer-events-none opacity-0 group-hover:opacity-100 group-hover:scale-105 group-hover:translate-x-1 transition-all duration-300 ease-out"
               viewBox="0 0 24 24"
             >
               <path strokeLinecap="round" strokeLinejoin="round" d="M16 11V7a4 4 0 00-8 0v4M5 9h14l1 12H4L5 9z" />
             </svg>
 
             <div className="flex justify-between items-start relative z-10">
-              {/* Icono principal: outline en default, relleno en hover */}
               <svg className="w-6 h-6 stroke-white stroke-[2.2] fill-transparent group-hover:fill-white transition-all duration-200 group-hover:scale-110" viewBox="0 0 24 24">
                 <path strokeLinecap="round" strokeLinejoin="round" d="M16 11V7a4 4 0 00-8 0v4M5 9h14l1 12H4L5 9z" />
               </svg>
 
               {feriaCount > 0 && (
-                <span className={`w-6 h-6 rounded-full text-xs font-black flex items-center justify-center shadow transition-transform duration-200 group-hover:scale-110 ${getCategoryTheme('feria').countBadge}`}>
+                <span className={`w-5 h-5 rounded-full text-[11px] font-black flex items-center justify-center shadow transition-transform duration-200 group-hover:scale-110 ${getCategoryTheme('feria').countBadge}`}>
                   {feriaCount}
                 </span>
               )}
             </div>
-            <span className="text-base font-black tracking-wide text-white relative z-10">Feria</span>
+            <span className="text-xs font-black tracking-wide text-white relative z-10">Feria</span>
           </Link>
-        </div>
 
-        {/* Fila 2: Medicinas, Colegio, Tareas */}
-        <div className="grid grid-cols-3 gap-2.5">
+          {/* Minutas -> /minutas */}
+          <Link
+            href="/minutas"
+            style={{ background: getCategoryTheme('minutas').cardGradient }}
+            className="relative h-[118px] rounded-[24px] p-3 flex flex-col justify-between overflow-hidden shadow-md text-white transition-all duration-200 ease-out hover:scale-[1.02] active:scale-[0.97] hover:shadow-[0_8px_24px_rgba(245,158,11,0.35)] group no-underline"
+          >
+            {/* Watermark grande de fondo: visible ÚNICAMENTE en hover */}
+            <svg
+              className="absolute -bottom-2 -right-2 w-22 h-22 text-white/20 stroke-current stroke-[1.5] fill-none pointer-events-none opacity-0 group-hover:opacity-100 group-hover:scale-105 group-hover:translate-x-1 transition-all duration-300 ease-out"
+              viewBox="0 0 24 24"
+            >
+              <path strokeLinecap="round" strokeLinejoin="round" d="M3 2v7c0 1.1.9 2 2 2h4a2 2 0 0 0 2-2V2" />
+              <path strokeLinecap="round" strokeLinejoin="round" d="M7 2v20" />
+              <path strokeLinecap="round" strokeLinejoin="round" d="M21 15V2a5 5 0 0 0-5 5v6c0 1.1.9 2 2 2h3Zm0 0v7" />
+            </svg>
+
+            <div className="flex justify-between items-start relative z-10">
+              <svg className="w-6 h-6 stroke-white stroke-[2.2] fill-transparent group-hover:scale-110 transition-all duration-200" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" d="M3 2v7c0 1.1.9 2 2 2h4a2 2 0 0 0 2-2V2" />
+                <path strokeLinecap="round" strokeLinejoin="round" d="M7 2v20" />
+                <path strokeLinecap="round" strokeLinejoin="round" d="M21 15V2a5 5 0 0 0-5 5v6c0 1.1.9 2 2 2h3Zm0 0v7" />
+              </svg>
+
+              {minutasCount > 0 && (
+                <span className={`w-5 h-5 rounded-full text-[11px] font-black flex items-center justify-center shadow transition-transform duration-200 group-hover:scale-110 ${getCategoryTheme('minutas').countBadge}`}>
+                  {minutasCount}
+                </span>
+              )}
+            </div>
+            <span className="text-xs font-black tracking-wide text-white relative z-10">Minutas</span>
+          </Link>
+
           {/* Medicinas -> /meds */}
           <Link
             href="/meds"

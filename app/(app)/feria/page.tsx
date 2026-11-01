@@ -76,6 +76,77 @@ export default function FeriaPage() {
     background: 'linear-gradient(134.95deg, #F76911 47.75%, #F2A957 100%)',
   }
 
+  // Toast flotante y copiado a WhatsApp
+  const [toastMessage, setToastMessage] = useState<string | null>(null)
+
+  function showToast(msg: string) {
+    setToastMessage(msg)
+    setTimeout(() => {
+      setToastMessage((cur) => (cur === msg ? null : cur))
+    }, 3200)
+  }
+
+  async function copyToClipboard(text: string) {
+    if (typeof navigator !== 'undefined' && navigator.clipboard && window.isSecureContext) {
+      return navigator.clipboard.writeText(text)
+    } else {
+      const textArea = document.createElement('textarea')
+      textArea.value = text
+      textArea.style.position = 'fixed'
+      textArea.style.left = '-999999px'
+      textArea.style.top = '-999999px'
+      document.body.appendChild(textArea)
+      textArea.focus()
+      textArea.select()
+      return new Promise<void>((resolve, reject) => {
+        const successful = document.execCommand('copy')
+        textArea.remove()
+        if (successful) resolve()
+        else reject(new Error('copy command failed'))
+      })
+    }
+  }
+
+  function copyFeriaForWhatsApp() {
+    const itemsToCopy = filterType === 'all' ? pendingItems : displayedPending
+
+    if (itemsToCopy.length === 0) {
+      showToast('No hay productos de feria pendientes para copiar.')
+      return
+    }
+
+    const todayFmt = new Intl.DateTimeFormat('es-CL', {
+      weekday: 'long',
+      day: 'numeric',
+      month: 'long',
+    }).format(new Date())
+    const capitalizedDate = todayFmt.charAt(0).toUpperCase() + todayFmt.slice(1)
+
+    let text = `🥬 *LISTA DE FERIA LIBRE*\n`
+    if (filterType !== 'all') {
+      text = `🥬 *LISTA DE FERIA LIBRE - ${filterType === 'recurring' ? 'RECURRENTES' : 'ESPORÁDICOS'}*\n`
+    }
+    text += `📅 *Fecha:* ${capitalizedDate}\n`
+    text += `🧺 *Total:* ${itemsToCopy.length} producto${itemsToCopy.length === 1 ? '' : 's'} por comprar\n\n`
+
+    itemsToCopy.forEach((item) => {
+      const itemName = (item.name || '').trim()
+      if (!itemName) return
+      const qty = (item as any).quantity ? ` (${(item as any).quantity})` : ''
+      text += `  • ${itemName}${qty}\n`
+    })
+
+    text += `\n✨ _Compartido desde Casa App_`
+
+    copyToClipboard(text)
+      .then(() => {
+        showToast('📋 ¡Lista de feria copiada para WhatsApp!')
+      })
+      .catch(() => {
+        showToast('Error al copiar al portapapeles.')
+      })
+  }
+
   async function loadItems() {
     setLoading(true)
 
@@ -545,11 +616,26 @@ export default function FeriaPage() {
 
       {/* BARRA DE ESTADO Y FILTRO DE RECURRENCIA */}
       <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2.5 bg-[#1a1a1a] p-4 rounded-[28px] border border-neutral-800/80">
-        <div className="flex items-center gap-2">
-          <span className="text-xs text-neutral-400 font-medium">Compras de feria:</span>
-          <span className="px-3 py-1 rounded-full bg-[#131313] border border-neutral-800 text-xs font-bold text-neutral-200">
-            {pendingItems.length} por comprar
-          </span>
+        <div className="flex items-center justify-between sm:justify-start gap-2.5 w-full sm:w-auto">
+          <div className="flex items-center gap-2">
+            <span className="text-xs text-neutral-400 font-medium">Compras de feria:</span>
+            <span className="px-3 py-1 rounded-full bg-[#131313] border border-neutral-800 text-xs font-bold text-neutral-200">
+              {pendingItems.length} por comprar
+            </span>
+          </div>
+
+          <button
+            type="button"
+            onClick={copyFeriaForWhatsApp}
+            disabled={pendingItems.length === 0}
+            title="Copiar lista de feria para WhatsApp"
+            className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-neutral-900 border border-neutral-700/80 hover:border-[#F76911]/60 text-[#F2A957] hover:text-white text-xs font-bold active:scale-95 transition-all cursor-pointer disabled:opacity-40 disabled:cursor-not-allowed shadow-sm shrink-0"
+          >
+            <svg className="w-4 h-4 stroke-current stroke-2 fill-none" viewBox="0 0 24 24">
+              <path strokeLinecap="round" strokeLinejoin="round" d="M8 16H6a2 2 0 01-2-2V6a2 2 0 012-2h8a2 2 0 012 2v2m-6 12h8a2 2 0 002-2v-8a2 2 0 00-2-2h-8a2 2 0 00-2 2v8a2 2 0 002 2z" />
+            </svg>
+            <span>Copiar WhatsApp</span>
+          </button>
         </div>
 
         {/* FILTRO TIPO DE PRODUCTO: TODOS / RECURRENTES / ESPORÁDICOS */}
@@ -598,9 +684,23 @@ export default function FeriaPage() {
         {/* PENDIENTES */}
         <section className="flex flex-col gap-3">
           <div className="flex items-center justify-between px-1">
-            <h2 className="text-sm font-bold text-neutral-300 m-0">
-              Por comprar ({displayedPending.length})
-            </h2>
+            <div className="flex items-center gap-2">
+              <h2 className="text-sm font-bold text-neutral-300 m-0">
+                Por comprar ({displayedPending.length})
+              </h2>
+              {displayedPending.length > 0 && (
+                <button
+                  type="button"
+                  onClick={copyFeriaForWhatsApp}
+                  title="Copiar lista de feria para WhatsApp"
+                  className="p-1 rounded-lg text-neutral-400 hover:text-[#F2A957] hover:bg-neutral-800/80 active:scale-95 transition-all cursor-pointer"
+                >
+                  <svg className="w-4 h-4 stroke-current stroke-2 fill-none" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" d="M8 16H6a2 2 0 01-2-2V6a2 2 0 012-2h8a2 2 0 012 2v2m-6 12h8a2 2 0 002-2v-8a2 2 0 00-2-2h-8a2 2 0 00-2 2v8a2 2 0 002 2z" />
+                  </svg>
+                </button>
+              )}
+            </div>
             {filterType !== 'all' && (
               <span className="text-[11px] text-neutral-500">
                 Filtrado por: {filterType === 'recurring' ? 'Recurrentes' : 'Esporádicos'}
@@ -1009,6 +1109,14 @@ export default function FeriaPage() {
             </form>
 
           </div>
+        </div>
+      )}
+
+      {/* TOAST FLOTANTE DE CONFIRMACIÓN */}
+      {toastMessage && (
+        <div className="fixed top-5 left-1/2 -translate-x-1/2 z-[90] bg-[#161616] border border-[#F76911]/60 text-white px-4 py-2.5 rounded-2xl shadow-[0_10px_30px_rgba(0,0,0,0.8)] text-xs font-bold flex items-center gap-2 animate-in fade-in slide-in-from-top duration-200 pointer-events-none">
+          <span className="text-[#F2A957]">✨</span>
+          <span>{toastMessage}</span>
         </div>
       )}
 

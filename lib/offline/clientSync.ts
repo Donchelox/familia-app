@@ -13,6 +13,7 @@ export const CORE_ROUTES = [
   '/tareas',
   '/feria',
   '/super',
+  '/minutas',
   '/colegio',
   '/meds',
   '/resumen',
