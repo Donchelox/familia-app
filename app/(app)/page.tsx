@@ -394,9 +394,10 @@ export default async function Inicio() {
         }
       />
 
-      {/* GRID DE ACCESOS DIRECTOS */}
+      {/* GRID DE ACCESOS DIRECTOS (2 - 3 - 2) */}
       <section className="flex flex-col gap-2.5">
-        <div className={`grid grid-cols-3 ${wishlistEnabled ? 'sm:grid-cols-4 lg:grid-cols-7' : 'md:grid-cols-6'} gap-2.5`}>
+        {/* Fila 1: 2 cajas (Súper y Feria) */}
+        <div className="grid grid-cols-2 gap-2.5">
           {/* Súper -> /super */}
           <Link
             href="/super"
@@ -455,7 +456,10 @@ export default async function Inicio() {
             </div>
             <span className="text-xs font-black tracking-wide text-white relative z-10">Feria</span>
           </Link>
+        </div>
 
+        {/* Fila 2: 3 cajas (Minutas, Medicinas y Colegio) */}
+        <div className="grid grid-cols-3 gap-2.5">
           {/* Minutas -> /minutas */}
           <Link
             href="/minutas"
@@ -545,7 +549,10 @@ export default async function Inicio() {
             </div>
             <span className="text-xs font-black tracking-wide text-white relative z-10">Colegio</span>
           </Link>
+        </div>
 
+        {/* Fila 3: 2 cajas (Tareas y Wishlist) */}
+        <div className={`grid ${wishlistEnabled ? 'grid-cols-2' : 'grid-cols-1'} gap-2.5`}>
           {/* Tareas -> /tareas */}
           <Link
             href="/tareas"
