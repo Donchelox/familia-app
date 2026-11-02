@@ -112,6 +112,7 @@ export const UpdatePreferencesSchema = z.object({
   feriaTime: TIME_SCHEMA.default('07:00'),
   superReminders: z.boolean().default(true),
   superTime: TIME_SCHEMA.default('18:00'),
+  wishlistEnabled: z.boolean().default(true),
 })
 
 export const UpdateAccountSchema = z.object({

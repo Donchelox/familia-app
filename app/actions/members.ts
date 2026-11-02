@@ -279,6 +279,7 @@ export async function updatePreferences(formData: FormData) {
     feriaTime: formData.get('feriaTime'),
     superReminders: formData.get('superReminders') !== 'false',
     superTime: formData.get('superTime'),
+    wishlistEnabled: formData.get('wishlistEnabled') !== 'false',
   })
   if (!parsed.success) return { ok: false, error: 'Preferencias inválidas' }
 
@@ -295,6 +296,7 @@ export async function updatePreferences(formData: FormData) {
     feriaTime,
     superReminders,
     superTime,
+    wishlistEnabled,
   } = parsed.data
 
   // Solo el administrador puede modificar la configuración compartida en la tabla families
@@ -340,6 +342,7 @@ export async function updatePreferences(formData: FormData) {
       feria_time: feriaTime,
       super_reminders_enabled: superReminders,
       super_time: superTime,
+      wishlist_enabled: wishlistEnabled,
     },
   })
 

@@ -10,7 +10,7 @@
  * - Colegio: Púrpura (#7C3AED / #8B5CF6)
  */
 
-export type CategoryId = 'tareas' | 'compras' | 'medicinas' | 'super' | 'feria' | 'colegio' | 'minutas' | 'general'
+export type CategoryId = 'tareas' | 'compras' | 'medicinas' | 'super' | 'feria' | 'colegio' | 'minutas' | 'general' | 'wishlist'
 
 export interface CategoryTheme {
   id: CategoryId
@@ -119,6 +119,17 @@ export const CATEGORY_THEMES: Record<CategoryId, CategoryTheme> = {
     countBadge: 'bg-white text-neutral-800',
     accentHex: '#737373',
   },
+  wishlist: {
+    id: 'wishlist',
+    label: 'Wishlist',
+    colorName: 'rosa festivo',
+    badge: 'bg-rose-500/15 text-rose-300 border border-rose-500/30',
+    historyBadge: 'bg-rose-950/40 text-rose-300 border-rose-900/40',
+    cardGradient: 'linear-gradient(134.95deg, #BE123C 0%, #E11D48 50%, #FB7185 100%)',
+    cardGlow: 'rgba(225, 29, 72, 0.35)',
+    countBadge: 'bg-white text-[#BE123C]',
+    accentHex: '#F43F5E',
+  },
 }
 
 /**
@@ -159,6 +170,10 @@ export function getCategoryTheme(categoryOrModule?: string | null): CategoryThem
 
   if (norm.includes('minuta') || norm.includes('almuerzo') || norm.includes('comida') || norm.includes('menu') || norm === 'cocina') {
     return CATEGORY_THEMES.minutas
+  }
+
+  if (norm.includes('wishlist') || norm.includes('regalo') || norm.includes('gift') || norm.includes('deseo')) {
+    return CATEGORY_THEMES.wishlist
   }
 
   return CATEGORY_THEMES.general

@@ -35,6 +35,7 @@ export default async function Inicio() {
     userRes,
     membersRes,
     lunchMenusRes,
+    wishlistRes,
   ] = await Promise.all([
     supabase
       .from('shopping_items')
@@ -74,10 +75,19 @@ export default async function Inicio() {
       .select('id, day_of_week, week_start, main_dish, cook_name, done')
       .eq('family_id', familyId)
       .in('week_start', [getWeekMonday(today), getMinutasPlanningMonday(today)]),
+    Promise.resolve(
+      supabase
+        .from('wishlist_gifts')
+        .select('id', { count: 'exact' })
+        .eq('family_id', familyId)
+        .eq('is_bought', false)
+    ).catch(() => ({ data: null, count: 0 })),
   ])
 
   // 1. OBTENCIÓN DEL NOMBRE Y AVATAR PERSONAL
   const currentUser = userRes.data?.user
+  const wishlistEnabled = currentUser?.user_metadata?.wishlist_enabled !== false
+  const wishlistCount = wishlistRes?.count ?? (wishlistRes?.data ? (wishlistRes.data as any[]).length : 0)
   const currentMember = (membersRes.data ?? []).find(
     (m) => m.user_id && m.user_id === currentUser?.id
   )
@@ -386,7 +396,7 @@ export default async function Inicio() {
 
       {/* GRID DE ACCESOS DIRECTOS */}
       <section className="flex flex-col gap-2.5">
-        <div className="grid grid-cols-3 md:grid-cols-6 gap-2.5">
+        <div className={`grid grid-cols-3 ${wishlistEnabled ? 'sm:grid-cols-4 lg:grid-cols-7' : 'md:grid-cols-6'} gap-2.5`}>
           {/* Súper -> /super */}
           <Link
             href="/super"
@@ -563,6 +573,36 @@ export default async function Inicio() {
             </div>
             <span className="text-xs font-black tracking-wide text-white relative z-10">Tareas</span>
           </Link>
+
+          {/* Wishlist -> /wishlist */}
+          {wishlistEnabled && (
+            <Link
+              href="/wishlist"
+              style={{ background: getCategoryTheme('wishlist').cardGradient }}
+              className="relative h-[118px] rounded-[24px] p-3 flex flex-col justify-between overflow-hidden shadow-md text-white transition-all duration-200 ease-out hover:scale-[1.02] active:scale-[0.97] hover:shadow-[0_8px_24px_rgba(225,29,72,0.35)] group no-underline"
+            >
+              {/* Watermark grande de fondo: visible ÚNICAMENTE en hover */}
+              <svg
+                className="absolute -bottom-2 -right-2 w-22 h-22 text-white/20 stroke-current stroke-[1.5] fill-none pointer-events-none opacity-0 group-hover:opacity-100 group-hover:scale-105 group-hover:translate-x-1 transition-all duration-300 ease-out"
+                viewBox="0 0 24 24"
+              >
+                <path strokeLinecap="round" strokeLinejoin="round" d="M12 8v13m0-13V4a2 2 0 012-2c1.5 0 2.5 1 2.5 2.5 0 2-2.5 3.5-4.5 3.5zm0 0H7.5C5.5 8 3 6.5 3 4.5 3 3 4 2 5.5 2A2 2 0 017.5 4v4m-3.5 4h16a2 2 0 012 2v2a2 2 0 01-2 2H4a2 2 0 01-2-2v-2a2 2 0 012-2zm1 6v3a2 2 0 002 2h10a2 2 0 002-2v-3" />
+              </svg>
+
+              <div className="flex justify-between items-start relative z-10">
+                <svg className="w-6 h-6 stroke-white stroke-[2.2] fill-transparent group-hover:scale-110 transition-all duration-200" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" d="M12 8v13m0-13V4a2 2 0 012-2c1.5 0 2.5 1 2.5 2.5 0 2-2.5 3.5-4.5 3.5zm0 0H7.5C5.5 8 3 6.5 3 4.5 3 3 4 2 5.5 2A2 2 0 017.5 4v4m-3.5 4h16a2 2 0 012 2v2a2 2 0 01-2 2H4a2 2 0 01-2-2v-2a2 2 0 012-2zm1 6v3a2 2 0 002 2h10a2 2 0 002-2v-3" />
+                </svg>
+
+                {wishlistCount > 0 && (
+                  <span className={`w-5 h-5 rounded-full text-[11px] font-black flex items-center justify-center shadow transition-transform duration-200 group-hover:scale-110 ${getCategoryTheme('wishlist').countBadge}`}>
+                    {wishlistCount}
+                  </span>
+                )}
+              </div>
+              <span className="text-xs font-black tracking-wide text-white relative z-10">Wishlist</span>
+            </Link>
+          )}
         </div>
       </section>
 

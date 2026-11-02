@@ -51,6 +51,8 @@ export default async function PreferenciasPage() {
   const rawSuperTime = (user?.user_metadata?.super_time as string)?.trim()
   const superTime = /^([01]\d|2[0-3]):([0-5]\d)$/.test(rawSuperTime) ? rawSuperTime : '18:00'
 
+  const wishlistEnabled = user?.user_metadata?.wishlist_enabled !== false
+
   return (
     <PreferenciasView
       familyId={familyId}
@@ -67,6 +69,8 @@ export default async function PreferenciasPage() {
       initialFeriaTime={feriaTime}
       initialSuperReminders={superRemindersEnabled}
       initialSuperTime={superTime}
+      initialWishlistEnabled={wishlistEnabled}
     />
   )
 }
+

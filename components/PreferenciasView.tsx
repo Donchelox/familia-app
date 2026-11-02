@@ -22,6 +22,7 @@ interface PreferenciasViewProps {
   initialFeriaTime?: string
   initialSuperReminders?: boolean
   initialSuperTime?: string
+  initialWishlistEnabled?: boolean
 }
 
 const INTERVAL_OPTIONS = [
@@ -51,6 +52,7 @@ export default function PreferenciasView({
   initialFeriaTime = '07:00',
   initialSuperReminders = true,
   initialSuperTime = '18:00',
+  initialWishlistEnabled = true,
 }: PreferenciasViewProps) {
   const [medReminders, setMedReminders] = useState<boolean>(initialMedReminders)
   const [pushDetail, setPushDetail] = useState<boolean>(initialReminderPushDetail)
@@ -70,6 +72,9 @@ export default function PreferenciasView({
   // Super
   const [superReminders, setSuperReminders] = useState<boolean>(initialSuperReminders)
   const [superTime, setSuperTime] = useState<string>(initialSuperTime)
+
+  // Wishlist
+  const [wishlistEnabled, setWishlistEnabled] = useState<boolean>(initialWishlistEnabled)
 
   const [isClearingCache, setIsClearingCache] = useState(false)
   const [isPending, startTransition] = useTransition()
@@ -101,6 +106,7 @@ export default function PreferenciasView({
       feriaTime: string
       superReminders: boolean
       superTime: string
+      wishlistEnabled: boolean
     }>,
     msg?: string
   ) => {
@@ -116,6 +122,7 @@ export default function PreferenciasView({
     const nextFeriaTime = overrides?.feriaTime ?? feriaTime
     const nextSuper = overrides?.superReminders ?? superReminders
     const nextSuperTime = overrides?.superTime ?? superTime
+    const nextWishlist = overrides?.wishlistEnabled ?? wishlistEnabled
 
     if (msg) setStatusMessage(msg)
     else setStatusMessage('Guardando cambios...')
@@ -138,11 +145,23 @@ export default function PreferenciasView({
       fd.append('superReminders', String(nextSuper))
       fd.append('superTime', nextSuperTime)
 
+      fd.append('wishlistEnabled', String(nextWishlist))
+
       await updatePreferences(fd)
       if (msg) setStatusMessage(`✓ ${msg}`)
       else setStatusMessage('✓ Preferencias actualizadas correctamente')
       setTimeout(() => setStatusMessage(''), 3000)
     })
+  }
+
+  // Handler Wishlist
+  const handleToggleWishlist = () => {
+    const next = !wishlistEnabled
+    setWishlistEnabled(next)
+    saveState(
+      { wishlistEnabled: next },
+      next ? 'Módulo Wishlist activado en el dashboard' : 'Módulo Wishlist ocultado del dashboard'
+    )
   }
 
   // Handlers Medicinas
@@ -694,6 +713,37 @@ export default function PreferenciasView({
               </div>
             </div>
           )}
+        </div>
+
+        {/* 6. MÓDULO: WISHLIST Y REGALOS */}
+        <div className="p-5 rounded-[28px] bg-[#1a1a1a] border border-neutral-800/80 shadow-md flex flex-col gap-4">
+          <div className="flex items-center justify-between">
+            <div className="pr-4 flex flex-col">
+              <div className="flex items-center gap-2">
+                <span className="text-lg">🎁</span>
+                <h3 className="text-sm font-bold text-white leading-tight m-0">Wishlist & Regalos</h3>
+              </div>
+              <p className="text-xs text-neutral-400 mt-1 leading-snug m-0">
+                Mostrar el apartado de regalos en el grid de inicio para anotar ideas de obsequios a amigos y conocidos (visible para toda la familia).
+              </p>
+            </div>
+
+            <button
+              type="button"
+              role="switch"
+              aria-checked={wishlistEnabled}
+              onClick={handleToggleWishlist}
+              className={`relative inline-flex h-7 w-12 shrink-0 cursor-pointer rounded-full border-2 border-transparent transition-all duration-200 ease-in-out hover:scale-105 active:scale-90 focus:outline-none ${
+                wishlistEnabled ? 'bg-[#BE123C]' : 'bg-neutral-800'
+              }`}
+            >
+              <span
+                className={`pointer-events-none inline-block h-6 w-6 transform rounded-full bg-white shadow-lg ring-0 transition duration-200 ease-in-out ${
+                  wishlistEnabled ? 'translate-x-5' : 'translate-x-0'
+                }`}
+              />
+            </button>
+          </div>
         </div>
       </section>
 

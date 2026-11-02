@@ -170,6 +170,17 @@ export default function Nav({ family, role }: NavProps) {
         </svg>
       ),
     },
+    {
+      label: 'Añadir regalo a Wishlist',
+      href: '/wishlist?action=new-gift',
+      colorBg: 'bg-rose-500/20',
+      colorText: 'text-rose-300',
+      icon: (
+        <svg className="w-5 h-5 stroke-current stroke-[2.2] fill-none" viewBox="0 0 24 24">
+          <path strokeLinecap="round" strokeLinejoin="round" d="M12 8v13m0-13V4a2 2 0 012-2c1.5 0 2.5 1 2.5 2.5 0 2-2.5 3.5-4.5 3.5zm0 0H7.5C5.5 8 3 6.5 3 4.5 3 3 4 2 5.5 2A2 2 0 017.5 4v4m-3.5 4h16a2 2 0 012 2v2a2 2 0 01-2 2H4a2 2 0 01-2-2v-2a2 2 0 012-2zm1 6v3a2 2 0 002 2h10a2 2 0 002-2v-3" />
+        </svg>
+      ),
+    },
   ]
 
   return (
