@@ -33,15 +33,30 @@ const DAYS = [
 
 // Banco de sugerencias de almuerzos tradicionales y caseros
 interface PresetMeal {
+  id: string
   name: string
-  category: 'Legumbres' | 'Caseros' | 'Pollo y Carnes' | 'Pastas' | 'Pescados' | 'Ligeros'
-  starter: string
-  dessert: string
+  category: 'Legumbres' | 'Caseros' | 'Pollo y Carnes' | 'Pastas' | 'Pescados' | 'Ligeros' | string
+  starter?: string
+  dessert?: string
   ingredients: string[]
+  isCustom?: boolean
 }
 
-const PRESET_MEALS: PresetMeal[] = [
+const PRESET_CATEGORIES = [
+  'Todos',
+  'Mis Recetas',
+  'Caseros',
+  'Legumbres',
+  'Pollo y Carnes',
+  'Pastas',
+  'Pescados',
+  'Ligeros',
+  'Otro',
+]
+
+const DEFAULT_PRESET_MEALS: PresetMeal[] = [
   {
+    id: 'preset-cazuela',
     name: 'Cazuela de vacuno con choclo y zapallo',
     category: 'Caseros',
     starter: 'Ensalada chilena (tomate, cebolla y cilantro)',
@@ -49,6 +64,7 @@ const PRESET_MEALS: PresetMeal[] = [
     ingredients: ['Carne para cazuela', 'Zapallo camote', 'Choclo entero', 'Papas', 'Porotos verdes', 'Cilantro fresco'],
   },
   {
+    id: 'preset-lentejas',
     name: 'Lentejas con arroz y longaniza',
     category: 'Legumbres',
     starter: 'Ensalada de lechuga con palta',
@@ -56,6 +72,7 @@ const PRESET_MEALS: PresetMeal[] = [
     ingredients: ['Lentejas', 'Arroz', 'Cebolla', 'Zanahoria', 'Pimentón', 'Longaniza o chorizo'],
   },
   {
+    id: 'preset-porotos',
     name: 'Porotos con riendas y zapallo',
     category: 'Legumbres',
     starter: 'Ensalada de apio con palta',
@@ -63,6 +80,7 @@ const PRESET_MEALS: PresetMeal[] = [
     ingredients: ['Porotos secos o burros', 'Tallarines o riendas', 'Zapallo camote', 'Cebolla', 'Ajo', 'Comino'],
   },
   {
+    id: 'preset-charquican',
     name: 'Charquicán con huevo frito',
     category: 'Caseros',
     starter: 'Ensalada de repollo con limón',
@@ -70,6 +88,7 @@ const PRESET_MEALS: PresetMeal[] = [
     ingredients: ['Posta o carne molida', 'Papas', 'Zapallo', 'Choclo', 'Porotos verdes', 'Huevos'],
   },
   {
+    id: 'preset-pastel-choclo',
     name: 'Pastel de choclo casero',
     category: 'Caseros',
     starter: 'Ensalada a la chilena',
@@ -77,6 +96,7 @@ const PRESET_MEALS: PresetMeal[] = [
     ingredients: ['Pasta de choclo', 'Carne molida o picada', 'Cebolla', 'Huevos duros', 'Aceitunas', 'Pechuga de pollo'],
   },
   {
+    id: 'preset-pollo-jugo',
     name: 'Pollo al jugo con puré de papas',
     category: 'Pollo y Carnes',
     starter: 'Sopa de verduras o consomé',
@@ -84,6 +104,7 @@ const PRESET_MEALS: PresetMeal[] = [
     ingredients: ['Trozos de pollo o trutros', 'Papas para puré', 'Leche', 'Mantequilla', 'Cebolla', 'Zanahoria', 'Orégano'],
   },
   {
+    id: 'preset-tallarines',
     name: 'Tallarines con salsa boloñesa casera',
     category: 'Pastas',
     starter: 'Ensalada verde mixta',
@@ -91,6 +112,7 @@ const PRESET_MEALS: PresetMeal[] = [
     ingredients: ['Fideos tallarines', 'Carne molida', 'Salsa de tomate', 'Cebolla', 'Ajo', 'Queso rallado'],
   },
   {
+    id: 'preset-pescado',
     name: 'Pescado al horno con arroz primavera',
     category: 'Pescados',
     starter: 'Ensalada rusa (papa, zanahoria y mayonesa)',
@@ -98,6 +120,7 @@ const PRESET_MEALS: PresetMeal[] = [
     ingredients: ['Filete de reineta o merluza', 'Arroz', 'Arvejas', 'Choclo', 'Zanahoria picada', 'Limón'],
   },
   {
+    id: 'preset-carbonada',
     name: 'Carbonada de verduras y carne',
     category: 'Caseros',
     starter: 'Tomates con choclo y albahaca',
@@ -105,6 +128,7 @@ const PRESET_MEALS: PresetMeal[] = [
     ingredients: ['Posta en cubos', 'Papas', 'Zapallo', 'Choclo desgranado', 'Porotos verdes', 'Arroz'],
   },
   {
+    id: 'preset-tomatican',
     name: 'Tomaticán de pollo con arroz blanco',
     category: 'Caseros',
     starter: 'Ensalada de pepino con yogur',
@@ -112,6 +136,7 @@ const PRESET_MEALS: PresetMeal[] = [
     ingredients: ['Pechuga de pollo', 'Tomates maduros', 'Choclo desgranado', 'Cebolla', 'Orégano', 'Arroz'],
   },
   {
+    id: 'preset-budin',
     name: 'Budín de zapallito italiano al gratín',
     category: 'Ligeros',
     starter: 'Crema de verduras casera',
@@ -119,6 +144,7 @@ const PRESET_MEALS: PresetMeal[] = [
     ingredients: ['Zapallitos italianos', 'Cebolla', 'Huevos', 'Pan marraqueta o leche', 'Queso rallado'],
   },
   {
+    id: 'preset-salmon',
     name: 'Salmón a la plancha con verduras salteadas',
     category: 'Pescados',
     starter: 'Mix de hojas verdes con frutos secos',
@@ -126,6 +152,41 @@ const PRESET_MEALS: PresetMeal[] = [
     ingredients: ['Filete de salmón', 'Zapallito italiano', 'Pimentón rojo y verde', 'Champiñones', 'Aceite de oliva'],
   },
 ]
+
+const SUGGESTIONS_STORAGE_KEY = 'casa_lunch_suggestions_v1'
+
+function getStoredSuggestions(): PresetMeal[] {
+  if (typeof window === 'undefined') return DEFAULT_PRESET_MEALS
+  try {
+    const raw = localStorage.getItem(SUGGESTIONS_STORAGE_KEY)
+    if (raw) {
+      const parsed = JSON.parse(raw)
+      if (Array.isArray(parsed) && parsed.length > 0) return parsed
+    }
+  } catch {}
+  return DEFAULT_PRESET_MEALS
+}
+
+function saveStoredSuggestions(list: PresetMeal[]) {
+  if (typeof window === 'undefined') return
+  try {
+    localStorage.setItem(SUGGESTIONS_STORAGE_KEY, JSON.stringify(list))
+  } catch {}
+}
+
+/**
+ * Filtra para que en minutas solo aparezcan adultos como cocineros
+ * (las mascotas y los niños quedan excluidos).
+ */
+function isAdultCook(m: any): boolean {
+  if (!m || !m.name) return false
+  if (m.type === 'pet' || m.is_pet) return false
+  if (m.type === 'child' || m.is_child) return false
+  const r = (m.role || '').toLowerCase().trim()
+  if (r === 'mascota' || r === 'perro' || r === 'gato' || r.includes('mascota')) return false
+  if (r === 'hijo' || r === 'hija' || r === 'niño' || r === 'niña' || r.includes('hijo')) return false
+  return true
+}
 
 const STORAGE_KEY_PREFIX = 'casa_minutas_v1_'
 
@@ -179,7 +240,20 @@ export default function MinutasPage() {
   const [isInitialMount, setIsInitialMount] = useState(true)
 
   const [familyId, setFamilyId] = useState<string>('')
-  const [familyMembers, setFamilyMembers] = useState<{ id: string; name: string }[]>([])
+  const [familyMembers, setFamilyMembers] = useState<{ id: string; name: string }[]>(() => {
+    if (typeof window !== 'undefined') {
+      try {
+        const cached = localStorage.getItem('casa_family_members')
+        if (cached) {
+          const parsed = JSON.parse(cached)
+          if (Array.isArray(parsed)) {
+            return parsed.filter(isAdultCook).map((m: any) => ({ id: m.id, name: m.name }))
+          }
+        }
+      } catch {}
+    }
+    return []
+  })
 
   // Modal Crear / Editar
   const [isSheetOpen, setIsSheetOpen] = useState(false)
@@ -195,9 +269,20 @@ export default function MinutasPage() {
   const [autoTargetList, setAutoTargetList] = useState<'super' | 'feria'>('super')
   const [saving, setSaving] = useState(false)
 
-  // Modal Sugerencias / Ideas
+  // Modal Sugerencias / Ideas y Personalización
+  const [suggestions, setSuggestions] = useState<PresetMeal[]>(() => getStoredSuggestions())
   const [isPresetModalOpen, setIsPresetModalOpen] = useState(false)
   const [presetCategory, setPresetCategory] = useState<string>('Todos')
+  const [sugSearch, setSugSearch] = useState<string>('')
+
+  // Estado para Crear o Editar una Sugerencia
+  const [isEditingSuggestion, setIsEditingSuggestion] = useState(false)
+  const [suggestionEditingId, setSuggestionEditingId] = useState<string | null>(null)
+  const [sugName, setSugName] = useState('')
+  const [sugCategory, setSugCategory] = useState<string>('Caseros')
+  const [sugStarter, setSugStarter] = useState('')
+  const [sugDessert, setSugDessert] = useState('')
+  const [sugIngredients, setSugIngredients] = useState('')
 
   // Modal Enviar a Compras
   const [isShoppingModalOpen, setIsShoppingModalOpen] = useState(false)
@@ -248,15 +333,16 @@ export default function MinutasPage() {
             } catch {}
           }
 
-          // Cargar integrantes para el selector de cocinero
+          // Cargar únicamente integrantes adultos para el selector de cocinero (sin niños ni mascotas)
           if (resolvedFamId) {
             try {
               const { data: memData } = await supabase
                 .from('family_members')
-                .select('id, name')
+                .select('id, name, type, role, is_child, is_pet')
                 .eq('family_id', resolvedFamId)
               if (memData && memData.length > 0) {
-                setFamilyMembers(memData)
+                const adultCooks = memData.filter(isAdultCook).map((m: any) => ({ id: m.id, name: m.name }))
+                setFamilyMembers(adultCooks)
               }
             } catch {}
 
@@ -296,6 +382,41 @@ export default function MinutasPage() {
                 }))
                 setMenus(formatted)
                 saveStoredMinutas(selectedMonday, formatted)
+              }
+            } catch {}
+
+            // Cargar sugerencias sincronizadas de la familia si existen
+            try {
+              const { data: remoteSugs, error: sugErr } = await supabase
+                .from('lunch_suggestions')
+                .select('*')
+                .eq('family_id', resolvedFamId)
+                .order('created_at', { ascending: false })
+
+              if (!sugErr && remoteSugs && Array.isArray(remoteSugs) && remoteSugs.length > 0) {
+                const formattedSugs: PresetMeal[] = remoteSugs.map((r: any) => ({
+                  id: r.id,
+                  name: r.name,
+                  category: r.category || 'Caseros',
+                  starter: r.starter || undefined,
+                  dessert: r.dessert || undefined,
+                  ingredients: Array.isArray(r.ingredients) ? r.ingredients : [],
+                  isCustom: true,
+                }))
+                const customNames = new Set(formattedSugs.map((s) => s.name.toLowerCase().trim()))
+                const combined = [
+                  ...formattedSugs,
+                  ...DEFAULT_PRESET_MEALS.filter((d) => !customNames.has(d.name.toLowerCase().trim())),
+                ]
+                setSuggestions(combined)
+                saveStoredSuggestions(combined)
+              } else {
+                const { data: { user } } = await supabase.auth.getUser()
+                const metaSugs = user?.user_metadata?.custom_lunch_suggestions
+                if (Array.isArray(metaSugs) && metaSugs.length > 0) {
+                  setSuggestions(metaSugs)
+                  saveStoredSuggestions(metaSugs)
+                }
               }
             } catch {}
           }
@@ -575,9 +696,9 @@ export default function MinutasPage() {
   // Aplicar sugerencia predefinida
   function applyPreset(preset: PresetMeal) {
     setMainDish(preset.name)
-    setStarter(preset.starter)
-    setDessert(preset.dessert)
-    setIngredientsText(preset.ingredients.join(', '))
+    setStarter(preset.starter || '')
+    setDessert(preset.dessert || '')
+    setIngredientsText(preset.ingredients?.join(', ') || '')
     setIsPresetModalOpen(false)
     setIsSheetOpen(true)
     showToast(`Sugerencia cargada: ${preset.name}`)
@@ -585,10 +706,156 @@ export default function MinutasPage() {
 
   // Sugerencia aleatoria instantánea para el día activo
   function suggestRandom() {
-    const randomIndex = Math.floor(Math.random() * PRESET_MEALS.length)
-    const preset = PRESET_MEALS[randomIndex]
+    if (suggestions.length === 0) {
+      showToast('No hay sugerencias disponibles.')
+      return
+    }
+    const randomIndex = Math.floor(Math.random() * suggestions.length)
+    const preset = suggestions[randomIndex]
     setEditingDayNum(selectedDayNum)
     applyPreset(preset)
+  }
+
+  // Persistir cambios en sugerencias (local + nube)
+  async function persistSuggestions(updatedList: PresetMeal[]) {
+    setSuggestions(updatedList)
+    saveStoredSuggestions(updatedList)
+
+    // Sincronizar en user_metadata si hay sesión
+    try {
+      const { data: { session } } = await supabase.auth.getSession()
+      if (session?.user) {
+        await supabase.auth.updateUser({
+          data: { custom_lunch_suggestions: updatedList },
+        })
+      }
+    } catch {}
+
+    // Sincronizar en tabla lunch_suggestions de Supabase si la familia está resuelta
+    if (familyId) {
+      try {
+        const customOnly = updatedList.filter((s) => s.isCustom)
+        if (customOnly.length > 0) {
+          const payload = customOnly.map((c) => ({
+            id: c.id.startsWith('preset-') ? safeUUID() : c.id,
+            family_id: familyId,
+            name: c.name,
+            category: c.category || 'Caseros',
+            starter: c.starter || null,
+            dessert: c.dessert || null,
+            ingredients: c.ingredients || [],
+            is_custom: true,
+          }))
+          await supabase.from('lunch_suggestions').upsert(payload)
+        }
+      } catch {}
+    }
+  }
+
+  // Abrir modal para crear nueva sugerencia
+  function openCreateSuggestion() {
+    setSuggestionEditingId(null)
+    setSugName('')
+    setSugCategory(
+      presetCategory !== 'Todos' && presetCategory !== 'Mis Recetas' ? presetCategory : 'Caseros'
+    )
+    setSugStarter('')
+    setSugDessert('')
+    setSugIngredients('')
+    setIsEditingSuggestion(true)
+  }
+
+  // Abrir modal para editar sugerencia existente
+  function openEditSuggestion(preset: PresetMeal, e?: React.MouseEvent) {
+    if (e) e.stopPropagation()
+    setSuggestionEditingId(preset.id)
+    setSugName(preset.name)
+    setSugCategory(preset.category || 'Caseros')
+    setSugStarter(preset.starter || '')
+    setSugDessert(preset.dessert || '')
+    setSugIngredients(preset.ingredients?.join(', ') || '')
+    setIsEditingSuggestion(true)
+  }
+
+  // Guardar (Crear o Editar) sugerencia
+  async function handleSaveSuggestion(e: React.FormEvent) {
+    e.preventDefault()
+    if (!sugName.trim()) return
+
+    const ingArray = sugIngredients
+      .split(',')
+      .map((i) => i.trim())
+      .filter(Boolean)
+
+    if (suggestionEditingId) {
+      // Editar existente
+      const updated = suggestions.map((s) => {
+        if (s.id === suggestionEditingId) {
+          return {
+            ...s,
+            name: sugName.trim(),
+            category: sugCategory,
+            starter: sugStarter.trim() || undefined,
+            dessert: sugDessert.trim() || undefined,
+            ingredients: ingArray,
+            isCustom: true,
+          }
+        }
+        return s
+      })
+      await persistSuggestions(updated)
+      showToast(`✅ Sugerencia actualizada: ${sugName.trim()}`)
+    } else {
+      // Crear nueva
+      const newMeal: PresetMeal = {
+        id: safeUUID(),
+        name: sugName.trim(),
+        category: sugCategory,
+        starter: sugStarter.trim() || undefined,
+        dessert: sugDessert.trim() || undefined,
+        ingredients: ingArray,
+        isCustom: true,
+      }
+      const updated = [newMeal, ...suggestions]
+      await persistSuggestions(updated)
+      showToast(`✨ Sugerencia añadida: ${sugName.trim()}`)
+    }
+
+    setIsEditingSuggestion(false)
+  }
+
+  // Eliminar sugerencia
+  async function handleDeleteSuggestion(id: string, name: string, e?: React.MouseEvent) {
+    if (e) e.stopPropagation()
+    if (!confirm(`¿Eliminar "${name}" de las sugerencias de almuerzos?`)) return
+
+    const updated = suggestions.filter((s) => s.id !== id)
+    await persistSuggestions(updated)
+
+    if (familyId && !id.startsWith('preset-')) {
+      try {
+        await supabase.from('lunch_suggestions').delete().eq('id', id).eq('family_id', familyId)
+      } catch {}
+    }
+
+    showToast(`🗑️ Sugerencia eliminada: ${name}`)
+  }
+
+  // Restaurar sugerencias por defecto
+  async function handleResetDefaultSuggestions() {
+    if (
+      !confirm(
+        '¿Deseas restaurar las 12 sugerencias caseras originales? (Tus recetas creadas se mantendrán)'
+      )
+    )
+      return
+
+    const customOnes = suggestions.filter(
+      (s) => s.isCustom && !DEFAULT_PRESET_MEALS.some((d) => d.id === s.id)
+    )
+    const restored = [...customOnes, ...DEFAULT_PRESET_MEALS]
+    await persistSuggestions(restored)
+    showToast('🔄 Sugerencias originales restauradas.')
   }
 
   // Copiar minuta semanal formateada para WhatsApp
@@ -626,11 +893,30 @@ export default function MinutasPage() {
     }
   }
 
-  // Filtrado de recetas predefinidas por categoría
+  // Filtrado de recetas predefinidas por categoría y búsqueda
   const filteredPresets = useMemo(() => {
-    if (presetCategory === 'Todos') return PRESET_MEALS
-    return PRESET_MEALS.filter((p) => p.category === presetCategory)
-  }, [presetCategory])
+    return suggestions.filter((p) => {
+      // Filtro de categoría
+      if (presetCategory === 'Mis Recetas') {
+        if (!p.isCustom) return false
+      } else if (presetCategory !== 'Todos') {
+        if (p.category !== presetCategory) return false
+      }
+
+      // Filtro de búsqueda
+      if (sugSearch.trim()) {
+        const query = sugSearch.toLowerCase().trim()
+        const matchName = p.name.toLowerCase().includes(query)
+        const matchCat = p.category.toLowerCase().includes(query)
+        const matchStarter = p.starter?.toLowerCase().includes(query)
+        const matchDessert = p.dessert?.toLowerCase().includes(query)
+        const matchIng = p.ingredients.some((ing) => ing.toLowerCase().includes(query))
+        return matchName || matchCat || matchStarter || matchDessert || matchIng
+      }
+
+      return true
+    })
+  }, [suggestions, presetCategory, sugSearch])
 
   return (
     <div className="w-full flex flex-col gap-5 animate-in fade-in duration-150">
@@ -718,11 +1004,21 @@ export default function MinutasPage() {
         <div className="flex items-center gap-2 w-full sm:w-auto justify-end">
           <button
             type="button"
-            onClick={() => setIsPresetModalOpen(true)}
+            onClick={openCreateSuggestion}
             className="flex-1 sm:flex-none flex items-center justify-center gap-1.5 px-3 py-2 rounded-xl bg-neutral-900 border border-neutral-800 text-xs font-bold text-neutral-300 hover:text-white hover:border-neutral-700 active:scale-95 transition-all cursor-pointer"
+            title="Añadir nueva sugerencia de almuerzo"
+          >
+            <span className="text-[#F76911] font-bold">+</span>
+            <span>Añadir Sugerencia</span>
+          </button>
+
+          <button
+            type="button"
+            onClick={() => setIsPresetModalOpen(true)}
+            className="flex-1 sm:flex-none flex items-center justify-center gap-1.5 px-3.5 py-2 rounded-xl bg-neutral-900 border border-orange-500/40 text-xs font-bold text-[#F2A957] hover:text-white hover:border-[#F76911] hover:bg-orange-950/40 active:scale-95 transition-all cursor-pointer shadow-sm"
           >
             <span>💡</span>
-            <span>Ideas</span>
+            <span>Sugerencias ({suggestions.length})</span>
           </button>
 
           <button
@@ -1051,7 +1347,16 @@ export default function MinutasPage() {
                   </p>
                 </div>
 
-                <div className="flex items-center gap-2.5 mt-2">
+                <div className="flex items-center gap-2.5 mt-2 flex-wrap justify-center">
+                  <button
+                    type="button"
+                    onClick={() => setIsPresetModalOpen(true)}
+                    className="px-3.5 py-2 rounded-xl bg-orange-950/40 border border-orange-850/60 text-[#F2A957] text-xs font-bold hover:bg-orange-900/60 active:scale-95 transition-all cursor-pointer flex items-center gap-1.5"
+                  >
+                    <span>💡</span>
+                    <span>Sugerencias ({suggestions.length})</span>
+                  </button>
+
                   <button
                     type="button"
                     onClick={suggestRandom}
@@ -1071,6 +1376,126 @@ export default function MinutasPage() {
                     <span>Planificar almuerzo</span>
                   </button>
                 </div>
+              </div>
+            )}
+          </section>
+
+          {/* BANCO DE SUGERENCIAS VISIBLE DIRECTAMENTE EN LA PÁGINA */}
+          <section className="rounded-[28px] bg-[#1a1a1a] border border-neutral-800/80 p-5 shadow-lg flex flex-col gap-3.5">
+            <div className="flex items-center justify-between pb-2 border-b border-neutral-800/60 flex-wrap gap-2">
+              <div className="flex items-center gap-2.5">
+                <div
+                  className="w-9 h-9 rounded-xl flex items-center justify-center text-lg shadow-sm shrink-0"
+                  style={orangeGradient}
+                >
+                  💡
+                </div>
+                <div>
+                  <h3 className="text-sm font-black text-white m-0 flex items-center gap-2">
+                    <span>Banco de Sugerencias de Almuerzos</span>
+                    <span className="text-[10px] px-2 py-0.5 rounded-full bg-neutral-900 border border-neutral-800 text-neutral-300 font-bold">
+                      {suggestions.length} recetas
+                    </span>
+                  </h3>
+                  <p className="text-[11px] text-neutral-400 m-0">
+                    Añade tus platos favoritos, edita recetas o úsalas para planificar en 1 clic
+                  </p>
+                </div>
+              </div>
+
+              <div className="flex items-center gap-2">
+                <button
+                  type="button"
+                  onClick={openCreateSuggestion}
+                  style={orangeGradient}
+                  className="px-3 py-1.5 rounded-xl text-white text-xs font-bold shadow-sm active:scale-95 transition-all cursor-pointer flex items-center gap-1"
+                >
+                  <span className="font-black">+</span>
+                  <span>Nueva Sugerencia</span>
+                </button>
+
+                <button
+                  type="button"
+                  onClick={() => setIsPresetModalOpen(true)}
+                  className="px-3 py-1.5 rounded-xl bg-neutral-900 border border-neutral-800 text-neutral-300 hover:text-white text-xs font-bold cursor-pointer transition-colors"
+                >
+                  Ver todas ({suggestions.length})
+                </button>
+              </div>
+            </div>
+
+            {/* Listado en cuadrícula de las sugerencias con botones de usar, editar y borrar */}
+            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-2.5">
+              {suggestions.slice(0, 6).map((sug) => (
+                <div
+                  key={sug.id}
+                  className="p-3.5 rounded-2xl bg-[#141414] border border-neutral-800/80 hover:border-neutral-700 transition-all flex items-center justify-between gap-2.5 group"
+                >
+                  <div className="flex flex-col gap-0.5 min-w-0 flex-1">
+                    <div className="flex items-center gap-1.5 flex-wrap">
+                      <span
+                        onClick={() => applyPreset(sug)}
+                        className="text-xs font-bold text-white group-hover:text-[#F2A957] transition-colors truncate cursor-pointer"
+                        title={`Usar ${sug.name} en el día activo`}
+                      >
+                        {sug.name}
+                      </span>
+                      {sug.isCustom && (
+                        <span className="text-[9px] px-1.5 py-0.2 rounded bg-amber-950/60 text-amber-300 font-bold border border-amber-900/50 shrink-0">
+                          Mi receta
+                        </span>
+                      )}
+                    </div>
+                    <div className="flex items-center gap-1.5 text-[10px] text-neutral-400">
+                      <span className="text-neutral-500 font-medium">{sug.category}</span>
+                      {sug.starter && (
+                        <>
+                          <span>•</span>
+                          <span className="truncate">🥗 {sug.starter}</span>
+                        </>
+                      )}
+                    </div>
+                  </div>
+
+                  <div className="flex items-center gap-1 shrink-0">
+                    <button
+                      type="button"
+                      onClick={() => applyPreset(sug)}
+                      title="Usar este almuerzo en el día activo"
+                      className="px-2.5 py-1 rounded-lg bg-orange-950/60 border border-orange-800/60 text-[#F2A957] text-[11px] font-bold hover:bg-[#F76911] hover:text-white transition-all cursor-pointer"
+                    >
+                      Usar
+                    </button>
+                    <button
+                      type="button"
+                      onClick={(e) => openEditSuggestion(sug, e)}
+                      title="Editar sugerencia"
+                      className="p-1.5 rounded-lg bg-neutral-900 border border-neutral-800 text-neutral-400 hover:text-white text-xs cursor-pointer transition-colors"
+                    >
+                      ✏️
+                    </button>
+                    <button
+                      type="button"
+                      onClick={(e) => handleDeleteSuggestion(sug.id, sug.name, e)}
+                      title="Eliminar sugerencia"
+                      className="p-1.5 rounded-lg bg-neutral-900 border border-neutral-800 text-neutral-400 hover:text-rose-400 text-xs cursor-pointer transition-colors"
+                    >
+                      🗑️
+                    </button>
+                  </div>
+                </div>
+              ))}
+            </div>
+
+            {suggestions.length > 6 && (
+              <div className="pt-1 flex justify-center">
+                <button
+                  type="button"
+                  onClick={() => setIsPresetModalOpen(true)}
+                  className="text-xs text-[#F2A957] hover:underline font-bold cursor-pointer"
+                >
+                  Ver y gestionar las {suggestions.length} sugerencias completas →
+                </button>
               </div>
             )}
           </section>
@@ -1347,7 +1772,7 @@ export default function MinutasPage() {
 
                 <div className="flex flex-col gap-1">
                   <label className="text-xs font-bold text-neutral-400">
-                    👨‍🍳 Quién Cocina
+                    👨‍🍳 Quién Cocina (Solo Adultos)
                   </label>
                   {familyMembers.length > 0 ? (
                     <div className="flex gap-1.5">
@@ -1356,7 +1781,7 @@ export default function MinutasPage() {
                         onChange={(e) => setCookName(e.target.value)}
                         className="w-full px-3 py-2 rounded-xl bg-neutral-900 border border-neutral-800 text-white text-xs focus:outline-none focus:border-[#F76911]"
                       >
-                        <option value="">Seleccionar o escribir...</option>
+                        <option value="">Seleccionar adulto...</option>
                         {familyMembers.map((m) => (
                           <option key={m.id} value={m.name}>
                             {m.name}
@@ -1367,7 +1792,7 @@ export default function MinutasPage() {
                   ) : (
                     <input
                       type="text"
-                      placeholder="ej. Papá, Mamá..."
+                      placeholder="ej. Papá, Mamá (adultos)..."
                       value={cookName}
                       onChange={(e) => setCookName(e.target.value)}
                       className="w-full px-3 py-2 rounded-xl bg-neutral-900 border border-neutral-800 text-white text-xs focus:outline-none focus:border-[#F76911]"
@@ -1470,11 +1895,14 @@ export default function MinutasPage() {
         </div>
       )}
 
-      {/* 8. MODAL DE SUGERENCIAS / BANCO DE RECETAS */}
+      {/* 8. MODAL DE SUGERENCIAS / BANCO DE RECETAS (AÑADIR, EDITAR, ELIMINAR, USAR) */}
       {isPresetModalOpen && (
         <div
           onClick={(e) => {
-            if (e.target === e.currentTarget) setIsPresetModalOpen(false)
+            if (e.target === e.currentTarget) {
+              setIsPresetModalOpen(false)
+              setIsEditingSuggestion(false)
+            }
           }}
           className="fixed inset-0 z-[80] bg-black/80 backdrop-blur-sm flex items-end sm:items-center justify-center p-0 sm:p-4 animate-in fade-in duration-200"
         >
@@ -1482,76 +1910,320 @@ export default function MinutasPage() {
             onClick={(e) => e.stopPropagation()}
             className="w-full sm:max-w-xl bg-[#161616] border border-neutral-800 rounded-t-[32px] sm:rounded-[32px] max-h-[85vh] overflow-y-auto p-5 sm:p-6 shadow-2xl flex flex-col gap-4 animate-in slide-in-from-bottom duration-200"
           >
-            <div className="flex items-center justify-between pb-2 border-b border-neutral-800">
-              <div className="flex items-center gap-2">
-                <span className="text-xl">💡</span>
-                <h3 className="text-lg font-black text-white m-0">
-                  Sugerencias de Almuerzos Caseros
-                </h3>
-              </div>
-              <button
-                type="button"
-                onClick={() => setIsPresetModalOpen(false)}
-                className="w-8 h-8 rounded-full bg-neutral-800 text-neutral-400 hover:text-white flex items-center justify-center text-sm cursor-pointer"
-              >
-                ✕
-              </button>
-            </div>
-
-            {/* Filtros de categoría */}
-            <div className="flex items-center gap-1.5 overflow-x-auto pb-1 scrollbar-none">
-              {['Todos', 'Legumbres', 'Caseros', 'Pollo y Carnes', 'Pastas', 'Pescados', 'Ligeros'].map(
-                (cat) => (
+            {isEditingSuggestion ? (
+              /* --- VISTA FORMULARIO: CREAR O EDITAR SUGERENCIA --- */
+              <form onSubmit={handleSaveSuggestion} className="flex flex-col gap-4 animate-in fade-in duration-150">
+                <div className="flex items-center justify-between pb-2 border-b border-neutral-800">
+                  <div className="flex items-center gap-2">
+                    <button
+                      type="button"
+                      onClick={() => setIsEditingSuggestion(false)}
+                      className="w-7 h-7 rounded-lg bg-neutral-800 text-neutral-400 hover:text-white flex items-center justify-center text-xs cursor-pointer transition-colors"
+                      title="Volver a la lista"
+                    >
+                      ←
+                    </button>
+                    <h3 className="text-base font-bold text-white m-0">
+                      {suggestionEditingId ? 'Editar Sugerencia de Almuerzo' : 'Nueva Sugerencia de Almuerzo'}
+                    </h3>
+                  </div>
                   <button
-                    key={cat}
                     type="button"
-                    onClick={() => setPresetCategory(cat)}
-                    className={`px-3 py-1.5 rounded-xl text-xs font-bold whitespace-nowrap transition-all cursor-pointer ${
-                      presetCategory === cat
-                        ? 'bg-[#F76911] text-white shadow-sm'
-                        : 'bg-neutral-900 border border-neutral-800 text-neutral-400 hover:text-white'
-                    }`}
+                    onClick={() => setIsEditingSuggestion(false)}
+                    className="w-7 h-7 rounded-full bg-neutral-800 text-neutral-400 hover:text-white flex items-center justify-center text-xs cursor-pointer"
                   >
-                    {cat}
+                    ✕
                   </button>
-                )
-              )}
-            </div>
+                </div>
 
-            {/* Listado de recetas predefinidas */}
-            <div className="flex flex-col gap-2.5 max-h-[55vh] overflow-y-auto pr-1">
-              {filteredPresets.map((preset, idx) => (
-                <div
-                  key={idx}
-                  onClick={() => applyPreset(preset)}
-                  className="p-3.5 rounded-2xl bg-[#1a1a1a] border border-neutral-800/80 hover:border-[#F76911] transition-all cursor-pointer flex items-center justify-between gap-3 group"
-                >
-                  <div className="flex flex-col gap-1 min-w-0">
-                    <div className="flex items-center gap-2">
-                      <span className="text-sm font-bold text-white group-hover:text-[#F2A957] transition-colors truncate">
-                        {preset.name}
-                      </span>
-                      <span className="px-2 py-0.5 rounded-md bg-neutral-900 text-neutral-400 text-[10px] font-semibold shrink-0">
-                        {preset.category}
-                      </span>
+                <div className="flex flex-col gap-3">
+                  <div className="flex flex-col gap-1.5">
+                    <label className="text-xs font-bold text-neutral-300">
+                      Plato de Fondo / Almuerzo *
+                    </label>
+                    <input
+                      type="text"
+                      required
+                      placeholder="ej. Lasaña casera con espinaca, Pastel de papas..."
+                      value={sugName}
+                      onChange={(e) => setSugName(e.target.value)}
+                      className="w-full px-3.5 py-2.5 rounded-xl bg-neutral-900 border border-neutral-800 text-white text-sm focus:outline-none focus:border-[#F76911] transition-colors"
+                    />
+                  </div>
+
+                  <div className="flex flex-col gap-1.5">
+                    <label className="text-xs font-bold text-neutral-300">
+                      Categoría
+                    </label>
+                    <select
+                      value={sugCategory}
+                      onChange={(e) => setSugCategory(e.target.value)}
+                      className="w-full px-3.5 py-2.5 rounded-xl bg-neutral-900 border border-neutral-800 text-white text-sm focus:outline-none focus:border-[#F76911] transition-colors"
+                    >
+                      {['Caseros', 'Legumbres', 'Pollo y Carnes', 'Pastas', 'Pescados', 'Ligeros', 'Otro'].map((c) => (
+                        <option key={c} value={c}>{c}</option>
+                      ))}
+                    </select>
+                  </div>
+
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                    <div className="flex flex-col gap-1.5">
+                      <label className="text-xs font-bold text-neutral-300">
+                        Entrada Recomendada (Opcional)
+                      </label>
+                      <input
+                        type="text"
+                        placeholder="ej. Ensalada a la chilena, Sopa..."
+                        value={sugStarter}
+                        onChange={(e) => setSugStarter(e.target.value)}
+                        className="w-full px-3.5 py-2.5 rounded-xl bg-neutral-900 border border-neutral-800 text-white text-sm focus:outline-none focus:border-[#F76911] transition-colors"
+                      />
                     </div>
-
-                    <div className="flex items-center gap-2 text-[11px] text-neutral-400">
-                      <span>🥗 {preset.starter}</span>
-                      <span>•</span>
-                      <span>🍮 {preset.dessert}</span>
+                    <div className="flex flex-col gap-1.5">
+                      <label className="text-xs font-bold text-neutral-300">
+                        Postre Recomendado (Opcional)
+                      </label>
+                      <input
+                        type="text"
+                        placeholder="ej. Fruta de temporada, Compota..."
+                        value={sugDessert}
+                        onChange={(e) => setSugDessert(e.target.value)}
+                        className="w-full px-3.5 py-2.5 rounded-xl bg-neutral-900 border border-neutral-800 text-white text-sm focus:outline-none focus:border-[#F76911] transition-colors"
+                      />
                     </div>
                   </div>
 
+                  <div className="flex flex-col gap-1.5">
+                    <div className="flex items-center justify-between">
+                      <label className="text-xs font-bold text-neutral-300">
+                        Ingredientes para Comprar (Opcional)
+                      </label>
+                      <span className="text-[10px] text-neutral-500">Separados por coma</span>
+                    </div>
+                    <textarea
+                      rows={2}
+                      placeholder="ej. Papas, Carne molida, Cebolla, Huevos, Aceitunas"
+                      value={sugIngredients}
+                      onChange={(e) => setSugIngredients(e.target.value)}
+                      className="w-full px-3.5 py-2 rounded-xl bg-neutral-900 border border-neutral-800 text-white text-xs focus:outline-none focus:border-[#F76911] resize-none transition-colors"
+                    />
+                    <p className="text-[10px] text-neutral-500 m-0">
+                      💡 Estos ingredientes se podrán cargar automáticamente a tu lista de Súper o Feria cuando planifiques este almuerzo.
+                    </p>
+                  </div>
+                </div>
+
+                <div className="flex items-center gap-2 pt-2 border-t border-neutral-800">
                   <button
                     type="button"
-                    className="px-3 py-1.5 rounded-xl bg-orange-950/60 border border-orange-800/60 text-[#F2A957] text-xs font-bold shrink-0 group-hover:bg-[#F76911] group-hover:text-white transition-all"
+                    onClick={() => setIsEditingSuggestion(false)}
+                    className="flex-1 py-2.5 rounded-xl bg-neutral-900 border border-neutral-800 text-neutral-300 hover:text-white font-bold text-xs cursor-pointer transition-colors"
                   >
-                    Usar
+                    Cancelar
+                  </button>
+                  <button
+                    type="submit"
+                    style={orangeGradient}
+                    className="flex-1 py-2.5 rounded-xl text-white font-bold text-xs shadow-md active:scale-95 cursor-pointer transition-all flex items-center justify-center gap-1.5"
+                  >
+                    <span>💾</span>
+                    <span>{suggestionEditingId ? 'Guardar Cambios' : 'Crear Sugerencia'}</span>
                   </button>
                 </div>
-              ))}
-            </div>
+              </form>
+            ) : (
+              /* --- VISTA BANCO: LISTADO, BÚSQUEDA Y ACCIONES --- */
+              <div className="flex flex-col gap-4">
+                <div className="flex items-center justify-between pb-2 border-b border-neutral-800">
+                  <div className="flex items-center gap-2">
+                    <span className="text-xl">💡</span>
+                    <div>
+                      <h3 className="text-lg font-black text-white m-0 flex items-center gap-2">
+                        <span>Sugerencias de Almuerzos</span>
+                        <span className="text-[10px] px-2 py-0.5 rounded-full bg-neutral-800 text-neutral-400 font-semibold">
+                          {suggestions.length} recetas
+                        </span>
+                      </h3>
+                    </div>
+                  </div>
+                  <div className="flex items-center gap-2">
+                    <button
+                      type="button"
+                      onClick={openCreateSuggestion}
+                      style={orangeGradient}
+                      className="flex items-center gap-1 px-3 py-1.5 rounded-xl text-white text-xs font-bold shadow-sm active:scale-95 transition-all cursor-pointer"
+                    >
+                      <span>+</span>
+                      <span>Nueva</span>
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => setIsPresetModalOpen(false)}
+                      className="w-8 h-8 rounded-full bg-neutral-800 text-neutral-400 hover:text-white flex items-center justify-center text-sm cursor-pointer"
+                    >
+                      ✕
+                    </button>
+                  </div>
+                </div>
+
+                {/* Barra de búsqueda */}
+                <div className="relative">
+                  <input
+                    type="text"
+                    placeholder="Buscar por plato, ingrediente o categoría..."
+                    value={sugSearch}
+                    onChange={(e) => setSugSearch(e.target.value)}
+                    className="w-full pl-9 pr-8 py-2 rounded-xl bg-neutral-900 border border-neutral-800 text-xs text-white placeholder-neutral-500 focus:outline-none focus:border-[#F76911] transition-colors"
+                  />
+                  <span className="absolute left-3 top-2 text-neutral-400 text-xs">🔍</span>
+                  {sugSearch && (
+                    <button
+                      type="button"
+                      onClick={() => setSugSearch('')}
+                      className="absolute right-2.5 top-2 text-neutral-400 hover:text-white text-xs cursor-pointer"
+                    >
+                      ✕
+                    </button>
+                  )}
+                </div>
+
+                {/* Filtros de categoría */}
+                <div className="flex items-center gap-1.5 overflow-x-auto pb-1 scrollbar-none">
+                  {PRESET_CATEGORIES.map((cat) => {
+                    const count =
+                      cat === 'Todos'
+                        ? suggestions.length
+                        : cat === 'Mis Recetas'
+                        ? suggestions.filter((s) => s.isCustom).length
+                        : suggestions.filter((s) => s.category === cat).length
+                    return (
+                      <button
+                        key={cat}
+                        type="button"
+                        onClick={() => setPresetCategory(cat)}
+                        className={`px-3 py-1.5 rounded-xl text-xs font-bold whitespace-nowrap transition-all cursor-pointer flex items-center gap-1.5 ${
+                          presetCategory === cat
+                            ? 'bg-[#F76911] text-white shadow-sm'
+                            : 'bg-neutral-900 border border-neutral-800 text-neutral-400 hover:text-white'
+                        }`}
+                      >
+                        <span>{cat}</span>
+                        <span
+                          className={`text-[10px] px-1.5 py-0.2 rounded-full ${
+                            presetCategory === cat ? 'bg-black/30 text-white' : 'bg-neutral-800 text-neutral-400'
+                          }`}
+                        >
+                          {count}
+                        </span>
+                      </button>
+                    )
+                  })}
+                </div>
+
+                {/* Listado de recetas */}
+                <div className="flex flex-col gap-2.5 max-h-[50vh] overflow-y-auto pr-1">
+                  {filteredPresets.length === 0 ? (
+                    <div className="p-8 text-center flex flex-col items-center justify-center gap-3 bg-neutral-900/40 rounded-2xl border border-neutral-800/60">
+                      <span className="text-3xl">🍲</span>
+                      <p className="text-sm text-neutral-400 m-0">
+                        No encontramos sugerencias con este filtro.
+                      </p>
+                      <button
+                        type="button"
+                        onClick={openCreateSuggestion}
+                        className="px-4 py-2 rounded-xl text-xs font-bold text-white shadow-sm transition-all"
+                        style={orangeGradient}
+                      >
+                        + Crear sugerencia ahora
+                      </button>
+                    </div>
+                  ) : (
+                    filteredPresets.map((preset) => (
+                      <div
+                        key={preset.id}
+                        className="p-3.5 rounded-2xl bg-[#1a1a1a] border border-neutral-800/80 hover:border-neutral-700 transition-all flex items-start sm:items-center justify-between gap-3 group"
+                      >
+                        <div className="flex flex-col gap-1 min-w-0 flex-1">
+                          <div className="flex items-center gap-2 flex-wrap">
+                            <span
+                              onClick={() => applyPreset(preset)}
+                              className="text-sm font-bold text-white group-hover:text-[#F2A957] transition-colors truncate cursor-pointer"
+                            >
+                              {preset.name}
+                            </span>
+                            <span className="px-2 py-0.5 rounded-md bg-neutral-900 text-neutral-400 text-[10px] font-semibold shrink-0">
+                              {preset.category}
+                            </span>
+                            {preset.isCustom && (
+                              <span className="px-2 py-0.5 rounded-md bg-amber-950/70 border border-amber-800/60 text-amber-300 text-[9px] font-bold shrink-0">
+                                ⭐ Mi receta
+                              </span>
+                            )}
+                          </div>
+
+                          {(preset.starter || preset.dessert) && (
+                            <div className="flex items-center gap-2 text-[11px] text-neutral-400 flex-wrap">
+                              {preset.starter && <span>🥗 {preset.starter}</span>}
+                              {preset.starter && preset.dessert && <span>•</span>}
+                              {preset.dessert && <span>🍮 {preset.dessert}</span>}
+                            </div>
+                          )}
+
+                          {preset.ingredients && preset.ingredients.length > 0 && (
+                            <div className="text-[10px] text-neutral-500 truncate">
+                              🛒 {preset.ingredients.slice(0, 4).join(', ')}
+                              {preset.ingredients.length > 4 && ` +${preset.ingredients.length - 4} más`}
+                            </div>
+                          )}
+                        </div>
+
+                        {/* Botones de acción */}
+                        <div className="flex items-center gap-1.5 shrink-0 self-center">
+                          <button
+                            type="button"
+                            onClick={() => applyPreset(preset)}
+                            title="Usar esta sugerencia en la minuta"
+                            className="px-3 py-1.5 rounded-xl bg-orange-950/60 border border-orange-800/60 text-[#F2A957] text-xs font-bold hover:bg-[#F76911] hover:text-white transition-all cursor-pointer"
+                          >
+                            Usar
+                          </button>
+                          <button
+                            type="button"
+                            onClick={(e) => openEditSuggestion(preset, e)}
+                            title="Editar sugerencia"
+                            aria-label={`Editar ${preset.name}`}
+                            className="w-8 h-8 rounded-xl bg-neutral-900 hover:bg-neutral-800 border border-neutral-800 hover:border-neutral-700 text-neutral-400 hover:text-white flex items-center justify-center text-xs transition-all cursor-pointer"
+                          >
+                            ✏️
+                          </button>
+                          <button
+                            type="button"
+                            onClick={(e) => handleDeleteSuggestion(preset.id, preset.name, e)}
+                            title="Eliminar sugerencia"
+                            aria-label={`Eliminar ${preset.name}`}
+                            className="w-8 h-8 rounded-xl bg-neutral-900 hover:bg-rose-950/60 border border-neutral-800 hover:border-rose-900/60 text-neutral-400 hover:text-rose-400 flex items-center justify-center text-xs transition-all cursor-pointer"
+                          >
+                            🗑️
+                          </button>
+                        </div>
+                      </div>
+                    ))
+                  )}
+                </div>
+
+                {/* Botón restaurar por defecto */}
+                <div className="pt-2 border-t border-neutral-800/60 flex items-center justify-between text-xs text-neutral-500">
+                  <span>¿Deseas recuperar las recetas tradicionales?</span>
+                  <button
+                    type="button"
+                    onClick={handleResetDefaultSuggestions}
+                    className="text-[11px] text-[#F2A957] hover:underline cursor-pointer font-medium"
+                  >
+                    Restaurar recetas originales
+                  </button>
+                </div>
+              </div>
+            )}
           </div>
         </div>
       )}
